@@ -50,11 +50,11 @@ public struct DevError: Error, Equatable, Sendable {
     public var reply: DevReply { DevReply(ok: false, body: body.jsonString) }
 }
 
-public extension DevError {
+extension DevError {
     /// `snapshot --until` ran out its budget. The final snapshot rides along, so
     /// a failed wait shows what the app looked like instead of only that it
     /// never matched.
-    static func timeout(expression: String, timeoutMs: Int, snapshot: JSONValue) -> DevError {
+    public static func timeout(expression: String, timeoutMs: Int, snapshot: JSONValue) -> DevError {
         DevError(
             .timeout,
             "`\(expression)` did not hold within \(timeoutMs)ms",
@@ -62,7 +62,7 @@ public extension DevError {
         )
     }
 
-    static func badExpression(_ error: DevUntil.ParseError, source: String) -> DevError {
+    public static func badExpression(_ error: DevUntil.ParseError, source: String) -> DevError {
         DevError(.badExpr, error.message, extra: ["expr": .string(source)])
     }
 }

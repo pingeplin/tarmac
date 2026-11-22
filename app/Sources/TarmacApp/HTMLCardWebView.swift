@@ -30,7 +30,8 @@ final class HTMLCardWebView: WKWebView {
     private func converted(_ event: NSEvent) -> NSEvent? {
         guard let copy = event.cgEvent?.copy() else { return nil }
         let precise = event.hasPreciseScrollingDeltas
-        let (vertical, horizontal): (CGEventField, CGEventField) = precise
+        let (vertical, horizontal): (CGEventField, CGEventField) =
+            precise
             ? (.scrollWheelEventPointDeltaAxis1, .scrollWheelEventPointDeltaAxis2)
             : (.scrollWheelEventFixedPtDeltaAxis1, .scrollWheelEventFixedPtDeltaAxis2)
         let delta = wheel.convert(

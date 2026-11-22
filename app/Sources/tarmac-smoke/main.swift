@@ -128,7 +128,9 @@ final class Smoke {
         }
         check("doc_opened received", openedVia != nil, "no doc_opened for \(canonical) within 5 s")
         if let openedVia {
-            check("doc_opened via == \"user\" (app-session open)", openedVia == "user", "got via \(openedVia.debugDescription)")
+            check(
+                "doc_opened via == \"user\" (app-session open)", openedVia == "user",
+                "got via \(openedVia.debugDescription)")
         }
 
         // 3. Append to the doc and assert a file_event.

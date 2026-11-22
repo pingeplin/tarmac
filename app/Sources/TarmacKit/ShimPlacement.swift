@@ -32,7 +32,8 @@ public enum ShimPlacement {
             }
         }
         guard matches(bytes, at: p, "<!"), matchesIgnoringCase(bytes, at: p + 2, "doctype"),
-              let close = firstGreaterThan(in: bytes, from: p + 9) else { return nil }
+            let close = firstGreaterThan(in: bytes, from: p + 9)
+        else { return nil }
         return close + 1
     }
 

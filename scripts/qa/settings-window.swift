@@ -66,10 +66,13 @@ func fail(_ message: String) -> Never {
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 guard arguments.count >= 2, let pid = pid_t(arguments[0]) else { fail("usage: <pid> <verb> ...; see the header") }
-let verb = arguments[1], rest = Array(arguments.dropFirst(2))
+let verb = arguments[1]
+let rest = Array(arguments.dropFirst(2))
 
 func number(_ index: Int) -> Double {
-    guard rest.indices.contains(index), let value = Double(rest[index]) else { fail("\(verb): argument \(index + 1) is not a number") }
+    guard rest.indices.contains(index), let value = Double(rest[index]) else {
+        fail("\(verb): argument \(index + 1) is not a number")
+    }
     return value
 }
 
@@ -102,7 +105,9 @@ func press(_ element: AXUIElement, _ what: String) { perform(kAXPressAction, on:
 
 func settingsWindow() -> AXUIElement {
     let windows: [AXUIElement] = attribute(app, kAXWindowsAttribute) ?? []
-    guard let window = windows.first(where: { title($0) == "Settings" }) else { fail("the app has no Settings window; run `open`") }
+    guard let window = windows.first(where: { title($0) == "Settings" }) else {
+        fail("the app has no Settings window; run `open`")
+    }
     return window
 }
 
@@ -125,10 +130,14 @@ func controls(_ wanted: String) -> [AXUIElement] {
 func identifier(_ element: AXUIElement) -> String { attribute(element, kAXIdentifierAttribute) ?? "" }
 
 /// The names the app gives the two tables and the parts of the showcase.
-let sidebar = "settings-sidebar", themeList = "theme-list"
-let showcaseTitle = "theme-showcase-title", showcaseCaption = "theme-showcase-caption"
-let showcasePicture = "theme-showcase-picture", contrastNote = "theme-contrast-note"
-let filesNote = "theme-files-note", openThemes = "Open Themes Folder"
+let sidebar = "settings-sidebar"
+let themeList = "theme-list"
+let showcaseTitle = "theme-showcase-title"
+let showcaseCaption = "theme-showcase-caption"
+let showcasePicture = "theme-showcase-picture"
+let contrastNote = "theme-contrast-note"
+let filesNote = "theme-files-note"
+let openThemes = "Open Themes Folder"
 
 func named(_ name: String) -> AXUIElement? {
     views().first { identifier($0) == name }
@@ -176,8 +185,9 @@ func select(_ name: String, in table: String, _ found: String, hint: String = ""
         return walked[index]
     }
     func title(_ index: Int) -> String { texts(in: parts(index)).first ?? "" }
-    guard let index = entries.indices.first(where: { rowID(in: parts($0)) == name })
-        ?? entries.indices.first(where: { title($0) == name })
+    guard
+        let index = entries.indices.first(where: { rowID(in: parts($0)) == name })
+            ?? entries.indices.first(where: { title($0) == name })
     else {
         fail("\(found) \(entries.indices.map(title)) and none is \(name)\(hint)")
     }
@@ -201,7 +211,8 @@ func box(_ element: AXUIElement) -> String {
 
 /// An item of the app menu, the bar's second: the Apple menu is its first.
 func appMenuItem(_ name: String) -> AXUIElement {
-    let menus: [AXUIElement] = (attribute(app, kAXMenuBarAttribute) as AXUIElement?)
+    let menus: [AXUIElement] =
+        (attribute(app, kAXMenuBarAttribute) as AXUIElement?)
         .flatMap { attribute($0, kAXChildrenAttribute) } ?? []
     guard menus.count > 1,
         let item = descendants(of: menus[1]).first(where: { role($0) == kAXMenuItemRole && title($0) == name })
@@ -271,7 +282,8 @@ switch verb {
 case "open":
     postCommand(43)
 case "rows":
-    let window = settingsWindow(), views = views()
+    let window = settingsWindow()
+    let views = views()
     print("window frame=\(frame(window))")
     print("pane=\(rows(of: sidebar).filter(selected).map(rowName).joined(separator: ","))")
     for tile in views.filter({ role($0) == kAXRadioButtonRole }) {
@@ -286,7 +298,8 @@ case "rows":
     }
     for stepper in views.filter({ role($0) == kAXIncrementorRole }) { print("stepper frame=\(frame(stepper))") }
     for row in rows(of: themeList) {
-        let parts = descendants(of: row), texts = texts(in: parts)
+        let parts = descendants(of: row)
+        let texts = texts(in: parts)
         let marks = texts.dropFirst().joined(separator: ",")
         print(
             "theme \(texts.first ?? "") marks=\(marks) selected=\(selected(row) ? 1 : 0) frame=\(frame(row)) id=\(rowID(in: parts))"
@@ -417,12 +430,14 @@ case "click":
         }
     }
 case "wheel":
-    let point = CGPoint(x: number(0), y: number(1)), dy = Int32(number(2))
+    let point = CGPoint(x: number(0), y: number(1))
+    let dy = Int32(number(2))
     let withControl = rest.count > 3 && rest[3] == "ctrl"
     at(point) {
         if withControl { control(true) }
         for _ in 0..<8 {
-            let event = CGEvent(scrollWheelEvent2Source: hid, units: .pixel, wheelCount: 1, wheel1: dy, wheel2: 0, wheel3: 0)
+            let event = CGEvent(
+                scrollWheelEvent2Source: hid, units: .pixel, wheelCount: 1, wheel1: dy, wheel2: 0, wheel3: 0)
             if withControl { event?.flags = .maskControl }
             event?.post(tap: .cghidEventTap)
             usleep(30_000)

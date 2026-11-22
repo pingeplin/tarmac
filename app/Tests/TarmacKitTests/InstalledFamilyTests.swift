@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// 2610.0005 S51: which member of a family is its regular face, and so
@@ -21,7 +22,10 @@ final class InstalledFamilyTests: XCTestCase {
         let bold = Face(weight: 9, italic: false, fixedPitch: true)
         XCTAssertEqual(fixedPitch([light, medium, bold]), false)
         XCTAssertEqual(fixedPitch([bold, light]), true)
-        XCTAssertEqual(fixedPitch([Face(weight: 9, italic: false, fixedPitch: false), Face(weight: 4, italic: false, fixedPitch: true)]), true)
+        XCTAssertEqual(
+            fixedPitch([
+                Face(weight: 9, italic: false, fixedPitch: false), Face(weight: 4, italic: false, fixedPitch: true),
+            ]), true)
     }
 
     /// Osaka lists its proportional face before Osaka-Mono, both at weight 5.

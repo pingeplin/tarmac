@@ -48,8 +48,9 @@ enum InlineMarks {
 
     private static func link(_ chars: [Character], _ start: Int) -> (InlineRun, Int)? {
         guard chars[start] == "[", let close = chars[(start + 1)...].firstIndex(of: "]"),
-              close + 1 < chars.count, chars[close + 1] == "(",
-              let end = chars[(close + 2)...].firstIndex(of: ")") else { return nil }
+            close + 1 < chars.count, chars[close + 1] == "(",
+            let end = chars[(close + 2)...].firstIndex(of: ")")
+        else { return nil }
         return span(chars[(start + 1)..<close], .link, next: end + 1)
     }
 
@@ -73,9 +74,11 @@ enum InlineMarks {
         }
         guard isMark(start), !(underscore && insideWord(chars, neighbour: start - 1, away: -1)) else { return nil }
         let open = start + count
-        guard let close = (open..<chars.count).first(where: {
-            isMark($0) && !(underscore && insideWord(chars, neighbour: $0 + count, away: 1))
-        }) else { return nil }
+        guard
+            let close = (open..<chars.count).first(where: {
+                isMark($0) && !(underscore && insideWord(chars, neighbour: $0 + count, away: 1))
+            })
+        else { return nil }
         let content = chars[open..<close]
         guard let first = content.first, let last = content.last, !first.isWhitespace, !last.isWhitespace else {
             return nil

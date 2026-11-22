@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Quiet dims the non-prime terminals beside a prime one — never a doc card.

@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// HTML-card zoom geometry and the wheel's travel in a document's units:
@@ -49,14 +50,18 @@ final class CardZoomTests: XCTestCase {
     // MARK: - iframePx (2607.0004 S10)
 
     func testIframePxIsTheFrameTimesZoomRounded() {
-        XCTAssertEqual(CardZoom.iframePx(frame: CGSize(width: 640, height: 400), zoom: 1), CGSize(width: 640, height: 400))
-        XCTAssertEqual(CardZoom.iframePx(frame: CGSize(width: 640, height: 400), zoom: 1.5), CGSize(width: 960, height: 600))
+        XCTAssertEqual(
+            CardZoom.iframePx(frame: CGSize(width: 640, height: 400), zoom: 1), CGSize(width: 640, height: 400))
+        XCTAssertEqual(
+            CardZoom.iframePx(frame: CGSize(width: 640, height: 400), zoom: 1.5), CGSize(width: 960, height: 600))
     }
 
     /// Rounds, not truncates — a truncation would give 100 for the first.
     func testIframePxRoundsNonIntegerProducts() {
-        XCTAssertEqual(CardZoom.iframePx(frame: CGSize(width: 100, height: 100), zoom: 1.006), CGSize(width: 101, height: 101))
-        XCTAssertEqual(CardZoom.iframePx(frame: CGSize(width: 100, height: 100), zoom: 0.994), CGSize(width: 99, height: 99))
+        XCTAssertEqual(
+            CardZoom.iframePx(frame: CGSize(width: 100, height: 100), zoom: 1.006), CGSize(width: 101, height: 101))
+        XCTAssertEqual(
+            CardZoom.iframePx(frame: CGSize(width: 100, height: 100), zoom: 0.994), CGSize(width: 99, height: 99))
     }
 
     // MARK: - wheelScale (2610.0002)

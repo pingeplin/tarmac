@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// The one scroll thumb every card kind wears: where it sits on its track,
@@ -13,7 +14,8 @@ final class ScrollIndicatorTests: XCTestCase {
         _ offset: Double, zoom: CGFloat = 1, backing: CGFloat = 2,
         body: CGRect = CGRect(x: 0, y: 30, width: 390, height: 280), covered: CGFloat = 0
     ) -> CGRect? {
-        ScrollIndicator.frame(metrics(offset), body: body, covered: covered, scale: CardScale(zoom: zoom, backing: backing))
+        ScrollIndicator.frame(
+            metrics(offset), body: body, covered: covered, scale: CardScale(zoom: zoom, backing: backing))
     }
 
     // MARK: - thumb

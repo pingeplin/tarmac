@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 final class CardSignalTests: XCTestCase {
     func testTheNamesAreTheInboxTagsAndTheSnapshotValues() {

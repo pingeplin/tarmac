@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Many changes, one update: a view that is told of every change schedules a

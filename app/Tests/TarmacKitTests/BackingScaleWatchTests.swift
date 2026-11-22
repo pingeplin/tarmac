@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// Which "backing properties changed" callbacks are about the display. AppKit

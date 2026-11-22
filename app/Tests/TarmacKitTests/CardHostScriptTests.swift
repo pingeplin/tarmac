@@ -1,5 +1,6 @@
 import JavaScriptCore
 import XCTest
+
 @testable import TarmacKit
 
 /// The HTML card host page's script as it ships
@@ -20,23 +21,24 @@ final class CardHostScriptTests: XCTestCase {
     override func setUpWithError() throws {
         context = try XCTUnwrap(JSContext())
         context.exceptionHandler = { _, error in XCTFail("the script threw: \(String(describing: error))") }
-        context.evaluateScript("""
-        var posted = [];
-        var cardWindow = { posted: [], postMessage(message) { this.posted.push(message); } };
-        var listener = null;
-        var window = { addEventListener(type, heard) { if (type === "message") listener = heard; } };
-        var heardOfTheFrame = {};
-        var card = {
-          contentWindow: cardWindow,
-          style: {},
-          addEventListener(type, heard) { heardOfTheFrame[type] = heard; },
-        };
-        var document = { getElementById() { return card; } };
-        var askedFrames = [];
-        function requestAnimationFrame(drawn) { askedFrames.push(drawn); }
-        function drawFrame() { for (const drawn of askedFrames.splice(0)) drawn(); }
-        var webkit = { messageHandlers: { card: { postMessage(message) { posted.push(message); } } } };
-        """)
+        context.evaluateScript(
+            """
+            var posted = [];
+            var cardWindow = { posted: [], postMessage(message) { this.posted.push(message); } };
+            var listener = null;
+            var window = { addEventListener(type, heard) { if (type === "message") listener = heard; } };
+            var heardOfTheFrame = {};
+            var card = {
+              contentWindow: cardWindow,
+              style: {},
+              addEventListener(type, heard) { heardOfTheFrame[type] = heard; },
+            };
+            var document = { getElementById() { return card; } };
+            var askedFrames = [];
+            function requestAnimationFrame(drawn) { askedFrames.push(drawn); }
+            function drawFrame() { for (const drawn of askedFrames.splice(0)) drawn(); }
+            var webkit = { messageHandlers: { card: { postMessage(message) { posted.push(message); } } } };
+            """)
         context.evaluateScript(try script())
     }
 
@@ -115,7 +117,8 @@ final class CardHostScriptTests: XCTestCase {
     /// app since the page was made.
     @discardableResult
     private func frames(_ count: Int) -> [NSDictionary] {
-        context.evaluateScript("for (let i = 0; i < \(count); i++) drawFrame(); posted").toArray() as? [NSDictionary] ?? []
+        context.evaluateScript("for (let i = 0; i < \(count); i++) drawFrame(); posted").toArray() as? [NSDictionary]
+            ?? []
     }
 
     private let shown = shown(1)
@@ -424,13 +427,13 @@ final class CardHostScriptTests: XCTestCase {
     /// not use up the stamp.
     func test2611_0002S12aTheSourceIsNotMeasuredAndADroppedReadyLeavesTheStamp() throws {
         let sized = """
-        (() => {
-          const ready = { tarmac: 'ready', meta: '', data: null };
-          ready.meta = 'x'.repeat(%d - JSON.stringify(ready).length);
-          ready.source = %@;
-          return ready;
-        })()
-        """
+            (() => {
+              const ready = { tarmac: 'ready', meta: '', data: null };
+              ready.meta = 'x'.repeat(%d - JSON.stringify(ready).length);
+              ready.source = %@;
+              return ready;
+            })()
+            """
         load(sourceA, number: 1)
         hear("{ tarmac: 'started', source: '\(sourceA)' }")
         let atTheBound = carried(String(format: sized, 1000, "'s'.repeat(2000)"))

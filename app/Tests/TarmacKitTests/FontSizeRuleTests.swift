@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// 2610.0006: which size a role uses, from the file and from typed text.
@@ -60,7 +61,9 @@ final class FontSizeRuleTests: XCTestCase {
 
     /// S21 — the typed rule: the nearest half step, a tie going up, then the range.
     func testANumberGoesToTheNearestSizeTheRoleHas() {
-        let cases: [(Double, Double)] = [(13.3, 13.5), (13.2, 13), (13.25, 13.5), (13.75, 14), (7, 8), (-5, 8), (99, 32)]
+        let cases: [(Double, Double)] = [
+            (13.3, 13.5), (13.2, 13), (13.25, 13.5), (13.75, 14), (7, 8), (-5, 8), (99, 32),
+        ]
         for (typed, size) in cases { XCTAssertEqual(terminal.nearest(to: typed), size, "\(typed)") }
         XCTAssertEqual(document.nearest(to: 9), 10)
         XCTAssertEqual(document.nearest(to: 30), 24)

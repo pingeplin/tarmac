@@ -73,15 +73,18 @@ extension OffscreenHintLayout {
     /// margins and no more fully off the view. A tie keeps the earlier one.
     public static func stackPills(_ hints: [Hint], in viewRect: CGRect, options: Options) -> [PlacedPill] {
         let projected = hints.compactMap { hint -> Projected? in
-            guard let placement = BoardWayfinding.hintPlacement(
-                cardCenterView: hint.centerView, viewRect: viewRect, inset: options.edgeInset
-            ) else { return nil }
+            guard
+                let placement = BoardWayfinding.hintPlacement(
+                    cardCenterView: hint.centerView, viewRect: viewRect, inset: options.edgeInset
+                )
+            else { return nil }
             return Projected(hint: hint, placement: placement, size: options.pillSize(hint))
         }
 
         var placed: [PlacedPill] = []
         for edge in [BoardWayfinding.Edge.left, .right, .top, .bottom] {
-            let group = projected
+            let group =
+                projected
                 .filter { $0.placement.edge == edge }
                 .enumerated()
                 .sorted { ($0.element.placement.along, $0.offset) < ($1.element.placement.along, $1.offset) }
@@ -91,7 +94,8 @@ extension OffscreenHintLayout {
             var best = short.dropFirst().reduce(short[0], keepBetter)
             // With no pill covered, no later placing can be better.
             if best.covered > 0 {
-                best = placings(group, on: edge, in: viewRect, options: options, lastGapFits: true).reduce(best, keepBetter)
+                best = placings(group, on: edge, in: viewRect, options: options, lastGapFits: true).reduce(
+                    best, keepBetter)
             }
             placed += best.pills
         }
@@ -127,7 +131,10 @@ extension OffscreenHintLayout {
     ) -> [Pass] {
         let forward = place(group, on: edge, in: viewRect, options: options, from: nil, lastGapFits: lastGapFits)
         guard forward.underChrome > 0 else { return [forward] }
-        return [forward, place(group, on: edge, in: viewRect, options: options, from: forward.pills, lastGapFits: lastGapFits)]
+        return [
+            forward,
+            place(group, on: edge, in: viewRect, options: options, from: forward.pills, lastGapFits: lastGapFits),
+        ]
     }
 
     /// Places one edge's pills, sorted along it. A backward pass — `from` the
@@ -160,16 +167,20 @@ extension OffscreenHintLayout {
             case .top: crossPos = viewRect.minY + options.edgeMargin
             case .bottom: crossPos = viewRect.maxY - size.height - options.edgeMargin
             }
-            let band = vertical
+            let band =
+                vertical
                 ? CGRect(x: crossPos, y: viewRect.minY, width: size.width, height: viewRect.height)
                 : CGRect(x: viewRect.minX, y: crossPos, width: viewRect.width, height: size.height)
-            let obstacleIntervals = blockers
+            let obstacleIntervals =
+                blockers
                 .filter { Placement.rectsIntersect(band, $0) }
-                .map { vertical
-                    ? Interval(lo: $0.minY - options.stackGap, hi: $0.maxY + options.stackGap)
-                    : Interval(lo: $0.minX - options.stackGap, hi: $0.maxX + options.stackGap)
+                .map {
+                    vertical
+                        ? Interval(lo: $0.minY - options.stackGap, hi: $0.maxY + options.stackGap)
+                        : Interval(lo: $0.minX - options.stackGap, hi: $0.maxX + options.stackGap)
                 }
-            let desired = seeds.map { vertical ? $0[index].top : $0[index].left }
+            let desired =
+                seeds.map { vertical ? $0[index].top : $0[index].left }
                 ?? BoardWayfinding.clamp(item.placement.along - length / 2, posLo, posHi)
             // A mirrored start: the far end of the span, negated.
             let mirror = { (start: CGFloat) in backward ? -(start + length) : start }
@@ -190,16 +201,17 @@ extension OffscreenHintLayout {
             )
             let occluded = options.obstacles.contains { Placement.rectsIntersect(rect, $0) }
             let underChrome = options.chrome.contains { Placement.rectsIntersect(rect, $0) }
-            pass.pills.append(PlacedPill(
-                cardID: item.hint.cardID,
-                signal: item.hint.signal,
-                label: item.hint.label,
-                edge: edge,
-                arrow: edge.arrow,
-                left: rect.minX,
-                top: rect.minY,
-                occluded: occluded
-            ))
+            pass.pills.append(
+                PlacedPill(
+                    cardID: item.hint.cardID,
+                    signal: item.hint.signal,
+                    label: item.hint.label,
+                    edge: edge,
+                    arrow: edge.arrow,
+                    left: rect.minX,
+                    top: rect.minY,
+                    occluded: occluded
+                ))
             if underChrome { pass.underChrome += 1 }
             if underChrome || occluded { pass.covered += 1 }
             if pos < posLo || pos > posHi { pass.outside += 1 }

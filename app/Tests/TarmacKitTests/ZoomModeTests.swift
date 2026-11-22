@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Spec 2607.0006 S1 — the magnify-or-reveal decision for an HTML card from its
@@ -36,7 +37,9 @@ final class ZoomModeTests: XCTestCase {
     // the host's per-load state never resets and its `ready` arrives with a mode
     // already in force. `magnify` is true whenever the host should answer the
     // ready with the frozen magnification; its factor is the view layer's.
-    private func logLine(_ mode: ZoomMode) -> String { "zoom-mode declared=\(mode.rawValue) effective=\(mode.rawValue)" }
+    private func logLine(_ mode: ZoomMode) -> String {
+        "zoom-mode declared=\(mode.rawValue) effective=\(mode.rawValue)"
+    }
 
     private func ready(_ inForce: ZoomMode?, _ meta: String?) -> ZoomMode.ReadyActions {
         ZoomMode.ready(inForce: inForce, meta: meta)

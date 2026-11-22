@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// What a `doc_opened` does to a board: every open lands a card, whoever
@@ -43,8 +44,10 @@ final class DocLandingTests: XCTestCase {
     }
 
     func testAReopenSomeOtherWayLeavesTheFreshMarkAsItWas() {
-        XCTAssertEqual(DocLanding.decide(onBoard: true, via: "user", termID: nil, wasFresh: true), .refresh(fresh: true))
-        XCTAssertEqual(DocLanding.decide(onBoard: true, via: "user", termID: nil, wasFresh: false), .refresh(fresh: false))
+        XCTAssertEqual(
+            DocLanding.decide(onBoard: true, via: "user", termID: nil, wasFresh: true), .refresh(fresh: true))
+        XCTAssertEqual(
+            DocLanding.decide(onBoard: true, via: "user", termID: nil, wasFresh: false), .refresh(fresh: false))
     }
 
     // MARK: - owner

@@ -72,7 +72,9 @@ public enum ImageProtocol {
     }
 
     /// 404 if the file could not be read, otherwise 200 with its bytes untouched.
-    public static func respond(path: String, contentType: String, contents: Result<Data, any Error>) -> CardProtocol.Response {
+    public static func respond(path: String, contentType: String, contents: Result<Data, any Error>)
+        -> CardProtocol.Response
+    {
         switch contents {
         case .failure(let error):
             return CardProtocol.unreadable(path: path, reason: error.localizedDescription)

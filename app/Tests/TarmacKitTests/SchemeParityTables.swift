@@ -17,7 +17,10 @@ enum SchemeParityTables {
         ("tarmac-card://doc/", "tarmac-card://doc/?v=1", .err("empty path")),
         ("tarmac-card://doc/", "tarmac-card://doc/", .err("empty path")),
         ("tarmac-card://doc/", "tarmac-card://doc/?", .err("empty path")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%FF?v=1", .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%FF?v=1",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")
+        ),
         ("tarmac-card://doc/", "tarmac-card://doc/a%zzb", .ok("a%zzb")),
         ("tarmac-card://doc/", "tarmac-card://doc/a%", .ok("a%")),
         ("tarmac-card://doc/", "tarmac-card://doc/a%4", .ok("a%4")),
@@ -31,52 +34,133 @@ enum SchemeParityTables {
         ("tarmac-card://doc/", "tarmac-card://doc/\u{301}x.html", .ok("\u{301}x.html")),
         ("tarmac-card://doc/", "tarmac-card://doc/%CC%81x", .ok("\u{301}x")),
         ("tarmac-card://doc/", "tarmac-card://doc/%00a", .ok("\0a")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%E2%82", .err("invalid UTF-8 in path: incomplete utf-8 byte sequence from index 0")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%E2%82x", .err("invalid UTF-8 in path: invalid utf-8 sequence of 2 bytes from index 0")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%C0%80", .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%ED%A0%80", .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%F4%90%80%80", .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")),
-        ("tarmac-card://doc/", "tarmac-card://doc/ok%80", .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 2")),
-        ("tarmac-card://doc/", "tarmac-card://doc/ab%FFcd", .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 2")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%F0%9F%98", .err("invalid UTF-8 in path: incomplete utf-8 byte sequence from index 0")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%F0%28%8C%28", .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%E2%82",
+            .err("invalid UTF-8 in path: incomplete utf-8 byte sequence from index 0")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%E2%82x",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 2 bytes from index 0")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%C0%80",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%ED%A0%80",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%F4%90%80%80",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/ok%80",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 2")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/ab%FFcd",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 2")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%F0%9F%98",
+            .err("invalid UTF-8 in path: incomplete utf-8 byte sequence from index 0")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%F0%28%8C%28",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")
+        ),
         ("tarmac-card://doc/", "tarmac-card://doc/%F0%9F%98%80", .ok("\u{1f600}")),
         ("tarmac-card://doc/", "tarmac-card://doc/%EF%BB%BFa", .ok("\u{feff}a")),
         ("tarmac-card://doc/", "tarmac-card://doc/%E5%9C%96%E8%A1%A8.html", .ok("\u{5716}\u{8868}.html")),
         ("tarmac-card://doc/", "tarmac-card://doc/\u{5716}\u{8868}.html", .ok("\u{5716}\u{8868}.html")),
         ("tarmac-card://doc/", "tarmac-card://doc//x", .ok("/x")),
         ("tarmac-card://doc/", "tarmac-card://doc/%2F%2Fx", .ok("//x")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%2FUsers%2Fme%2Fmy-doc_v1.2%20(draft)!~*'.html?v=1700000000000", .ok("/Users/me/my-doc_v1.2 (draft)!~*'.html")),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%2FUsers%2Fme%2Fmy-doc_v1.2%20(draft)!~*'.html?v=1700000000000",
+            .ok("/Users/me/my-doc_v1.2 (draft)!~*'.html")
+        ),
         ("tarmac-card://doc/", "TARMAC-CARD://doc/x", .err("malformed tarmac-card URI: TARMAC-CARD://doc/x")),
         ("tarmac-card://doc/", "tarmac-card://DOC/x", .err("malformed tarmac-card URI: tarmac-card://DOC/x")),
         ("tarmac-card://doc/", "tarmac-card://doc", .err("malformed tarmac-card URI: tarmac-card://doc")),
         ("tarmac-card://doc/", "tarmac-card:/doc/x", .err("malformed tarmac-card URI: tarmac-card:/doc/x")),
         ("tarmac-card://doc/", "tarmac-card://img/x.png", .err("malformed tarmac-card URI: tarmac-card://img/x.png")),
-        ("tarmac-card://doc/", "tarmac-card://other/foo.html", .err("malformed tarmac-card URI: tarmac-card://other/foo.html")),
+        (
+            "tarmac-card://doc/", "tarmac-card://other/foo.html",
+            .err("malformed tarmac-card URI: tarmac-card://other/foo.html")
+        ),
         ("tarmac-card://doc/", "https://doc/foo.html", .err("malformed tarmac-card URI: https://doc/foo.html")),
         ("tarmac-card://doc/", "", .err("malformed tarmac-card URI: ")),
         ("tarmac-card://img/", "tarmac-card://img/%2Fd%2Fx.png?v=1", .ok("/d/x.png")),
         ("tarmac-card://img/", "tarmac-card://img/?v=1", .err("empty path")),
-        ("tarmac-card://img/", "tarmac-card://img/%FF?v=1", .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")),
-        ("tarmac-card://img/", "tarmac-card://doc/x.png?v=1", .err("malformed tarmac-card URI: tarmac-card://doc/x.png?v=1")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%E0%80%AF", .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%E0%9F%80", .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")),
+        (
+            "tarmac-card://img/", "tarmac-card://img/%FF?v=1",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")
+        ),
+        (
+            "tarmac-card://img/", "tarmac-card://doc/x.png?v=1",
+            .err("malformed tarmac-card URI: tarmac-card://doc/x.png?v=1")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%E0%80%AF",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%E0%9F%80",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")
+        ),
         ("tarmac-card://doc/", "tarmac-card://doc/%E0%A0%80", .ok("\u{800}")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%F0%80%80%AF", .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%F0%8F%BF%BF", .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%F0%80%80%AF",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%F0%8F%BF%BF",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")
+        ),
         ("tarmac-card://doc/", "tarmac-card://doc/%F0%90%80%80", .ok("\u{10000}")),
         ("tarmac-card://doc/", "tarmac-card://doc/%F4%8F%BF%BF", .ok("\u{10ffff}")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%F4%90%80%80", .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%F4%90%80%80",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")
+        ),
         ("tarmac-card://doc/", "tarmac-card://doc/%ED%9F%BF", .ok("\u{d7ff}")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%F0%9F%41%80", .err("invalid UTF-8 in path: invalid utf-8 sequence of 2 bytes from index 0")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%F0%9F%98%41", .err("invalid UTF-8 in path: invalid utf-8 sequence of 3 bytes from index 0")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%E2%82%41", .err("invalid UTF-8 in path: invalid utf-8 sequence of 2 bytes from index 0")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%F5%80%80%80", .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%C2%41", .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%C1%BF", .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%80", .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")),
-        ("tarmac-card://doc/", "tarmac-card://doc/%F1%80%80", .err("invalid UTF-8 in path: incomplete utf-8 byte sequence from index 0")),
-        ("tarmac-card://doc/", "tarmac-card://doc/x%F1%80%80%41", .err("invalid UTF-8 in path: invalid utf-8 sequence of 3 bytes from index 1")),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%F0%9F%41%80",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 2 bytes from index 0")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%F0%9F%98%41",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 3 bytes from index 0")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%E2%82%41",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 2 bytes from index 0")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%F5%80%80%80",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%C2%41",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%C1%BF",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%80",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 1 bytes from index 0")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/%F1%80%80",
+            .err("invalid UTF-8 in path: incomplete utf-8 byte sequence from index 0")
+        ),
+        (
+            "tarmac-card://doc/", "tarmac-card://doc/x%F1%80%80%41",
+            .err("invalid UTF-8 in path: invalid utf-8 sequence of 3 bytes from index 1")
+        ),
     ]
 
     static let extensions: [(path: String, ext: String?, contentType: String?)] = [

@@ -1,6 +1,7 @@
 import AppKit
 import CoreText
 import XCTest
+
 @testable import TarmacTerm
 
 final class TerminalFontsTests: XCTestCase {
@@ -23,10 +24,11 @@ final class TerminalFontsTests: XCTestCase {
     /// How far the top of a vertical bar is drawn to the right of its foot, in pixels.
     private func lean(of font: CTFont) throws -> Int {
         let side = 64
-        let context = try XCTUnwrap(CGContext(
-            data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side,
-            space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue
-        ))
+        let context = try XCTUnwrap(
+            CGContext(
+                data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side,
+                space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue
+            ))
         var character: UniChar = 0x7c
         var glyph = CGGlyph(0)
         CTFontGetGlyphsForCharacters(font, &character, &glyph, 1)
@@ -36,7 +38,8 @@ final class TerminalFontsTests: XCTestCase {
         let pixels = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
         func firstInk(inRow row: Int) -> Int? { (0..<side).first { pixels[row * side + $0] > 127 } }
         let inked = (0..<side).filter { firstInk(inRow: $0) != nil }
-        let top = try XCTUnwrap(inked.first.flatMap(firstInk)), foot = try XCTUnwrap(inked.last.flatMap(firstInk))
+        let top = try XCTUnwrap(inked.first.flatMap(firstInk))
+        let foot = try XCTUnwrap(inked.last.flatMap(firstInk))
         return top - foot
     }
 
@@ -89,7 +92,8 @@ final class TerminalFontsTests: XCTestCase {
     /// PT Mono has a bold and no italic.
     func testASlantedBoldItalicIsTheBoldFace() throws {
         let ptMono = fonts("PT Mono")
-        try XCTSkipUnless(CTFontCopyPostScriptName(ptMono.regular) as String == "PTMono-Regular", "PT Mono is not installed")
+        try XCTSkipUnless(
+            CTFontCopyPostScriptName(ptMono.regular) as String == "PTMono-Regular", "PT Mono is not installed")
         XCTAssertTrue(CTFontGetSymbolicTraits(ptMono.boldItalic).contains(.traitBold))
         XCTAssertFalse(CTFontGetSymbolicTraits(ptMono.italic).contains(.traitBold))
         XCTAssertGreaterThanOrEqual(try lean(of: ptMono.boldItalic), 2)

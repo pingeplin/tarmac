@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// Spec 2611.0013 S26: the inbox panel's strip and the board area it leaves.
@@ -19,7 +20,8 @@ final class InboxPanelLayoutTests: XCTestCase {
     }
 
     func testS26TheUncoveredAreaIsTheAreaLeftOfTheOpenPanel() {
-        XCTAssertEqual(InboxPanelLayout.uncovered(area, open: true, maxWidth: cap), CGRect(x: 0, y: 0, width: 740, height: 673))
+        XCTAssertEqual(
+            InboxPanelLayout.uncovered(area, open: true, maxWidth: cap), CGRect(x: 0, y: 0, width: 740, height: 673))
         XCTAssertEqual(InboxPanelLayout.uncovered(area, open: false, maxWidth: cap), area)
     }
 
@@ -46,9 +48,12 @@ final class InboxPanelLayoutTests: XCTestCase {
         let hint = OffscreenHintLayout.Hint(
             cardID: "T", centerView: CGPoint(x: 800, y: 300), signal: .bell, label: .literal("T"), z: 0, signalAt: 1
         )
-        let open = OffscreenHintLayout.stackPills([hint], in: InboxPanelLayout.uncovered(area, open: true, maxWidth: cap), options: options)
+        let open = OffscreenHintLayout.stackPills(
+            [hint], in: InboxPanelLayout.uncovered(area, open: true, maxWidth: cap), options: options)
         XCTAssertEqual(open.map(\.edge), [.right])
         XCTAssertEqual(open.first.map { $0.left + 80 }, 740 - 8)
-        XCTAssertEqual(OffscreenHintLayout.stackPills([hint], in: InboxPanelLayout.uncovered(area, open: false, maxWidth: cap), options: options), [])
+        XCTAssertEqual(
+            OffscreenHintLayout.stackPills(
+                [hint], in: InboxPanelLayout.uncovered(area, open: false, maxWidth: cap), options: options), [])
     }
 }

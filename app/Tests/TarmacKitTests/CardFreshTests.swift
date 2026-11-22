@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Fresh is set by a `tarmac open` and by nothing else an open can carry.

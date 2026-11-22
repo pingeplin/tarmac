@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// A drag of the scroll thumb: the inverse of `ScrollIndicator.thumb` (spec
@@ -48,10 +49,11 @@ final class ScrollDragTests: XCTestCase {
                     let thumb = try XCTUnwrap(ScrollIndicator.thumb(metrics(wanted), track: 268))
                     let top = body.minY + (ScrollIndicator.inset + thumb.y) * zoom
                     let drag = ScrollDrag(pointerY: top + 7, thumb: CGRect(x: 0, y: top, width: 10, height: 1))
-                    let answer = try XCTUnwrap(drag.offset(
-                        pointerY: top + 7, metrics: metrics(0), body: body, covered: 0,
-                        scale: scale(zoom, backing: backing)
-                    ))
+                    let answer = try XCTUnwrap(
+                        drag.offset(
+                            pointerY: top + 7, metrics: metrics(0), body: body, covered: 0,
+                            scale: scale(zoom, backing: backing)
+                        ))
                     XCTAssertEqual(answer, wanted, accuracy: 1e-9, "zoom \(zoom), backing \(backing)")
                 }
             }

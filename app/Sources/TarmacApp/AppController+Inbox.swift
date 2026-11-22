@@ -130,14 +130,15 @@ extension AppController {
             )
         }
         let selected = items.firstIndex { $0.id == inboxState.selected }
-        rootView.inboxPanel.render(InboxPanelView.Model(
-            unread: inbox.unreadCount,
-            filter: inboxState.filter,
-            rows: rowsShown,
-            selected: inboxState.selected,
-            preview: selected.map { InboxCopy.preview(items[$0], place: rowsShown[$0].place, nowMs: now) },
-            gripFocused: inboxState.focus == .grip
-        ))
+        rootView.inboxPanel.render(
+            InboxPanelView.Model(
+                unread: inbox.unreadCount,
+                filter: inboxState.filter,
+                rows: rowsShown,
+                selected: inboxState.selected,
+                preview: selected.map { InboxCopy.preview(items[$0], place: rowsShown[$0].place, nowMs: now) },
+                gripFocused: inboxState.focus == .grip
+            ))
     }
 
     /// A click on a row (spec 2611.0018 D5): it selects and previews; a

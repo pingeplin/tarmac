@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// The resize hit areas: eight always-live zones in screen points, one fewer
@@ -30,22 +31,33 @@ final class CardHandlesTests: XCTestCase {
     // MARK: - Zones
 
     func testCornersAreTwentyPointSquaresAtTheCardCorners() {
-        XCTAssertEqual(CardHandles.zone(.topLeft, cardSize: size, hasClose: false), CGRect(x: 0, y: 0, width: 20, height: 20))
-        XCTAssertEqual(CardHandles.zone(.topRight, cardSize: size, hasClose: false), CGRect(x: 180, y: 0, width: 20, height: 20))
-        XCTAssertEqual(CardHandles.zone(.bottomLeft, cardSize: size, hasClose: false), CGRect(x: 0, y: 100, width: 20, height: 20))
-        XCTAssertEqual(CardHandles.zone(.bottomRight, cardSize: size, hasClose: false), CGRect(x: 180, y: 100, width: 20, height: 20))
+        XCTAssertEqual(
+            CardHandles.zone(.topLeft, cardSize: size, hasClose: false), CGRect(x: 0, y: 0, width: 20, height: 20))
+        XCTAssertEqual(
+            CardHandles.zone(.topRight, cardSize: size, hasClose: false), CGRect(x: 180, y: 0, width: 20, height: 20))
+        XCTAssertEqual(
+            CardHandles.zone(.bottomLeft, cardSize: size, hasClose: false), CGRect(x: 0, y: 100, width: 20, height: 20))
+        XCTAssertEqual(
+            CardHandles.zone(.bottomRight, cardSize: size, hasClose: false),
+            CGRect(x: 180, y: 100, width: 20, height: 20))
     }
 
     func testEdgeStripsAreSixThickAndStopTwentyShortOfEachCorner() {
-        XCTAssertEqual(CardHandles.zone(.top, cardSize: size, hasClose: false), CGRect(x: 20, y: 0, width: 160, height: 6))
-        XCTAssertEqual(CardHandles.zone(.bottom, cardSize: size, hasClose: false), CGRect(x: 20, y: 114, width: 160, height: 6))
-        XCTAssertEqual(CardHandles.zone(.left, cardSize: size, hasClose: false), CGRect(x: 0, y: 20, width: 6, height: 80))
-        XCTAssertEqual(CardHandles.zone(.right, cardSize: size, hasClose: false), CGRect(x: 194, y: 20, width: 6, height: 80))
+        XCTAssertEqual(
+            CardHandles.zone(.top, cardSize: size, hasClose: false), CGRect(x: 20, y: 0, width: 160, height: 6))
+        XCTAssertEqual(
+            CardHandles.zone(.bottom, cardSize: size, hasClose: false), CGRect(x: 20, y: 114, width: 160, height: 6))
+        XCTAssertEqual(
+            CardHandles.zone(.left, cardSize: size, hasClose: false), CGRect(x: 0, y: 20, width: 6, height: 80))
+        XCTAssertEqual(
+            CardHandles.zone(.right, cardSize: size, hasClose: false), CGRect(x: 194, y: 20, width: 6, height: 80))
     }
 
     func testTheTopStripStopsThirtyTwoShortOfTheRightEdgeBesideACloseButton() {
-        XCTAssertEqual(CardHandles.zone(.top, cardSize: size, hasClose: true), CGRect(x: 20, y: 0, width: 148, height: 6))
-        XCTAssertEqual(CardHandles.zone(.bottom, cardSize: size, hasClose: true), CGRect(x: 20, y: 114, width: 160, height: 6))
+        XCTAssertEqual(
+            CardHandles.zone(.top, cardSize: size, hasClose: true), CGRect(x: 20, y: 0, width: 148, height: 6))
+        XCTAssertEqual(
+            CardHandles.zone(.bottom, cardSize: size, hasClose: true), CGRect(x: 20, y: 114, width: 160, height: 6))
     }
 
     func testTheTopRightCornerHasNoZoneBesideACloseButton() {

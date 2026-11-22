@@ -105,7 +105,8 @@ public enum LayoutTiles {
                 termID: term.termID
             )
         }
-        let docTiles = docs
+        let docTiles =
+            docs
             .sorted { $0.path.utf16.lexicographicallyPrecedes($1.path.utf16) }
             .map { doc in
                 LayoutTile(
@@ -135,10 +136,11 @@ public enum LayoutTiles {
                 terms.append(ParsedTerm(termID: tile.termID, frame: frame(of: tile), z: tile.z ?? 0))
             case "doc":
                 guard let path = tile.path, tile.shelf != true else { continue }
-                docs.append(ParsedDoc(
-                    path: path, frame: frame(of: tile), z: tile.z ?? 0, attached: tile.loose != true,
-                    sidebar: DocSidebar.restored(width: tile.sidebarW, open: tile.sidebarOpen)
-                ))
+                docs.append(
+                    ParsedDoc(
+                        path: path, frame: frame(of: tile), z: tile.z ?? 0, attached: tile.loose != true,
+                        sidebar: DocSidebar.restored(width: tile.sidebarW, open: tile.sidebarOpen)
+                    ))
             default:
                 continue
             }

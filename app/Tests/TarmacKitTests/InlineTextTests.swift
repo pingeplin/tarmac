@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Spec 2611.0017 D7, D10: a line of runs in its normal form, and its cuts.

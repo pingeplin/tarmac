@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// The overlay-level offscreen-hint logic: the single ⏎-fly target,
@@ -32,7 +33,8 @@ final class OffscreenHintLayoutTests: XCTestCase {
     func testS24TheRankWinsWhateverTheZ() {
         XCTAssertEqual(Layout.flyTarget([hint("live", .zero, .live, 5000), hint("bell", .zero, .bell, 0)]), "bell")
         XCTAssertEqual(Layout.flyTarget([hint("done", .zero, .done, 9), hint("exit", .zero, .exit, 1)]), "exit")
-        XCTAssertEqual(Layout.flyTarget([hint("blocked", .zero, .blocked, 1), hint("bell", .zero, .bell, 9)]), "blocked")
+        XCTAssertEqual(
+            Layout.flyTarget([hint("blocked", .zero, .blocked, 1), hint("bell", .zero, .bell, 9)]), "blocked")
         XCTAssertEqual(Layout.flyTarget([hint("first", .zero, .bell, 3), hint("second", .zero, .bell, 3)]), "first")
     }
 
@@ -67,14 +69,16 @@ final class OffscreenHintLayoutTests: XCTestCase {
     }
 
     func testRankComesBeforeTime() {
-        let hints = (0..<10).map { signalled("done\($0)", .done, at: 1000 + UInt64($0)) }
+        let hints =
+            (0..<10).map { signalled("done\($0)", .done, at: 1000 + UInt64($0)) }
             + [signalled("exit", .exit, at: 1)]
         XCTAssertTrue(Layout.shown(hints).map(\.cardID).contains("exit"))
         XCTAssertFalse(Layout.shown(hints).map(\.cardID).contains("done0"))
     }
 
     func testWithinARankTheNewerSignalWinsWhateverTheZ() {
-        let hints = [signalled("old", .bell, at: 5, z: 99)]
+        let hints =
+            [signalled("old", .bell, at: 5, z: 99)]
             + (0..<10).map { signalled("bell\($0)", .bell, at: 10 + UInt64($0), z: 0) }
         XCTAssertFalse(Layout.shown(hints).map(\.cardID).contains("old"))
     }
@@ -100,7 +104,8 @@ final class OffscreenHintLayoutTests: XCTestCase {
     }
 
     func testSelectShowsTheCappedPillsAndFliesToTheBestOfEveryHint() {
-        let hints = [signalled("old", .bell, at: 1, z: 99)]
+        let hints =
+            [signalled("old", .bell, at: 1, z: 99)]
             + (0..<10).map { signalled("bell\($0)", .bell, at: 10 + UInt64($0), z: 0) }
         let selection = Layout.select(hints, in: CGRect(x: 100, y: 100, width: 800, height: 600))
         XCTAssertEqual(selection.shown, Layout.shown(hints))
@@ -128,7 +133,8 @@ final class OffscreenHintLayoutTests: XCTestCase {
 
     func testAnOnScreenCardIsNeverTheFlyTarget() {
         let selection = Layout.select(
-            [hint("on", CGPoint(x: 400, y: 300), .blocked, 9), hint("off", CGPoint(x: -50, y: 300), .live, 0)], in: screen
+            [hint("on", CGPoint(x: 400, y: 300), .blocked, 9), hint("off", CGPoint(x: -50, y: 300), .live, 0)],
+            in: screen
         )
         XCTAssertEqual(selection.flyTarget, "off")
         XCTAssertNil(Layout.select([hint("on", CGPoint(x: 400, y: 300), .blocked, 9)], in: screen).flyTarget)
@@ -212,7 +218,8 @@ final class OffscreenHintLayoutTests: XCTestCase {
     }
 
     func testS21ExactlyTwentyFourRenderedScalarsAreNotCut() {
-        XCTAssertEqual(pill("**abcdefghijklmnopqrstuvwx**").runs, [p("claude · “"), b("abcdefghijklmnopqrstuvwx"), p("”")])
+        XCTAssertEqual(
+            pill("**abcdefghijklmnopqrstuvwx**").runs, [p("claude · “"), b("abcdefghijklmnopqrstuvwx"), p("”")])
     }
 
     func testS23OtherPillKindsAreOnePlainRunOfTodaysString() {
@@ -482,7 +489,8 @@ final class OffscreenHintLayoutTests: XCTestCase {
         let options = Layout.Options(
             edgeInset: 18, edgeMargin: 10, stackGap: 8, pillSize: { _ in size }, obstacles: obstacles
         )
-        let hint = Layout.Hint(cardID: "h", centerView: center, signal: .live, label: .literal("h"), z: 0, signalAt: nil)
+        let hint = Layout.Hint(
+            cardID: "h", centerView: center, signal: .live, label: .literal("h"), z: 0, signalAt: nil)
         return try XCTUnwrap(Layout.stackPills([hint], in: view, options: options).first)
     }
 
@@ -558,7 +566,8 @@ final class OffscreenHintLayoutTests: XCTestCase {
                     Placement.rectsIntersect(placed, rect), "\(pill.cardID) is under \(rect)", file: file, line: line
                 )
             }
-            XCTAssertTrue(view.insetBy(dx: 10, dy: 10).contains(placed), "\(pill.cardID) left the view", file: file, line: line)
+            XCTAssertTrue(
+                view.insetBy(dx: 10, dy: 10).contains(placed), "\(pill.cardID) left the view", file: file, line: line)
         }
         for i in rects.indices {
             for j in rects.indices where j > i {
@@ -601,7 +610,8 @@ final class OffscreenHintLayoutTests: XCTestCase {
         )
         XCTAssertEqual(pills.count, 2)
         assertClear(pills, of: [minimap])
-        XCTAssertEqual(pills.sorted { $0.left < $1.left }.map(\.cardID), ["a", "b"], "the order along the edge is kept")
+        XCTAssertEqual(
+            pills.sorted { $0.left < $1.left }.map(\.cardID), ["a", "b"], "the order along the edge is kept")
     }
 
     func testTwoBottomPillsAtTheLeftCornerStayInTheView() {
@@ -641,7 +651,8 @@ final class OffscreenHintLayoutTests: XCTestCase {
     func testABottomPillDoesNotShiftLeftUnderTheZoomControl() throws {
         let card = CGRect(x: 100, y: 600, width: 600, height: 300)
         let pill = try XCTUnwrap(
-            stack([hint("b", CGPoint(x: 680, y: 2000), .live, 0)], obstacles: [card], chrome: [minimap, zoomControl]).first
+            stack([hint("b", CGPoint(x: 680, y: 2000), .live, 0)], obstacles: [card], chrome: [minimap, zoomControl])
+                .first
         )
         XCTAssertEqual(pill.left, 708, "card.maxX + stackGap")
         assertClear([pill], of: [minimap, zoomControl])
@@ -740,7 +751,8 @@ final class OffscreenHintLayoutTests: XCTestCase {
     /// card and none off the view stays.
     func testTheLastGapNeverPushesASiblingOffTheView() {
         let card = CGRect(x: -50, y: -20, width: 892, height: 300)
-        let pills = stack([100, 300, 930].map { hint("t\(Int($0))", CGPoint(x: $0, y: -2000), .live, 0) }, obstacles: [card])
+        let pills = stack(
+            [100, 300, 930].map { hint("t\(Int($0))", CGPoint(x: $0, y: -2000), .live, 0) }, obstacles: [card])
         XCTAssertEqual(pills.count, 3)
         XCTAssertEqual(offView(pills), 0)
         XCTAssertEqual(pills.filter(\.occluded).count, 2)
@@ -748,7 +760,8 @@ final class OffscreenHintLayoutTests: XCTestCase {
 
     func testTheLastGapPushesNoMorePillsOffTheViewThanBefore() {
         let card = CGRect(x: 898, y: -48, width: 700, height: 440)
-        let pills = stack([880, 894, 919].map { hint("t\(Int($0))", CGPoint(x: $0, y: -2000), .live, 0) }, obstacles: [card])
+        let pills = stack(
+            [880, 894, 919].map { hint("t\(Int($0))", CGPoint(x: $0, y: -2000), .live, 0) }, obstacles: [card])
         XCTAssertEqual(pills.count, 3)
         XCTAssertEqual(offView(pills), 1)
         XCTAssertEqual(pills.filter(\.occluded).count, 1)
@@ -767,7 +780,9 @@ final class OffscreenHintLayoutTests: XCTestCase {
         ]
         let centres: [String: CGFloat] = ["p0": 1, "p1": -141, "p2": 229, "p3": 784, "p4": 75, "p5": 429, "p6": 353]
         let hints = centres.keys.sorted().map { hint($0, CGPoint(x: centres[$0]!, y: 2000), .live, 0) }
-        let cards = [CGRect(x: -332, y: 644, width: 924, height: 611), CGRect(x: -332, y: 529, width: 731, height: 313)]
+        let cards = [
+            CGRect(x: -332, y: 644, width: 924, height: 611), CGRect(x: -332, y: 529, width: 731, height: 313),
+        ]
         let options = Layout.Options(
             edgeInset: 18, edgeMargin: 10, stackGap: 8, pillSize: { sizes[$0.cardID]! }, obstacles: cards
         )
@@ -796,7 +811,9 @@ final class OffscreenHintLayoutTests: XCTestCase {
             [hint("a", CGPoint(x: 3000, y: 683), .live, 0), hint("b", CGPoint(x: 3000, y: 588), .live, 0)],
             obstacles: [card], chrome: [zoomControl, minimap]
         )
-        XCTAssertEqual(pills.map(\.top).sorted(), [63 - 8 - 24, 700 - 8 - 24], "card.minY and minimap.minY, less stackGap and height")
+        XCTAssertEqual(
+            pills.map(\.top).sorted(), [63 - 8 - 24, 700 - 8 - 24],
+            "card.minY and minimap.minY, less stackGap and height")
         assertClear(pills, of: [zoomControl, minimap])
         XCTAssertFalse(pills.contains { $0.occluded })
     }

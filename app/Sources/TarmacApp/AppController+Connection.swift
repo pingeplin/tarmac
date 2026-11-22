@@ -8,10 +8,11 @@ extension AppController {
     /// The version is the daemon's own string or nothing (`AppVersion`): a
     /// guessed one would make every launch replace the daemon.
     static func daemonClient() -> DaemonClient {
-        DaemonClient(appVersion: AppVersion.resolve(
-            bundleShortVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
-            env: ProcessInfo.processInfo.environment
-        ))
+        DaemonClient(
+            appVersion: AppVersion.resolve(
+                bundleShortVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+                env: ProcessInfo.processInfo.environment
+            ))
     }
 
     /// Handlers first, then the connection: the daemon's `board_list` and

@@ -1,5 +1,6 @@
 import JavaScriptCore
 import XCTest
+
 @testable import TarmacKit
 
 /// The three CSS properties an HTML card is given for the user's fonts
@@ -68,11 +69,16 @@ final class CardFontVariablesTests: XCTestCase {
         for name in Self.hostile {
             let json = variables(interface: name, document: name).json
             XCTAssertFalse(json.contains("<"), "< in \(name.debugDescription)")
-            XCTAssertFalse(json.contains("\u{2028}") || json.contains("\u{2029}"), "raw separator in \(name.debugDescription)")
+            XCTAssertFalse(
+                json.contains("\u{2028}") || json.contains("\u{2029}"), "raw separator in \(name.debugDescription)")
 
             let literal = try XCTUnwrap(context.evaluateScript("(\(json))"), name)
-            XCTAssertEqual(literal.forProperty(CardFontVariables.monoFont).toString(), FontCSS.interface(name), name.debugDescription)
-            XCTAssertEqual(literal.forProperty(CardFontVariables.proseFont).toString(), FontCSS.document(name), name.debugDescription)
+            XCTAssertEqual(
+                literal.forProperty(CardFontVariables.monoFont).toString(), FontCSS.interface(name),
+                name.debugDescription)
+            XCTAssertEqual(
+                literal.forProperty(CardFontVariables.proseFont).toString(), FontCSS.document(name),
+                name.debugDescription)
             XCTAssertEqual(try parsed(json)[CardFontVariables.monoFont], FontCSS.interface(name), name.debugDescription)
         }
     }
@@ -128,8 +134,11 @@ final class CardFontVariablesTests: XCTestCase {
         for name in [CardFontVariables.proseSize, CardFontVariables.proseFont, CardFontVariables.monoFont] {
             XCTAssertTrue(guide.contains(name), name)
         }
-        let section = try XCTUnwrap(guide.components(separatedBy: "### The user's fonts\n").dropFirst().first, "the section")
-        let example = try XCTUnwrap(section.components(separatedBy: "```html\n").dropFirst().first?.components(separatedBy: "```").first, "the example")
+        let section = try XCTUnwrap(
+            guide.components(separatedBy: "### The user's fonts\n").dropFirst().first, "the section")
+        let example = try XCTUnwrap(
+            section.components(separatedBy: "```html\n").dropFirst().first?.components(separatedBy: "```").first,
+            "the example")
         for name in [CardFontVariables.proseSize, CardFontVariables.proseFont, CardFontVariables.monoFont] {
             XCTAssertTrue(example.contains("var(\(name), "), "a use of \(name) with a fallback")
         }

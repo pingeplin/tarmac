@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// A board holds a selection only while it is on screen, and only of a card

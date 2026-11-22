@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// The header repo dot: present only for a doc with a repo colour.

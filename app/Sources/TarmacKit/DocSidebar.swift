@@ -58,7 +58,8 @@ public enum DocSidebar {
             case "reset": self = .reset
             case "resize":
                 guard let raw = fields["width"], case .number(let width)? = JSONValue(foundation: raw),
-                      width.isFinite, width > 0 else { return nil }
+                    width.isFinite, width > 0
+                else { return nil }
                 self = .resize(width)
             default: return nil
             }
@@ -160,11 +161,12 @@ public enum DocSidebar {
         cardWidth: Double, stored: Stored, overlayOpen: Bool, side: Side = .left
     ) -> PageState {
         let range = range(cardWidth: cardWidth)
-        let (name, shown): (String, Double) = switch mode(cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen) {
-        case .strip: ("strip", width(cardWidth: cardWidth, stored: stored))
-        case .docked(let width): ("docked", width)
-        case .overlay(let width): ("overlay", width)
-        }
+        let (name, shown): (String, Double) =
+            switch mode(cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen) {
+            case .strip: ("strip", width(cardWidth: cardWidth, stored: stored))
+            case .docked(let width): ("docked", width)
+            case .overlay(let width): ("overlay", width)
+            }
         return PageState(mode: name, width: shown, maxWidth: range.upperBound, resizable: resizable(range), side: side)
     }
 }

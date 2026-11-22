@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// 2610.0008: the detector. Each case that breaks a rule starts from Breeze

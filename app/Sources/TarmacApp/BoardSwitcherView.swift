@@ -140,7 +140,8 @@ final class BoardSwitcherView: KeyHoldingView, FontFollowing, ThemeFollowing {
             string: query.label,
             attributes: [.font: Font.queryLabel, .foregroundColor: Theme.faint, .kern: 0.8]
         )
-        queryText.attributedStringValue = query.text.isEmpty
+        queryText.attributedStringValue =
+            query.text.isEmpty
             ? NSAttributedString(
                 string: query.placeholder,
                 // The web app ships no italic face, so its italic is the
@@ -176,10 +177,11 @@ final class BoardSwitcherView: KeyHoldingView, FontFollowing, ThemeFollowing {
         if case .confirmDelete = footer { color = Theme.amber } else { color = Theme.faint }
         let text = NSMutableAttributedString()
         for run in footer.runs {
-            text.append(NSAttributedString(
-                string: run.text,
-                attributes: [.font: run.strong ? Font.footerStrong : Font.footer, .foregroundColor: color]
-            ))
+            text.append(
+                NSAttributedString(
+                    string: run.text,
+                    attributes: [.font: run.strong ? Font.footerStrong : Font.footer, .foregroundColor: color]
+                ))
         }
         return text
     }
@@ -323,10 +325,11 @@ final class BoardSwitcherRow: OverlayRowView {
         if row.isActive {
             // The mark is smaller than the name and sits on its middle.
             name.append(NSAttributedString(string: " ", attributes: [.font: Font.mark, .kern: Metric.markGap]))
-            name.append(NSAttributedString(
-                string: SwitcherChrome.activeMark,
-                attributes: [.font: Font.mark, .foregroundColor: Theme.agent, .baselineOffset: 1.5]
-            ))
+            name.append(
+                NSAttributedString(
+                    string: SwitcherChrome.activeMark,
+                    attributes: [.font: Font.mark, .foregroundColor: Theme.agent, .baselineOffset: 1.5]
+                ))
         }
         nameLabel.attributedStringValue = name
         metaLabel.attributedStringValue = NSAttributedString(

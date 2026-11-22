@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// Where a QA-driver press may land on a target (spec 2609.0015, #166; parity

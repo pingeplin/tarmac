@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 final class TermNewPlanTests: XCTestCase {
@@ -11,7 +12,8 @@ final class TermNewPlanTests: XCTestCase {
     }
 
     private func board(
-        ready: Bool = true, ownerFrame: CGRect? = nil, primeFrame: CGRect? = nil, existing: [CGRect] = [], zs: [Int] = []
+        ready: Bool = true, ownerFrame: CGRect? = nil, primeFrame: CGRect? = nil, existing: [CGRect] = [],
+        zs: [Int] = []
     ) -> TermNewPlan.Board {
         TermNewPlan.Board(ready: ready, ownerFrame: ownerFrame, primeFrame: primeFrame, existing: existing, zs: zs)
     }
@@ -23,9 +25,10 @@ final class TermNewPlanTests: XCTestCase {
 
     func testS6TheCardTakesTheFirstFreeSlotAroundItsOwnerWithTheOwnerAndTheTopZ() {
         let existing = [owner, prime]
-        let place = placed(TermNewPlan.plan(
-            request(), on: board(ownerFrame: owner, primeFrame: prime, existing: existing, zs: [2, 5])
-        ))
+        let place = placed(
+            TermNewPlan.plan(
+                request(), on: board(ownerFrame: owner, primeFrame: prime, existing: existing, zs: [2, 5])
+            ))
 
         XCTAssertEqual(place?.frame, TermPlacement.newTerminalFrame(prime: owner, existing: existing))
         XCTAssertEqual(place?.z, 6)
@@ -35,9 +38,10 @@ final class TermNewPlanTests: XCTestCase {
 
     func testS7WithNoOwnerCardTheCardIsAnchoredOnThePrimeAndHasNoOwner() {
         for ownerID in [nil, "t-not-here"] as [String?] {
-            let place = placed(TermNewPlan.plan(
-                request(owner: ownerID), on: board(primeFrame: prime, existing: [prime])
-            ))
+            let place = placed(
+                TermNewPlan.plan(
+                    request(owner: ownerID), on: board(primeFrame: prime, existing: [prime])
+                ))
 
             XCTAssertEqual(place?.frame, TermPlacement.newTerminalFrame(prime: prime, existing: [prime]))
             XCTAssertNil(place?.owner ?? nil)
@@ -69,9 +73,11 @@ final class TermNewPlanTests: XCTestCase {
     }
 
     func testS14TheInputIsTheCommandAndAReturnAsUTF8HeldAndNotTyped() {
-        let place = placed(TermNewPlan.plan(
-            TermNewPlan.Request(reqID: 1, cmd: "echo 中", cwd: "/w", ownerTermID: nil, boardID: "board-0"), on: board()
-        ))
+        let place = placed(
+            TermNewPlan.plan(
+                TermNewPlan.Request(reqID: 1, cmd: "echo 中", cwd: "/w", ownerTermID: nil, boardID: "board-0"),
+                on: board()
+            ))
 
         XCTAssertEqual(
             place?.input(termID: "t9"), .input(termID: "t9", bytes: Data("echo 中\r".utf8), typed: false, hold: true)

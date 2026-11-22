@@ -26,9 +26,10 @@ final class DocFrameRules {
         // A store of its own: the default one is a folder in the user's
         // Library, and the rule is compiled anew at every launch. One per
         // channel, so a dev build and the installed app never share a file.
-        let folder = URL(fileURLWithPath: ChannelPaths.contentRulesDir(
-            socketPath: socketPath, temporaryDirectory: FileManager.default.temporaryDirectory.path
-        ))
+        let folder = URL(
+            fileURLWithPath: ChannelPaths.contentRulesDir(
+                socketPath: socketPath, temporaryDirectory: FileManager.default.temporaryDirectory.path
+            ))
         guard let store = WKContentRuleListStore(url: folder) else {
             settle(nil)
             return

@@ -14,8 +14,8 @@ final class KeyReleasePoller {
     private var onSample: (@MainActor (Bool) -> Void)?
 
     #if DEBUG
-    /// `tarmac dev press`'s stand-in for a finger: ORed into the physical read.
-    var hold: KeyHold?
+        /// `tarmac dev press`'s stand-in for a finger: ORed into the physical read.
+        var hold: KeyHold?
     #endif
 
     func start(keyCode: UInt16, onSample: @escaping @MainActor (_ held: Bool) -> Void) {
@@ -41,7 +41,7 @@ final class KeyReleasePoller {
         guard let onSample else { return }
         var held = CGEventSource.keyState(.combinedSessionState, key: keyCode)
         #if DEBUG
-        held = held || (hold?.holds(keyCode, nowMs: Uptime.nowMs) ?? false)
+            held = held || (hold?.holds(keyCode, nowMs: Uptime.nowMs) ?? false)
         #endif
         onSample(held)
     }

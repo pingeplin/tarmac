@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// `tarmac dev snapshot --until <expr>` (spec 2609.0015, #166): a tiny,
@@ -234,7 +235,8 @@ final class DevUntilTests: XCTestCase {
         XCTAssertEqual(try DevUntil.parse("a.b == 1"), DevUntil.Expression(path: "a.b", op: .equal, value: 1))
         XCTAssertEqual(try DevUntil.parse("a.b != 1"), DevUntil.Expression(path: "a.b", op: .notEqual, value: 1))
         XCTAssertEqual(try DevUntil.parse("a.b ~= 1"), DevUntil.Expression(path: "a.b", op: .approximately, value: 1))
-        XCTAssertEqual(try DevUntil.parse(#"a.b contains "x""#), DevUntil.Expression(path: "a.b", op: .contains, value: "x"))
+        XCTAssertEqual(
+            try DevUntil.parse(#"a.b contains "x""#), DevUntil.Expression(path: "a.b", op: .contains, value: "x"))
     }
 
     func testSurroundingWhitespaceAndMissingSpacesAroundASymbolicOperatorAreFine() throws {
@@ -244,7 +246,8 @@ final class DevUntilTests: XCTestCase {
     /// `contains` is a word and needs whitespace on both sides, so a path that ends
     /// in it is still a path.
     func testAPathEndingInContainsIsNotMistakenForTheOperator() throws {
-        XCTAssertEqual(try DevUntil.parse("a.contains == 1"), DevUntil.Expression(path: "a.contains", op: .equal, value: 1))
+        XCTAssertEqual(
+            try DevUntil.parse("a.contains == 1"), DevUntil.Expression(path: "a.contains", op: .equal, value: 1))
     }
 
     func testTheNumericToleranceIsOne() {

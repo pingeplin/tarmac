@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// S6, S7, S11, S12: the switcher's strings.
@@ -93,6 +94,7 @@ final class SwitcherChromeTests: XCTestCase {
     }
 
     func testTheConfirmFooterNamesTheLabelNotTheSlug() {
-        XCTAssertEqual(SwitcherChrome.footer(State(selected: 0, confirmingDelete: true), rows: rows), .confirmDelete("alpha"))
+        XCTAssertEqual(
+            SwitcherChrome.footer(State(selected: 0, confirmingDelete: true), rows: rows), .confirmDelete("alpha"))
     }
 }

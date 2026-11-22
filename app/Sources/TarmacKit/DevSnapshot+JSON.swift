@@ -28,12 +28,13 @@ extension DevSnapshot {
             } ?? .null,
             "inbox": inbox(input.inbox),
             "toasts": .array(input.toasts.map(JSONValue.string)),
-            "hints": .array(input.hints.map { hint in
-                [
-                    "card": .string(hint.card), "signal": .string(hint.signal.rawValue),
-                    "edge": .string(hint.edge.rawValue),
-                ]
-            }),
+            "hints": .array(
+                input.hints.map { hint in
+                    [
+                        "card": .string(hint.card), "signal": .string(hint.signal.rawValue),
+                        "edge": .string(hint.edge.rawValue),
+                    ]
+                }),
         ]
     }
 
@@ -44,12 +45,14 @@ extension DevSnapshot {
             "badge": .string(InboxBadge.text(unread: facts.unread)),
             "filter": .string(facts.filter.rawValue),
             "selected": selected.map { ["kind": .string(InboxCopy.tag($0.kind)), "term": .string($0.termID)] } ?? .null,
-            "items": .array(facts.items.map { item in
-                [
-                    "kind": .string(InboxCopy.tag(item.kind)), "term": .string(item.termID),
-                    "board": .string(item.boardID), "read": .bool(item.read), "title": .string(InboxCopy.title(item)),
-                ]
-            }),
+            "items": .array(
+                facts.items.map { item in
+                    [
+                        "kind": .string(InboxCopy.tag(item.kind)), "term": .string(item.termID),
+                        "board": .string(item.boardID), "read": .bool(item.read),
+                        "title": .string(InboxCopy.title(item)),
+                    ]
+                }),
         ]
     }
 

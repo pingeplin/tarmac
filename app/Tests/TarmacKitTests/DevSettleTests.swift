@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// How long a verb that dispatched input waits before it builds its reply

@@ -65,10 +65,11 @@ public enum CardHeaderLayout {
         let labelX = x
 
         var right = width - sidePadding
-        let trailingSpans = Array(trailing.reversed().map { itemWidth in
-            defer { right -= itemWidth + gap }
-            return Span(x: right - itemWidth, width: itemWidth)
-        }.reversed())
+        let trailingSpans = Array(
+            trailing.reversed().map { itemWidth in
+                defer { right -= itemWidth + gap }
+                return Span(x: right - itemWidth, width: itemWidth)
+            }.reversed())
 
         // The spacer is an item too, so it costs a gap of its own.
         let room = right - gap - labelX

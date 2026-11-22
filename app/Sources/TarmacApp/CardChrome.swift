@@ -419,7 +419,9 @@ final class CardHeaderView: NSView, FontFollowing, ThemeFollowing {
         paint()
 
         let controls: [NSView?] = [refreshButton, closeButton]
-        let views = [hairline, kindGlyph, repoDot, label, ownerChip, freshMeta, recency, resumeChip, reportChip, bellDot]
+        let views = [
+            hairline, kindGlyph, repoDot, label, ownerChip, freshMeta, recency, resumeChip, reportChip, bellDot,
+        ]
         for view in views + controls.compactMap({ $0 }) {
             addSubview(view)
         }

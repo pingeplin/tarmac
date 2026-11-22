@@ -95,7 +95,7 @@ extension AppController {
         guard case .term(let ownerID)? = card.ownerTermID else { return nil }
         return OwnerChip.name(ownerTermID: ownerID) { termID in
             guard let session = board.sessions[termID], session.live,
-                  board.view.card(.term(termID))?.dead == false
+                board.view.card(.term(termID))?.dead == false
             else { return nil }
             return session.label
         }

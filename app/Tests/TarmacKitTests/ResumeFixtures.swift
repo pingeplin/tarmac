@@ -1,6 +1,6 @@
 import CoreGraphics
-import XCTest
 import TarmacKit
+import XCTest
 
 extension ResumeOffer {
     /// The offer of `cmd` after `events`. A refused command or an offer that

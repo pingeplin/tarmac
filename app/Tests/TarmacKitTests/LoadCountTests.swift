@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 final class LoadCountTests: XCTestCase {

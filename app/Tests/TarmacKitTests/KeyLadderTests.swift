@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// K1, K6–K9, K12–K14, K16: which keys the app takes before the focused view.
@@ -234,7 +235,8 @@ final class KeyLadderTests: XCTestCase {
     }
 
     func testTheRestoreCardTakesCommandIBeforeTheInbox() {
-        XCTAssertEqual(KeyLadder.decide(letter("i", command), Facts(restoreCard: [], inboxOpen: true)), .restoreCard(.perCard))
+        XCTAssertEqual(
+            KeyLadder.decide(letter("i", command), Facts(restoreCard: [], inboxOpen: true)), .restoreCard(.perCard))
     }
 
     // MARK: - the console of an HTML card
@@ -396,7 +398,9 @@ final class KeyLadderTests: XCTestCase {
     private let cardUp = Facts(restoreCard: [])
 
     func testAnyKeyClosesTheRestoreCardAndReachesNothingElse() {
-        let keys = [letter("a"), letter("a", control), enter(), esc(), tab(), letter("k", command), letter("v", command)]
+        let keys = [
+            letter("a"), letter("a", control), enter(), esc(), tab(), letter("k", command), letter("v", command),
+        ]
         for key in keys {
             XCTAssertEqual(KeyLadder.decide(key, cardUp), .restoreCard(.perCard), "\(key)")
         }
@@ -469,7 +473,9 @@ final class KeyLadderTests: XCTestCase {
     func testS3PlainOrShiftedEscSkipsAllAndDoesNotClearTheToastsFirst() {
         XCTAssertEqual(KeyLadder.decide(esc(), choicesUp), .restoreCard(.skipAll))
         XCTAssertEqual(KeyLadder.decide(esc(shift), choicesUp), .restoreCard(.skipAll))
-        XCTAssertEqual(KeyLadder.decide(esc(), Facts(esc: toasts, restoreCard: [.resumeAll, .perCard, .skipAll])), .restoreCard(.skipAll))
+        XCTAssertEqual(
+            KeyLadder.decide(esc(), Facts(esc: toasts, restoreCard: [.resumeAll, .perCard, .skipAll])),
+            .restoreCard(.skipAll))
     }
 
     func testS3AnyOtherKeyDecidesPerCard() {
@@ -519,7 +525,8 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertEqual(KeyLadder.decide(repeated(enter()), latched), .swallow)
         XCTAssertEqual(KeyLadder.decide(repeated(esc()), latched), .swallow)
         XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .none, afterRun: false)), .passThrough)
-        XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .resumeQueued, afterRestoreCard: true)), .swallow)
+        XCTAssertEqual(
+            KeyLadder.decide(repeated(enter()), Facts(offer: .resumeQueued, afterRestoreCard: true)), .swallow)
     }
 
     func testS4AFreshLetterClearsTheLatch() {

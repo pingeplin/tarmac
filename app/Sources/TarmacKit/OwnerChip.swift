@@ -7,7 +7,7 @@ public enum OwnerChip {
     /// gone (exited / not on this board).
     public static func name(ownerTermID: String?, labelOf: (String) -> String?) -> String? {
         guard let ownerTermID, !ownerTermID.isEmpty,
-              let label = labelOf(ownerTermID), !label.isEmpty
+            let label = labelOf(ownerTermID), !label.isEmpty
         else { return nil }
         return label
     }

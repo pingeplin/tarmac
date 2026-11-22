@@ -14,8 +14,8 @@ struct TerminalLink: Equatable {
     var spans: [LinkSpan]
 }
 
-private extension FrameCell {
-    var isBlank: Bool { width != .spacer && text.allSatisfy(\.isWhitespace) }
+extension FrameCell {
+    fileprivate var isBlank: Bool { width != .spacer && text.allSatisfy(\.isWhitespace) }
 }
 
 /// One line of text and the cells each UTF-16 unit of it came from.
@@ -112,7 +112,8 @@ enum TerminalLinks {
         let head = next.cells[indent...].prefix { !$0.isBlank }
         let word = head.map(\.text).joined()
         guard startsWithScheme.firstMatch(in: word, range: NSRange(location: 0, length: word.utf16.count)) == nil,
-              line.lastWordColumns + head.count > next.cells.count - indent else { return nil }
+            line.lastWordColumns + head.count > next.cells.count - indent
+        else { return nil }
         return indent
     }
 
@@ -143,7 +144,8 @@ extension TerminalEngine {
         var line: GhosttyRow = 0
         var wrapped = false
         guard ghostty_grid_ref_row(&ref, &line) == GHOSTTY_SUCCESS,
-              ghostty_row_get(line, GHOSTTY_ROW_DATA_WRAP, &wrapped) == GHOSTTY_SUCCESS else { return false }
+            ghostty_row_get(line, GHOSTTY_ROW_DATA_WRAP, &wrapped) == GHOSTTY_SUCCESS
+        else { return false }
         return wrapped
     }
 }

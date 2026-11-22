@@ -142,7 +142,9 @@ final class CardView: NSView, ThemeFollowing {
         scrollThumb.liesOverADoc = docBody != nil
         scrollThumb.onPress = { [weak self] event in self?.thumbPressed(event) }
         scrollThumb.onDrag = { [weak self] event in self?.thumbDragged(event) }
-        scrollThumb.onWheel = { [weak self] event in self?.bodyView(at: event.locationInWindow)?.scrollWheel(with: event) }
+        scrollThumb.onWheel = { [weak self] event in
+            self?.bodyView(at: event.locationInWindow)?.scrollWheel(with: event)
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }

@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// `RustPathExtension` stands in for `std::path::Path::extension`, which splits
@@ -31,7 +32,8 @@ final class RustPathExtensionTests: XCTestCase {
     /// Rust splits bytes at `.`; a Swift `Character` split would fuse `.` with a
     /// following combining mark and never see the dot.
     func testSplitsOnBytesNotGraphemes() {
-        XCTAssertEqual(RustPathExtension.of("/d/x.\u{301}png").map(SchemeFixtures.bytes), SchemeFixtures.bytes("\u{301}png"))
+        XCTAssertEqual(
+            RustPathExtension.of("/d/x.\u{301}png").map(SchemeFixtures.bytes), SchemeFixtures.bytes("\u{301}png"))
         XCTAssertEqual(RustPathExtension.of("/a.txt/\u{301}.png"), "png")
     }
 }

@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// The order in which a web view takes a new size so that what shows is
@@ -47,7 +48,8 @@ final class PresentedResizeTests: XCTestCase {
         var resize = fitted(at: small)
         _ = resize.plan(content: small, target: large, deferrable: true)
         let between = CGSize(width: 600, height: 430)
-        XCTAssertEqual(resize.plan(content: large, target: between, deferrable: true), .pending(steps: [.bounds(small)]))
+        XCTAssertEqual(
+            resize.plan(content: large, target: between, deferrable: true), .pending(steps: [.bounds(small)]))
         XCTAssertEqual(
             resize.presented(1),
             .init(steps: [.bounds(between), .fit(large), .layout(between)], awaiting: 2)
@@ -59,7 +61,9 @@ final class PresentedResizeTests: XCTestCase {
         let wideShort = CGSize(width: 686, height: 300)
         XCTAssertEqual(
             resize.plan(content: small, target: wideShort, deferrable: true),
-            .staged(generation: 1, steps: [.bounds(small), .contentFrame(CGSize(width: 686, height: 385)), .layout(wideShort)])
+            .staged(
+                generation: 1,
+                steps: [.bounds(small), .contentFrame(CGSize(width: 686, height: 385)), .layout(wideShort)])
         )
         XCTAssertEqual(resize.presented(1), .init(steps: [.bounds(wideShort), .fit(wideShort)], awaiting: nil))
     }
@@ -89,10 +93,13 @@ final class PresentedResizeTests: XCTestCase {
         let larger = CGSize(width: 800, height: 600)
         let largest = CGSize(width: 900, height: 700)
         XCTAssertEqual(resize.plan(content: large, target: larger, deferrable: true), .pending(steps: [.bounds(small)]))
-        XCTAssertEqual(resize.plan(content: large, target: largest, deferrable: true), .pending(steps: [.bounds(small)]))
+        XCTAssertEqual(
+            resize.plan(content: large, target: largest, deferrable: true), .pending(steps: [.bounds(small)]))
         XCTAssertEqual(
             resize.presented(1),
-            .init(steps: [.bounds(large), .fit(large), .bounds(large), .contentFrame(largest), .layout(largest)], awaiting: 2)
+            .init(
+                steps: [.bounds(large), .fit(large), .bounds(large), .contentFrame(largest), .layout(largest)],
+                awaiting: 2)
         )
     }
 
@@ -104,7 +111,8 @@ final class PresentedResizeTests: XCTestCase {
         XCTAssertEqual(resize.plan(content: large, target: large, deferrable: true), .pending(steps: []))
         XCTAssertEqual(
             resize.presented(1),
-            .init(steps: [.bounds(small), .fit(small), .bounds(small), .contentFrame(large), .layout(large)], awaiting: 2)
+            .init(
+                steps: [.bounds(small), .fit(small), .bounds(small), .contentFrame(large), .layout(large)], awaiting: 2)
         )
     }
 
@@ -180,8 +188,9 @@ final class PresentedResizeTests: XCTestCase {
         let smaller = CGSize(width: 400, height: 300)
         XCTAssertEqual(resize.plan(content: large, target: smaller, deferrable: false), .now(relayout: true))
         XCTAssertNil(resize.presented(1))
-        XCTAssertEqual(resize.plan(content: smaller, target: large, deferrable: true),
-                       .staged(generation: 2, steps: [.bounds(smaller), .contentFrame(large), .layout(large)]))
+        XCTAssertEqual(
+            resize.plan(content: smaller, target: large, deferrable: true),
+            .staged(generation: 2, steps: [.bounds(smaller), .contentFrame(large), .layout(large)]))
         XCTAssertEqual(resize.presented(2), .init(steps: [.bounds(large), .fit(large)], awaiting: nil))
     }
 

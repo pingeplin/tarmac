@@ -59,10 +59,14 @@ final class MarkdownTextView: NSTextView {
 
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
-        guard let style, let storage = textStorage, let layout = layoutManager, let container = textContainer else { return }
+        guard let style, let storage = textStorage, let layout = layoutManager, let container = textContainer else {
+            return
+        }
         let origin = textContainerOrigin
         let all = NSRange(location: 0, length: storage.length)
-        func glyphs(_ range: NSRange) -> NSRange { layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil) }
+        func glyphs(_ range: NSRange) -> NSRange {
+            layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        }
         storage.enumerateAttribute(.codeBlock, in: all) { value, range, _ in
             guard value != nil else { return }
             var box = layout.boundingRect(forGlyphRange: glyphs(range), in: container)
@@ -93,7 +97,8 @@ final class MarkdownTextView: NSTextView {
 
     /// On whole points, so a 1 px border is sharp on a 1× display too.
     private static func whole(_ rect: NSRect) -> NSRect {
-        NSRect(x: rect.minX.rounded(), y: rect.minY.rounded(), width: rect.width.rounded(), height: rect.height.rounded())
+        NSRect(
+            x: rect.minX.rounded(), y: rect.minY.rounded(), width: rect.width.rounded(), height: rect.height.rounded())
     }
 }
 
@@ -142,10 +147,11 @@ private struct MarkdownStyle {
                 for (number, item) in items.enumerated() {
                     let gap = number == items.count - 1 ? Self.blockGap : Self.itemGap
                     let style = paragraph(after: gap, indent: indent)
-                    out.append(NSAttributedString(
-                        string: item.marker + "\t",
-                        attributes: [.font: body, .foregroundColor: Theme.faint, .paragraphStyle: style]
-                    ))
+                    out.append(
+                        NSAttributedString(
+                            string: item.marker + "\t",
+                            attributes: [.font: body, .foregroundColor: Theme.faint, .paragraphStyle: style]
+                        ))
                     out.append(runs(item.text, color: Theme.muted, paragraph: style))
                     if number < items.count - 1 {
                         out.append(NSAttributedString(string: "\n", attributes: [.font: body, .paragraphStyle: style]))
@@ -154,10 +160,13 @@ private struct MarkdownStyle {
             case .code(let lines):
                 let style = paragraph(after: Self.blockGap + Self.blockPadY, inset: Self.blockPadX)
                 style.paragraphSpacingBefore = Self.blockPadY + (index == 0 ? 0 : Self.blockPadY)
-                out.append(NSAttributedString(
-                    string: lines.joined(separator: "\u{2028}"),
-                    attributes: [.font: body, .foregroundColor: Theme.text, .paragraphStyle: style, .codeBlock: true]
-                ))
+                out.append(
+                    NSAttributedString(
+                        string: lines.joined(separator: "\u{2028}"),
+                        attributes: [
+                            .font: body, .foregroundColor: Theme.text, .paragraphStyle: style, .codeBlock: true,
+                        ]
+                    ))
             }
             if !last { out.append(NSAttributedString(string: "\n", attributes: [.font: body])) }
         }

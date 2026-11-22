@@ -124,9 +124,14 @@ back from a rendered bitmap.
   while it fits); `make fmt-check` and CI fail on a file it would rewrite. Do not
   lay Rust out by hand, and do not add `#[rustfmt::skip]` without a reason in a
   comment beside it.
-- **In Swift, match the surrounding file.** There is no Swift formatter
-  configuration and no linter yet — no `.swift-format`, no SwiftLint config, no
-  `.editorconfig` — and CI does not check Swift layout.
+- **Swift layout belongs to swift-format.** `make fmt` formats every tracked
+  Swift file (`.swift-format`: four spaces, lines to 120, the toolchain's other
+  defaults); `make fmt-check` and CI fail on a file it would rewrite. It keeps a
+  line break you wrote inside a literal, so a table laid out in rows stays in
+  rows. It also rewrites a few constructs to one form — the order of imports,
+  `case let`, the access level of an extension's members — so expect more than
+  white space in its diff. A script that starts with `#!` is left alone. There
+  is no linter yet.
 - **One responsibility per module.** Depend on the narrow contract — the `Msg`
   enum, a pure function signature — rather than reaching across a layer.
 - **A comment earns its place by explaining a non-obvious *why***: a constraint,

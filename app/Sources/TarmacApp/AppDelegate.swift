@@ -11,7 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settings: SettingsWindowController!
     private let closeHider = WindowCloseHider()
     #if DEBUG
-    private let devDriver = DevDriver()
+        private let devDriver = DevDriver()
     #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -19,7 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // colours at `init`.
         let environment = ProcessInfo.processInfo.environment
         if let path = DevIcon.path(devLabel: environment["TARMAC_DEV_LABEL"], iconPath: environment["TARMAC_DEV_ICON"]),
-           let icon = NSImage(contentsOfFile: path) {
+            let icon = NSImage(contentsOfFile: path)
+        {
             NSApp.applicationIconImage = icon
         }
         let configOverride = environment["TARMAC_CONFIG_DIR"]
@@ -67,27 +68,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         controller.start()
         #if DEBUG
-        scheduleDevSnapshot()
-        devDriver.start(DevVerbs(controller: controller, quitGuard: quitGuard, window: window))
+            scheduleDevSnapshot()
+            devDriver.start(DevVerbs(controller: controller, quitGuard: quitGuard, window: window))
         #endif
     }
 
     #if DEBUG
-    /// `TARMAC_DEV_SHOT=<path>` writes the window's content view to that PNG
-    /// `TARMAC_DEV_SHOT_AFTER` seconds after launch (default 4);
-    /// `TARMAC_DEV_SHOT_QUIT` then quits.
-    private func scheduleDevSnapshot() {
-        let environment = ProcessInfo.processInfo.environment
-        guard let path = environment["TARMAC_DEV_SHOT"] else { return }
-        let delay = environment["TARMAC_DEV_SHOT_AFTER"].flatMap(Double.init) ?? 4
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            if let view = self?.window.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
-                view.cacheDisplay(in: view.bounds, to: rep)
-                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+        /// `TARMAC_DEV_SHOT=<path>` writes the window's content view to that PNG
+        /// `TARMAC_DEV_SHOT_AFTER` seconds after launch (default 4);
+        /// `TARMAC_DEV_SHOT_QUIT` then quits.
+        private func scheduleDevSnapshot() {
+            let environment = ProcessInfo.processInfo.environment
+            guard let path = environment["TARMAC_DEV_SHOT"] else { return }
+            let delay = environment["TARMAC_DEV_SHOT_AFTER"].flatMap(Double.init) ?? 4
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                if let view = self?.window.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)
+                {
+                    view.cacheDisplay(in: view.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                }
+                if environment["TARMAC_DEV_SHOT_QUIT"] != nil { NSApp.terminate(nil) }
             }
-            if environment["TARMAC_DEV_SHOT_QUIT"] != nil { NSApp.terminate(nil) }
         }
-    }
     #endif
 
     /// The red button hides the window (`WindowCloseHider`); a windowless
@@ -118,7 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller?.flushPendingPersist()
         controller?.shutdown()
         #if DEBUG
-        devDriver.stop()
+            devDriver.stop()
         #endif
     }
 }

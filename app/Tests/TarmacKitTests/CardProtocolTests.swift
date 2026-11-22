@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Ports every `#[test]` of `desktop/src-tauri/src/card_protocol.rs`, plus the
@@ -97,10 +98,12 @@ final class CardProtocolTests: XCTestCase {
         let path = "/tmp/a.html"
         let resp = serve(SchemeFixtures.docURI(path), disk: .init([path: Data("x".utf8)]))
 
-        XCTAssertEqual(resp.headers, [
-            "Content-Type": "text/html; charset=utf-8",
-            "Content-Security-Policy": CardProtocol.csp,
-        ])
+        XCTAssertEqual(
+            resp.headers,
+            [
+                "Content-Type": "text/html; charset=utf-8",
+                "Content-Security-Policy": CardProtocol.csp,
+            ])
     }
 
     func testResolveNamesThePathToRead() {
@@ -227,7 +230,8 @@ final class CardProtocolTests: XCTestCase {
         var checked = 0
         defer { XCTAssertGreaterThan(checked, 30) }
         for (prefix, uri, expected) in SchemeParityTables.decode {
-            guard prefix == CardProtocol.uriPrefix, !rewrittenByFoundation.contains(uri), let url = URL(string: uri) else { continue }
+            guard prefix == CardProtocol.uriPrefix, !rewrittenByFoundation.contains(uri), let url = URL(string: uri)
+            else { continue }
             checked += 1
             let viaURL = CardProtocol.decodeSchemePath(url.absoluteString, prefix: prefix)
             switch (viaURL, expected) {

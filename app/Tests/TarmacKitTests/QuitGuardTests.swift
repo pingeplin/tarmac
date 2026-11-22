@@ -1,5 +1,6 @@
 import AppKit
 import XCTest
+
 @testable import TarmacKit
 
 /// 2609.0016: every decision the ⌘Q guard makes. Ported from the Rust

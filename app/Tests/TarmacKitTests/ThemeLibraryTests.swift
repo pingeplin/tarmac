@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Spec 2610.0009: the built-in themes and the themes of a set of files, as
@@ -15,10 +16,11 @@ final class ThemeLibraryTests: XCTestCase {
 
     /// S21
     func testS21TheFileThemesFollowTheCatalogueByTitle() {
-        let files = ["beta", "Alpha", "alpha", "Zed"].map { ThemeFixture.file($0) } + [
-            ThemeFixture.file("broken", "foreground = #fff"),
-            ThemeLibrary.File(name: "big", contents: .failure(.tooLarge)),
-        ]
+        let files =
+            ["beta", "Alpha", "alpha", "Zed"].map { ThemeFixture.file($0) } + [
+                ThemeFixture.file("broken", "foreground = #fff"),
+                ThemeLibrary.File(name: "big", contents: .failure(.tooLarge)),
+            ]
 
         let library = ThemeLibrary(files: files)
 

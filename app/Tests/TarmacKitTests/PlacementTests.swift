@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// Where a `tarmac open` doc lands on the board: the first free slot in the
@@ -39,7 +40,9 @@ final class PlacementTests: XCTestCase {
         let point = CGRect(x: 5, y: 5, width: 0, height: 0)
         XCTAssertFalse(Placement.rectsIntersect(point, point))
         XCTAssertTrue(Placement.rectsIntersect(point, CGRect(x: 0, y: 0, width: 10, height: 10)))
-        XCTAssertFalse(Placement.rectsIntersect(CGRect(x: 10, y: 5, width: 0, height: 0), CGRect(x: 0, y: 0, width: 10, height: 10)))
+        XCTAssertFalse(
+            Placement.rectsIntersect(
+                CGRect(x: 10, y: 5, width: 0, height: 0), CGRect(x: 0, y: 0, width: 10, height: 10)))
     }
 
     // MARK: - firstFreeSlot
@@ -69,10 +72,12 @@ final class PlacementTests: XCTestCase {
     /// The boot terminal has room for one doc on each side: right, below, left,
     /// above, then the corners clockwise from bottom-right.
     func testDocsCircleTheBootTerminalClockwiseSidesThenCorners() {
-        XCTAssertEqual(place(8, around: owner), [
-            doc(636, 80), doc(80, 450), doc(-398, 80), doc(80, -270),
-            doc(636, 450), doc(-398, 450), doc(-398, -270), doc(636, -270),
-        ])
+        XCTAssertEqual(
+            place(8, around: owner),
+            [
+                doc(636, 80), doc(80, 450), doc(-398, 80), doc(80, -270),
+                doc(636, 450), doc(-398, 450), doc(-398, -270), doc(636, -270),
+            ])
     }
 
     /// A 720×460 terminal has room for two docs along each side, so a side's
@@ -80,11 +85,13 @@ final class PlacementTests: XCTestCase {
     /// into the bottom row and takes the bottom's second slot; a corner that a
     /// side slot covers is skipped too. Only top-left is left, then ring two.
     func testABigTerminalTakesItsSecondSideSlotsBeforeTheCorners() {
-        XCTAssertEqual(place(9, around: bigTerminal), [
-            doc(886, 80), doc(80, 580), doc(-398, 80), doc(80, -270),
-            doc(886, 430), doc(-398, 430), doc(558, -270),
-            doc(-398, -270), doc(1364, -270),
-        ])
+        XCTAssertEqual(
+            place(9, around: bigTerminal),
+            [
+                doc(886, 80), doc(80, 580), doc(-398, 80), doc(80, -270),
+                doc(886, 430), doc(-398, 430), doc(558, -270),
+                doc(-398, -270), doc(1364, -270),
+            ])
     }
 
     /// A full first ring sends the next doc to the second ring: the ring around
@@ -102,11 +109,14 @@ final class PlacementTests: XCTestCase {
                 dx: -(Placement.docSize.width + Placement.gapX), dy: -(Placement.docSize.height + Placement.gapY)
             )
             for d in docs { XCTAssertTrue(reach.contains(d), "\(d) around \(terminal)") }
-            let sides = Set(docs.flatMap { d -> [String] in
-                [d.minX >= terminal.maxX ? "right" : nil, d.maxX <= terminal.minX ? "left" : nil,
-                 d.minY >= terminal.maxY ? "below" : nil, d.maxY <= terminal.minY ? "above" : nil]
+            let sides = Set(
+                docs.flatMap { d -> [String] in
+                    [
+                        d.minX >= terminal.maxX ? "right" : nil, d.maxX <= terminal.minX ? "left" : nil,
+                        d.minY >= terminal.maxY ? "below" : nil, d.maxY <= terminal.minY ? "above" : nil,
+                    ]
                     .compactMap { $0 }
-            })
+                })
             XCTAssertGreaterThanOrEqual(sides.count, 3, "\(sides) around \(terminal)")
         }
     }
@@ -201,7 +211,8 @@ final class PlacementTests: XCTestCase {
     func testTheScanReachesTheLastRing() {
         let inner = CGFloat(Placement.ringCount - 1)
         let blocked = owner.insetBy(
-            dx: -inner * (Placement.docSize.width + Placement.gapX), dy: -inner * (Placement.docSize.height + Placement.gapY)
+            dx: -inner * (Placement.docSize.width + Placement.gapX),
+            dy: -inner * (Placement.docSize.height + Placement.gapY)
         )
         XCTAssertEqual(
             Placement.firstFreeSlot(owner: owner, existing: [blocked]),

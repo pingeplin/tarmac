@@ -86,10 +86,13 @@ final class CardConsoleView: NSView, FontFollowing, ThemeFollowing {
         let font = Self.font
         let paragraph = Self.paragraph
         for (index, entry) in entries.enumerated() {
-            lines.append(NSAttributedString(
-                string: (index == 0 ? "" : "\n") + CardConsole.formatArgs(entry.args),
-                attributes: [.font: font, .foregroundColor: Self.color(of: entry.level), .paragraphStyle: paragraph]
-            ))
+            lines.append(
+                NSAttributedString(
+                    string: (index == 0 ? "" : "\n") + CardConsole.formatArgs(entry.args),
+                    attributes: [
+                        .font: font, .foregroundColor: Self.color(of: entry.level), .paragraphStyle: paragraph,
+                    ]
+                ))
         }
         text.textStorage?.setAttributedString(lines)
         measured.forget()

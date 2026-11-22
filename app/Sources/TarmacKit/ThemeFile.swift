@@ -45,8 +45,8 @@ public enum ThemeFile {
             case .unreadable: "cannot be read"
             case .tooLarge: "is larger than 64 KiB"
             case .notText: "is not UTF-8 text"
-            case let .value(line, key): "line \(line): the value of \(key) cannot be read"
-            case let .missing(key): "has no \(key)"
+            case .value(let line, let key): "line \(line): the value of \(key) cannot be read"
+            case .missing(let key): "has no \(key)"
             }
         }
     }
@@ -70,10 +70,11 @@ public enum ThemeFile {
         }
         guard let background = draft.background else { return .failure(.missing(key: "background")) }
         guard let foreground = draft.foreground else { return .failure(.missing(key: "foreground")) }
-        return .success(Colours(
-            background: background, foreground: foreground, cursor: draft.cursor,
-            ansi: draft.ansi, chrome: draft.chrome, repo: draft.repo
-        ))
+        return .success(
+            Colours(
+                background: background, foreground: foreground, cursor: draft.cursor,
+                ansi: draft.ansi, chrome: draft.chrome, repo: draft.repo
+            ))
     }
 
     private typealias Scalars = ArraySlice<Unicode.Scalar>

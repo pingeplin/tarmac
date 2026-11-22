@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// The key facts every app-level key table reads (parity rows K6–K9, S9).
@@ -175,6 +176,7 @@ final class KeyPressTests: XCTestCase {
 
     /// 2611.0011: a press is not a repeat unless the shell says so.
     func testAPressIsNotARepeatByDefault() {
-        XCTAssertFalse(KeyPress(keyCode: 36, characters: "\r", charactersIgnoringModifiers: "\r", modifierFlags: 0).isRepeat)
+        XCTAssertFalse(
+            KeyPress(keyCode: 36, characters: "\r", charactersIgnoringModifiers: "\r", modifierFlags: 0).isRepeat)
     }
 }

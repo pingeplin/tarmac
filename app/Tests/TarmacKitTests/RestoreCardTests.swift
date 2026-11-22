@@ -1,6 +1,6 @@
 import CoreGraphics
-import XCTest
 import TarmacKit
+import XCTest
 
 /// #358 and 2611.0011 S11: the restore card of a first-visit restore with cold
 /// spawns, and its lines.
@@ -19,12 +19,13 @@ final class RestoreCardTests: XCTestCase {
     private func resumes(_ n: Int) -> Line { Line(glyph: nil, text: "\(n) with an agent session to resume", ok: false) }
 
     func testS11FoldersAndResumesAreCountedAcrossColdSpawnsOnly() {
-        let card = RestoreCard.make(plan: plan([
-            term("a", spawn: SpawnRequest(cwd: "/a", succeeds: "A")),
-            term("b", spawn: SpawnRequest(cwd: "/b", succeeds: "B"), resume: "echo HI"),
-            term("c", spawn: SpawnRequest(succeeds: "C")),
-            term("d", spawn: nil),
-        ]))
+        let card = RestoreCard.make(
+            plan: plan([
+                term("a", spawn: SpawnRequest(cwd: "/a", succeeds: "A")),
+                term("b", spawn: SpawnRequest(cwd: "/b", succeeds: "B"), resume: "echo HI"),
+                term("c", spawn: SpawnRequest(succeeds: "C")),
+                term("d", spawn: nil),
+            ]))
         XCTAssertEqual(card?.lines, [folders(2), resumes(1)])
     }
 
@@ -66,7 +67,8 @@ final class RestoreCardTests: XCTestCase {
     // MARK: 2611.0015 S5: the three choices, and no refresh glyph
 
     private let resumable = [
-        BoardRestore.Term(termID: "a", frame: .zero, z: 0, spawn: SpawnRequest(cwd: "/a", succeeds: "A"), resume: "echo HI"),
+        BoardRestore.Term(
+            termID: "a", frame: .zero, z: 0, spawn: SpawnRequest(cwd: "/a", succeeds: "A"), resume: "echo HI")
     ]
 
     func testS5APlanWithAResumeGivesTheThreeChoicesInOrder() throws {
@@ -76,7 +78,8 @@ final class RestoreCardTests: XCTestCase {
     }
 
     func testS5APlanWithOnlyFolderLinesHasNoChoicesAndKeepsTheFooter() throws {
-        let card = try XCTUnwrap(RestoreCard.make(plan: plan([term("a", spawn: SpawnRequest(cwd: "/a", succeeds: "A"))])))
+        let card = try XCTUnwrap(
+            RestoreCard.make(plan: plan([term("a", spawn: SpawnRequest(cwd: "/a", succeeds: "A"))])))
         XCTAssertEqual(card.choices, [])
         XCTAssertEqual(RestoreCard.footer, "any key to continue")
     }

@@ -83,7 +83,9 @@ public enum InboxKeys {
 
     /// The selection after the rows changed: the selected item wherever it
     /// went; else the item now at its old index, clamped; else the top row.
-    public static func reselect(_ selected: Inbox.ItemID?, oldRows: [Inbox.ItemID], newRows: [Inbox.ItemID]) -> Inbox.ItemID? {
+    public static func reselect(_ selected: Inbox.ItemID?, oldRows: [Inbox.ItemID], newRows: [Inbox.ItemID]) -> Inbox
+        .ItemID?
+    {
         guard !newRows.isEmpty else { return nil }
         guard let selected else { return newRows.first }
         if newRows.contains(selected) { return selected }

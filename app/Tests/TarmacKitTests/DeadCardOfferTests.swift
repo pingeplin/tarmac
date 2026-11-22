@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// 2611.0011 S10, S25: what a dead card offers, and what its reopen spawns.
 final class DeadCardOfferTests: XCTestCase {
@@ -7,7 +7,8 @@ final class DeadCardOfferTests: XCTestCase {
 
     private func makeOffer(_ cwd: String?, resume: String? = nil) throws -> DeadCardOffer.Offer {
         try XCTUnwrap(
-            DeadCardOffer.make(record: TermRecord(lastCwd: cwd, resume: resume.map { ResumeRecord(cmd: $0) }), home: home)
+            DeadCardOffer.make(
+                record: TermRecord(lastCwd: cwd, resume: resume.map { ResumeRecord(cmd: $0) }), home: home)
         )
     }
 
@@ -39,7 +40,9 @@ final class DeadCardOfferTests: XCTestCase {
     func testS10NothingToOfferGivesNoOffer() {
         XCTAssertNil(DeadCardOffer.make(record: nil, home: home))
         XCTAssertNil(DeadCardOffer.make(record: TermRecord(lastCwd: nil), home: home))
-        XCTAssertNil(DeadCardOffer.make(record: TermRecord(lastCwd: nil, resume: ResumeRecord(cmd: "echo a\necho b")), home: home))
+        XCTAssertNil(
+            DeadCardOffer.make(
+                record: TermRecord(lastCwd: nil, resume: ResumeRecord(cmd: "echo a\necho b")), home: home))
     }
 
     func testS10ARefusedResumeIsLeftOutOfAFolderOffer() throws {

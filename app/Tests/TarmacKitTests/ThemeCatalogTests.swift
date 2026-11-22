@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// 2610.0008: the themes Tarmac has, the theme an id names for an appearance,
@@ -29,7 +30,8 @@ final class ThemeCatalogTests: XCTestCase {
         var pairs = 0
         for theme in ThemeCatalog.all {
             for variant in ThemeVariant.allCases {
-                XCTAssertEqual(ThemeLibrary.shipped.entry(theme.id, for: variant), theme, "\(theme.id) \(variant.rawValue)")
+                XCTAssertEqual(
+                    ThemeLibrary.shipped.entry(theme.id, for: variant), theme, "\(theme.id) \(variant.rawValue)")
                 pairs += 1
             }
         }

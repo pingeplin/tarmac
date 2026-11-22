@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Issue #77: which terminal a fresh ⌘T terminal inherits its cwd from.

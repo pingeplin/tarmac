@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// 2609.0016: the rule is "anything serde_json would reject reads as guard ON".
@@ -31,7 +32,8 @@ final class AppPrefsStrictnessTests: XCTestCase {
     }
 
     private func nestedMixed(_ depth: Int) -> String {
-        var open = "", close = ""
+        var open = ""
+        var close = ""
         for level in 0..<depth {
             if level.isMultiple(of: 2) {
                 open += "["
@@ -44,7 +46,9 @@ final class AppPrefsStrictnessTests: XCTestCase {
         return open + "0" + close
     }
 
-    private func assertGuardOn(_ cases: [(name: String, contents: Data)], file: StaticString = #filePath, line: UInt = #line) {
+    private func assertGuardOn(
+        _ cases: [(name: String, contents: Data)], file: StaticString = #filePath, line: UInt = #line
+    ) {
         for (name, contents) in cases {
             XCTAssertTrue(AppPrefs.warnBeforeQuit(from: contents), name, file: file, line: line)
             XCTAssertFalse(StrictJSON.isValid(contents), "\(name): not JSON to serde_json", file: file, line: line)

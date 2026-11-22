@@ -29,7 +29,10 @@ public enum DevClick {
         }
 
         public init?(rawValue: String) {
-            guard let control = (controls(of: .card) + controls(of: .restoreCard)).first(where: { $0.rawValue == rawValue })
+            guard
+                let control = (controls(of: .card) + controls(of: .restoreCard)).first(where: {
+                    $0.rawValue == rawValue
+                })
             else { return nil }
             self = control
         }
@@ -72,7 +75,8 @@ public enum DevClick {
     public static func reply(
         card: String?, control: Control, selectedCard: String?, keyboardFocus: DevSnapshot.KeyboardFocus
     ) -> JSONValue {
-        guard case .object(var fields) = DevSnapshot.focusReply(selectedCard: selectedCard, keyboardFocus: keyboardFocus)
+        guard
+            case .object(var fields) = DevSnapshot.focusReply(selectedCard: selectedCard, keyboardFocus: keyboardFocus)
         else { return .null }
         fields["card"] = card.map(JSONValue.string) ?? .null
         fields["control"] = .string(control.rawValue)

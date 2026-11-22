@@ -29,28 +29,30 @@ public enum TermKeyBinding {
     // and function (0x80_0000) are deliberately left OUT of the mask — the last
     // two always ride on the arrow keys, capsLock is routine for CJK users — so
     // none of them can affect the comparison.
-    static let shift: UInt   = 0x2_0000   // 1 << 17
-    static let control: UInt = 0x4_0000   // 1 << 18
-    static let option: UInt  = 0x8_0000   // 1 << 19
+    static let shift: UInt = 0x2_0000  // 1 << 17
+    static let control: UInt = 0x4_0000  // 1 << 18
+    static let option: UInt = 0x8_0000  // 1 << 19
     static let command: UInt = 0x10_0000  // 1 << 20
     static let intentMask: UInt = shift | control | option | command
 
     /// Bytes to emit for a recognized shortcut, or `nil` to defer to the
     /// terminal. Returns `nil` unconditionally while a CJK IME is composing, so
     /// the candidate preview is never corrupted.
-    public static func bytes(keyCode: UInt16,
-                             modifierFlags: UInt,
-                             composing: Bool) -> [UInt8]? {
+    public static func bytes(
+        keyCode: UInt16,
+        modifierFlags: UInt,
+        composing: Bool
+    ) -> [UInt8]? {
         if composing { return nil }
         let mods = modifierFlags & intentMask
         switch keyCode {
-        case 51  where mods == command: return [0x15]                                // ⌘⌫ → Ctrl-U (delete to line start)
-        case 123 where mods == command: return [0x01]                                // ⌘← → Ctrl-A (jump to line start)
-        case 124 where mods == command: return [0x05]                                // ⌘→ → Ctrl-E (jump to line end)
-        case 123 where mods == option:  return [0x1b, 0x62]                          // ⌥← → ESC b (backward-word)
-        case 124 where mods == option:  return [0x1b, 0x66]                          // ⌥→ → ESC f (forward-word)
-        case 126 where mods == option:  return [0x1b, 0x5b, 0x31, 0x3b, 0x33, 0x41]  // ⌥↑ → ESC[1;3A
-        case 125 where mods == option:  return [0x1b, 0x5b, 0x31, 0x3b, 0x33, 0x42]  // ⌥↓ → ESC[1;3B
+        case 51 where mods == command: return [0x15]  // ⌘⌫ → Ctrl-U (delete to line start)
+        case 123 where mods == command: return [0x01]  // ⌘← → Ctrl-A (jump to line start)
+        case 124 where mods == command: return [0x05]  // ⌘→ → Ctrl-E (jump to line end)
+        case 123 where mods == option: return [0x1b, 0x62]  // ⌥← → ESC b (backward-word)
+        case 124 where mods == option: return [0x1b, 0x66]  // ⌥→ → ESC f (forward-word)
+        case 126 where mods == option: return [0x1b, 0x5b, 0x31, 0x3b, 0x33, 0x41]  // ⌥↑ → ESC[1;3A
+        case 125 where mods == option: return [0x1b, 0x5b, 0x31, 0x3b, 0x33, 0x42]  // ⌥↓ → ESC[1;3B
         default: return nil
         }
     }

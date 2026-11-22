@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// Where a QA-driver press lands and how it is delivered (spec 2609.0015, #166;
@@ -139,7 +140,9 @@ final class DevPointerTests: XCTestCase {
 
     // MARK: - the bare board
 
-    private let cards = [CGRect(x: 100, y: 50, width: 400, height: 300), CGRect(x: 600, y: -40, width: 200, height: 900)]
+    private let cards = [
+        CGRect(x: 100, y: 50, width: 400, height: 300), CGRect(x: 600, y: -40, width: 200, height: 900),
+    ]
 
     func testABoardPointNothingCoversIsPressedThroughTheWindow() {
         XCTAssertEqual(
@@ -172,7 +175,8 @@ final class DevPointerTests: XCTestCase {
 
     /// The union of no cards is the null rect, whose corners are infinite.
     func testABoardWithNoCardsIsPressedAtAFinitePoint() {
-        XCTAssertEqual(DevPointer.boardPress(among: [], cards: []), Press(point: CGPoint(x: 8, y: 8), delivery: .target))
+        XCTAssertEqual(
+            DevPointer.boardPress(among: [], cards: []), Press(point: CGPoint(x: 8, y: 8), delivery: .target))
     }
 
     // MARK: - what the reply says
@@ -205,12 +209,16 @@ final class DevPointerTests: XCTestCase {
     // MARK: - 2611.0015 D16: a control is clicked, never only handled
 
     func testAControlIsPressedThroughTheWindowAtAReachablePoint() {
-        let press = DevPointer.controlPress(among: [Candidate(point: a, reachable: false), Candidate(point: b, reachable: true)])
+        let press = DevPointer.controlPress(among: [
+            Candidate(point: a, reachable: false), Candidate(point: b, reachable: true),
+        ])
         XCTAssertEqual(press, Press(point: b, delivery: .window))
     }
 
     func testAControlNoPointReachesIsClickedOnTheTargetAtItsFirstPoint() {
-        let press = DevPointer.controlPress(among: [Candidate(point: a, reachable: false), Candidate(point: b, reachable: false)])
+        let press = DevPointer.controlPress(among: [
+            Candidate(point: a, reachable: false), Candidate(point: b, reachable: false),
+        ])
         XCTAssertEqual(press, Press(point: a, delivery: .target))
     }
 

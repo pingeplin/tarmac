@@ -18,7 +18,8 @@ import Foundation
 /// which drops a trailing slash that std would reject with ENOTDIR.
 public enum CardProtocol {
     /// Byte-exact per spec 2607.0004's Interface Contract — do not reformat.
-    public static let csp = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:"
+    public static let csp =
+        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:"
 
     public static let uriPrefix = "tarmac-card://doc/"
 
@@ -115,7 +116,8 @@ public enum CardProtocol {
         var i = 0
         while i < bytes.count {
             if bytes[i] == percent, i + 2 < bytes.count,
-               let high = hexValue(bytes[i + 1]), let low = hexValue(bytes[i + 2]) {
+                let high = hexValue(bytes[i + 1]), let low = hexValue(bytes[i + 2])
+            {
                 out.append(high << 4 | low)
                 i += 3
             } else {
@@ -161,21 +163,23 @@ public enum CardProtocol {
                 if !isContinuation(b1) { return invalid(1) }
             case 0xE0...0xEF:
                 guard let b1 = next() else { return incomplete }
-                let valid: ClosedRange<UInt8> = switch first {
-                case 0xE0: 0xA0...0xBF
-                case 0xED: 0x80...0x9F
-                default: 0x80...0xBF
-                }
+                let valid: ClosedRange<UInt8> =
+                    switch first {
+                    case 0xE0: 0xA0...0xBF
+                    case 0xED: 0x80...0x9F
+                    default: 0x80...0xBF
+                    }
                 if !valid.contains(b1) { return invalid(1) }
                 guard let b2 = next() else { return incomplete }
                 if !isContinuation(b2) { return invalid(2) }
             case 0xF0...0xF4:
                 guard let b1 = next() else { return incomplete }
-                let valid: ClosedRange<UInt8> = switch first {
-                case 0xF0: 0x90...0xBF
-                case 0xF4: 0x80...0x8F
-                default: 0x80...0xBF
-                }
+                let valid: ClosedRange<UInt8> =
+                    switch first {
+                    case 0xF0: 0x90...0xBF
+                    case 0xF4: 0x80...0x8F
+                    default: 0x80...0xBF
+                    }
                 if !valid.contains(b1) { return invalid(1) }
                 guard let b2 = next() else { return incomplete }
                 if !isContinuation(b2) { return invalid(2) }

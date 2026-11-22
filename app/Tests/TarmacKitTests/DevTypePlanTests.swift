@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// `tarmac dev type <card> "<text>"` (spec 2609.0015, #166): which path each
@@ -43,9 +44,15 @@ final class DevTypePlanTests: XCTestCase {
     func testS77FlagEightPlansAKeyStrokeAndNoInsert() {
         let plan = DevTypePlan.plan(text: "a", kittyFlags: 8)
         XCTAssertEqual(plan.mode, .key)
-        XCTAssertEqual(plan.steps, [.key(index: 0, char: "a", stroke: DevKeyStroke(
-            keyCode: VK.ansi["a"]!, modifierFlags: [], characters: "a", charactersIgnoringModifiers: "a"
-        ))])
+        XCTAssertEqual(
+            plan.steps,
+            [
+                .key(
+                    index: 0, char: "a",
+                    stroke: DevKeyStroke(
+                        keyCode: VK.ansi["a"]!, modifierFlags: [], characters: "a", charactersIgnoringModifiers: "a"
+                    ))
+            ])
     }
 
     func testS77FlagEightSwitchesWhereverItSitsInTheMask() {
@@ -57,17 +64,25 @@ final class DevTypePlanTests: XCTestCase {
     /// kitty encodes the UNSHIFTED key plus a shift modifier, so `!` must be the
     /// `1` key with Shift, not a key of its own.
     func testS77AShiftedPrintableIsItsUnshiftedKeyWithShift() {
-        XCTAssertEqual(steps("!A ", flags: 8), [
-            .key(index: 0, char: "!", stroke: DevKeyStroke(
-                keyCode: VK.ansi["1"]!, modifierFlags: .shift, characters: "!", charactersIgnoringModifiers: "!"
-            )),
-            .key(index: 1, char: "A", stroke: DevKeyStroke(
-                keyCode: VK.ansi["a"]!, modifierFlags: .shift, characters: "A", charactersIgnoringModifiers: "A"
-            )),
-            .key(index: 2, char: " ", stroke: DevKeyStroke(
-                keyCode: VK.space, modifierFlags: [], characters: " ", charactersIgnoringModifiers: " "
-            )),
-        ])
+        XCTAssertEqual(
+            steps("!A ", flags: 8),
+            [
+                .key(
+                    index: 0, char: "!",
+                    stroke: DevKeyStroke(
+                        keyCode: VK.ansi["1"]!, modifierFlags: .shift, characters: "!", charactersIgnoringModifiers: "!"
+                    )),
+                .key(
+                    index: 1, char: "A",
+                    stroke: DevKeyStroke(
+                        keyCode: VK.ansi["a"]!, modifierFlags: .shift, characters: "A", charactersIgnoringModifiers: "A"
+                    )),
+                .key(
+                    index: 2, char: " ",
+                    stroke: DevKeyStroke(
+                        keyCode: VK.space, modifierFlags: [], characters: " ", charactersIgnoringModifiers: " "
+                    )),
+            ])
     }
 
     func testS77EveryASCIIPrintableIsAKeyStrokeUnderFlagEight() {
@@ -78,20 +93,23 @@ final class DevTypePlanTests: XCTestCase {
                 continue
             }
             XCTAssertEqual(stroke.characters, char)
-            XCTAssertEqual(DevKeyCombo.PhysicalKey(keyCode: stroke.keyCode, shift: stroke.modifierFlags == .shift),
-                           DevKeyCombo.physicalKey(for: UnicodeScalar(value)))
+            XCTAssertEqual(
+                DevKeyCombo.PhysicalKey(keyCode: stroke.keyCode, shift: stroke.modifierFlags == .shift),
+                DevKeyCombo.physicalKey(for: UnicodeScalar(value)))
         }
     }
 
     /// No layout to read a key from, so nothing is pressed and the reply says so.
     func testS77ACharacterWithNoKeyIsDroppedUnderFlagEight() {
-        XCTAssertEqual(steps("a中\u{00}\u{1C}é", flags: 8), [
-            .key(index: 0, char: "a", stroke: comboStrokeForPrintable("a")),
-            .drop(index: 1, char: "中"),
-            .drop(index: 2, char: "\u{00}"),
-            .drop(index: 3, char: "\u{1C}"),
-            .drop(index: 4, char: "é"),
-        ])
+        XCTAssertEqual(
+            steps("a中\u{00}\u{1C}é", flags: 8),
+            [
+                .key(index: 0, char: "a", stroke: comboStrokeForPrintable("a")),
+                .drop(index: 1, char: "中"),
+                .drop(index: 2, char: "\u{00}"),
+                .drop(index: 3, char: "\u{1C}"),
+                .drop(index: 4, char: "é"),
+            ])
     }
 
     private func comboStrokeForPrintable(_ char: Unicode.Scalar) -> DevKeyStroke {
@@ -113,8 +131,10 @@ final class DevTypePlanTests: XCTestCase {
     func testS21TheOtherNamedControlsAreTheirKeys() {
         for flags: UInt8 in [0, 8] {
             XCTAssertEqual(steps("\t", flags: flags), [.key(index: 0, char: "\t", stroke: comboStroke("tab"))])
-            XCTAssertEqual(steps("\u{1B}", flags: flags), [.key(index: 0, char: "\u{1B}", stroke: comboStroke("escape"))])
-            XCTAssertEqual(steps("\u{7F}", flags: flags), [.key(index: 0, char: "\u{7F}", stroke: comboStroke("backspace"))])
+            XCTAssertEqual(
+                steps("\u{1B}", flags: flags), [.key(index: 0, char: "\u{1B}", stroke: comboStroke("escape"))])
+            XCTAssertEqual(
+                steps("\u{7F}", flags: flags), [.key(index: 0, char: "\u{7F}", stroke: comboStroke("backspace"))])
         }
     }
 
@@ -126,7 +146,8 @@ final class DevTypePlanTests: XCTestCase {
         let named: Set<UInt8> = [0x09, 0x0A, 0x0D]
         for (offset, letter) in "abcdefghijklmnopqrstuvwxyz".enumerated() where !named.contains(UInt8(offset + 1)) {
             let char = String(UnicodeScalar(UInt8(offset + 1)))
-            XCTAssertEqual(steps(char), [.key(index: 0, char: char, stroke: comboStroke("ctrl+\(letter)"))], "ctrl+\(letter)")
+            XCTAssertEqual(
+                steps(char), [.key(index: 0, char: char, stroke: comboStroke("ctrl+\(letter)"))], "ctrl+\(letter)")
         }
     }
 
@@ -142,11 +163,13 @@ final class DevTypePlanTests: XCTestCase {
     // MARK: - S23 order, and what one step is
 
     func testS23AMixedStringKeepsItsOrder() {
-        XCTAssertEqual(steps("a\nb"), [
-            .insert(index: 0, char: "a"),
-            .key(index: 1, char: "\n", stroke: comboStroke("enter")),
-            .insert(index: 2, char: "b"),
-        ])
+        XCTAssertEqual(
+            steps("a\nb"),
+            [
+                .insert(index: 0, char: "a"),
+                .key(index: 1, char: "\n", stroke: comboStroke("enter")),
+                .insert(index: 2, char: "b"),
+            ])
     }
 
     /// A key stroke goes to the key window; an insertion goes straight to the
@@ -163,14 +186,18 @@ final class DevTypePlanTests: XCTestCase {
     /// By code point, as the Tauri driver counts: `\r\n` is two Returns, and a
     /// combining mark is its own step. A grapheme walk would merge both.
     func testAStepIsOneCodePointNotOneGrapheme() {
-        XCTAssertEqual(steps("\r\n"), [
-            .key(index: 0, char: "\r", stroke: comboStroke("enter")),
-            .key(index: 1, char: "\n", stroke: comboStroke("enter")),
-        ])
+        XCTAssertEqual(
+            steps("\r\n"),
+            [
+                .key(index: 0, char: "\r", stroke: comboStroke("enter")),
+                .key(index: 1, char: "\n", stroke: comboStroke("enter")),
+            ])
         XCTAssertEqual(steps("e\u{301}"), [.insert(index: 0, char: "e"), .insert(index: 1, char: "\u{301}")])
-        XCTAssertEqual(steps("a😀b"), [
-            .insert(index: 0, char: "a"), .insert(index: 1, char: "😀"), .insert(index: 2, char: "b"),
-        ])
+        XCTAssertEqual(
+            steps("a😀b"),
+            [
+                .insert(index: 0, char: "a"), .insert(index: 1, char: "😀"), .insert(index: 2, char: "b"),
+            ])
     }
 
     // MARK: - S24 a non-ASCII printable

@@ -13,8 +13,8 @@ public enum DocKind: Equatable, Sendable {
         let nameStart = scalars.lastIndex(of: "/").map(scalars.index(after:)) ?? scalars.startIndex
         let name = scalars[nameStart...]
         guard let dot = name.lastIndex(of: "."),
-              dot > name.startIndex,
-              name.index(after: dot) < name.endIndex
+            dot > name.startIndex,
+            name.index(after: dot) < name.endIndex
         else {
             self = .markdown
             return

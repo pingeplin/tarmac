@@ -67,7 +67,8 @@ public enum DocFrontMatter {
     /// ends the line or is followed by a space.
     private static func key(of line: String) -> (key: String, rest: Substring)? {
         guard let colon = line.firstIndex(of: ":"), let first = line.unicodeScalars.first,
-              first == "_" || isLetterOrDigit(first) else { return nil }
+            first == "_" || isLetterOrDigit(first)
+        else { return nil }
         let rest = line[line.index(after: colon)...]
         guard rest.isEmpty || rest.first == " " else { return nil }
         return (trimmed(line[..<colon]), rest)
@@ -115,8 +116,9 @@ public enum DocFrontMatter {
     private static func value(_ rest: String) -> Value? {
         if rest.isEmpty { return nil }
         guard rest.hasPrefix("["), rest.hasSuffix("]") else { return .text(unquoted(rest)) }
-        return .list(rest.dropFirst().dropLast().split(separator: ",", omittingEmptySubsequences: false)
-            .map { unquoted(trimmed($0)) }.filter { !$0.isEmpty })
+        return .list(
+            rest.dropFirst().dropLast().split(separator: ",", omittingEmptySubsequences: false)
+                .map { unquoted(trimmed($0)) }.filter { !$0.isEmpty })
     }
 
     private static func trimmed(_ text: some StringProtocol) -> String {
@@ -124,7 +126,9 @@ public enum DocFrontMatter {
     }
 
     private static func unquoted(_ text: String) -> String {
-        guard text.count > 1, let first = text.first, first == text.last, first == "\"" || first == "'" else { return text }
+        guard text.count > 1, let first = text.first, first == text.last, first == "\"" || first == "'" else {
+            return text
+        }
         return String(text.dropFirst().dropLast())
     }
 }

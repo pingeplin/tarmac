@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// 2609.0018: the key-held override `tarmac dev press` arms on the release poll.
 final class KeyHoldTests: XCTestCase {

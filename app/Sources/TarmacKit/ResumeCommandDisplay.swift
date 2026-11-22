@@ -17,6 +17,6 @@ public enum ResumeCommandDisplay {
     }
 }
 
-private extension Character {
-    var isASCIIDigit: Bool { isASCII && isNumber }
+extension Character {
+    fileprivate var isASCIIDigit: Bool { isASCII && isNumber }
 }

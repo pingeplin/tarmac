@@ -54,7 +54,8 @@ public enum DevPress {
     public static func plan(
         combo: String, holdMs: Int?, ageMs: Int?, busyMs: Int?, repeats: Int? = nil
     ) -> Result<Plan, DevError> {
-        let inRange = (holdMs.map((1...DevRequest.holdMsMax).contains) ?? true)
+        let inRange =
+            (holdMs.map((1...DevRequest.holdMsMax).contains) ?? true)
             && (ageMs.map((0...DevRequest.ageMsMax).contains) ?? true)
             && (busyMs.map((1...DevRequest.busyMsMax).contains) ?? true)
             && (repeats.map((1...DevRequest.repeatsMax).contains) ?? true)
@@ -80,11 +81,12 @@ public enum DevPress {
     public static func parse(_ combo: String) -> Result<Chord, DevError> {
         if let named = namedKeys[combo] { return .success(named) }
         func bad(_ what: String) -> Result<Chord, DevError> {
-            .failure(DevError(
-                .badCombo,
-                "\(what) in `\(combo)`; the grammar is cmd[+shift][+alt][+ctrl]+<a-z|0-9>, or one of "
-                    + namedKeys.keys.sorted().joined(separator: ", ")
-            ))
+            .failure(
+                DevError(
+                    .badCombo,
+                    "\(what) in `\(combo)`; the grammar is cmd[+shift][+alt][+ctrl]+<a-z|0-9>, or one of "
+                        + namedKeys.keys.sorted().joined(separator: ", ")
+                ))
         }
         let parts = combo.split(separator: "+", omittingEmptySubsequences: false).map(String.init)
         var flags: UInt64 = 0
@@ -95,13 +97,15 @@ public enum DevPress {
         }
         let base = parts[parts.count - 1].unicodeScalars
         guard base.count == 1, let scalar = base.first,
-              ("a"..."z").contains(scalar) || ("0"..."9").contains(scalar),
-              let key = DevKeyCombo.physicalKey(for: scalar)
+            ("a"..."z").contains(scalar) || ("0"..."9").contains(scalar),
+            let key = DevKeyCombo.physicalKey(for: scalar)
         else { return bad("the base must be one lowercase letter or digit") }
         guard flags & QuitShortcut.command != 0 else {
-            return .failure(DevError(
-                .unsupportedCombo, "`\(combo)` has no cmd; `tarmac dev key` / `type` drive non-⌘ keys through the terminal"
-            ))
+            return .failure(
+                DevError(
+                    .unsupportedCombo,
+                    "`\(combo)` has no cmd; `tarmac dev key` / `type` drive non-⌘ keys through the terminal"
+                ))
         }
         let face = flags & QuitShortcut.shift != 0 ? scalar.properties.uppercaseMapping : String(scalar)
         return .success(Chord(flags: flags, characters: face, keyCode: key.keyCode))

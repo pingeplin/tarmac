@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Spec 2610.0009: the one file operation of the themes, on a folder of its
@@ -40,7 +41,8 @@ final class ThemeFolderTests: XCTestCase {
         try FileManager.default.createDirectory(atPath: path("sub"), withIntermediateDirectories: false)
         try write(text, "sub/Inner")
         try FileManager.default.createSymbolicLink(atPath: path("Linked"), withDestinationPath: outside)
-        try FileManager.default.createSymbolicLink(atPath: path("Dangling"), withDestinationPath: root.path + "/nothing")
+        try FileManager.default.createSymbolicLink(
+            atPath: path("Dangling"), withDestinationPath: root.path + "/nothing")
         XCTAssertEqual(mkfifo(path("Pipe"), 0o644), 0)
         let exact = Data(repeating: 0x23, count: ThemeFile.sizeLimit)
         try write(exact, "Exact")
@@ -108,7 +110,10 @@ final class ThemeFolderTests: XCTestCase {
         let first = ThemeLibrary(files: ThemeFolder.files(at: folder))
         XCTAssertEqual(
             first.fileThemes,
-            [ThemeCatalog.Entry(id: "file:Dracula", title: "Dracula", palette: ThemeFile.palette(from: ThemeFixture.draculaColours))]
+            [
+                ThemeCatalog.Entry(
+                    id: "file:Dracula", title: "Dracula", palette: ThemeFile.palette(from: ThemeFixture.draculaColours))
+            ]
         )
 
         try write(Data(ThemeFixture.dracula(background: "#1e1f29").utf8), "Dracula")

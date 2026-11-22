@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// The lines of the app's sample log, `tarmac-app.jsonl` (spec 2611.0004).
 final class SampleLineTests: XCTestCase {
@@ -48,7 +48,10 @@ final class SampleLineTests: XCTestCase {
 
     func test2611_0004S3ASampleWithEveryValueIsExactlyTheExpectedText() throws {
         let line = SampleLine.sample(full, resource: resource, atMs: atMs)
-        XCTAssertEqual(line, #"{"attrs":{"tarmac.app.memory.footprint":149063264,"tarmac.boards.count":2,"tarmac.boards.loaded":1,"tarmac.card.pending_events.max":6,"tarmac.card.pending_events.over_limit.times":0,"tarmac.card.pending_events.path":"/a/dash.html","tarmac.cards.html":3,"tarmac.cards.markdown":2,"tarmac.cards.terminal":1,"tarmac.daemon.memory.footprint":6504928,"tarmac.daemon.pid":9160,"tarmac.webcontent.largest.memory.footprint":120390544,"tarmac.webcontent.largest.path":"/a/dash.html","tarmac.webcontent.memory.footprint":412876800,"tarmac.webcontent.processes.count":5},"event":"tarmac.sample","resource":{"process.pid":9156,"service.name":"tarmac-app","service.version":"0.20.1"},"severity":"INFO","ts":"2026-11-12T10:15:00.000Z"}"#)
+        XCTAssertEqual(
+            line,
+            #"{"attrs":{"tarmac.app.memory.footprint":149063264,"tarmac.boards.count":2,"tarmac.boards.loaded":1,"tarmac.card.pending_events.max":6,"tarmac.card.pending_events.over_limit.times":0,"tarmac.card.pending_events.path":"/a/dash.html","tarmac.cards.html":3,"tarmac.cards.markdown":2,"tarmac.cards.terminal":1,"tarmac.daemon.memory.footprint":6504928,"tarmac.daemon.pid":9160,"tarmac.webcontent.largest.memory.footprint":120390544,"tarmac.webcontent.largest.path":"/a/dash.html","tarmac.webcontent.memory.footprint":412876800,"tarmac.webcontent.processes.count":5},"event":"tarmac.sample","resource":{"process.pid":9156,"service.name":"tarmac-app","service.version":"0.20.1"},"severity":"INFO","ts":"2026-11-12T10:15:00.000Z"}"#
+        )
         XCTAssertNoThrow(try object(line))
     }
 
@@ -175,9 +178,11 @@ final class SampleLineTests: XCTestCase {
         }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Taipei"))
-        let date = try XCTUnwrap(calendar.date(from: DateComponents(
-            year: 2026, month: 11, day: 12, hour: 7, minute: 5, second: 9, nanosecond: 7_000_000
-        )))
+        let date = try XCTUnwrap(
+            calendar.date(
+                from: DateComponents(
+                    year: 2026, month: 11, day: 12, hour: 7, minute: 5, second: 9, nanosecond: 7_000_000
+                )))
         let ms = Int64((date.timeIntervalSince1970 * 1_000).rounded())
         let line = SampleLine.sample(full, resource: resource, atMs: ms)
         XCTAssertEqual(try object(line)["ts"] as? String, "2026-11-11T23:05:09.007Z")
@@ -195,7 +200,10 @@ final class SampleLineTests: XCTestCase {
 
     func test2611_0004S11TheOverLimitLineIsExactlyTheExpectedText() throws {
         let line = SampleLine.overLimit(path: "/a/dash.html", count: 1001, limit: 1000, resource: resource, atMs: atMs)
-        XCTAssertEqual(line, #"{"attrs":{"tarmac.card.pending_events.held":1001,"tarmac.card.pending_events.limit":1000,"tarmac.card.pending_events.path":"/a/dash.html"},"event":"tarmac.card.pending_events.over_limit","resource":{"process.pid":9156,"service.name":"tarmac-app","service.version":"0.20.1"},"severity":"WARN","ts":"2026-11-12T10:15:00.000Z"}"#)
+        XCTAssertEqual(
+            line,
+            #"{"attrs":{"tarmac.card.pending_events.held":1001,"tarmac.card.pending_events.limit":1000,"tarmac.card.pending_events.path":"/a/dash.html"},"event":"tarmac.card.pending_events.over_limit","resource":{"process.pid":9156,"service.name":"tarmac-app","service.version":"0.20.1"},"severity":"WARN","ts":"2026-11-12T10:15:00.000Z"}"#
+        )
         XCTAssertNoThrow(try object(line))
     }
 
@@ -226,7 +234,10 @@ final class SampleLineTests: XCTestCase {
         unread.webContent = []
         var asked: [Int32] = []
 
-        let read = unread.reading(appPid: 9156) { asked.append($0); return 1 }
+        let read = unread.reading(appPid: 9156) {
+            asked.append($0)
+            return 1
+        }
 
         XCTAssertEqual(asked, [9156])
         XCTAssertNil(read.daemonFootprint)

@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacTerm
 
 final class TerminalGridLayoutTests: XCTestCase {
@@ -6,7 +7,8 @@ final class TerminalGridLayoutTests: XCTestCase {
     private let padding = TerminalPadding(top: 2, left: 10, bottom: 16, right: 10)
 
     private func layout(_ width: CGFloat, _ height: CGFloat) -> TerminalGridLayout? {
-        TerminalGridLayout(bounds: CGSize(width: width, height: height), cell: cell, padding: padding, pixelsPerPoint: 1)
+        TerminalGridLayout(
+            bounds: CGSize(width: width, height: height), cell: cell, padding: padding, pixelsPerPoint: 1)
     }
 
     func testGridIsTheWholeCellsTheContentBoxHolds() throws {
@@ -63,10 +65,11 @@ final class TerminalGridLayoutTests: XCTestCase {
     /// On a 2× display a cell can be half a point wide, which no whole number
     /// of points describes; libghostty-vt is told the grid in device pixels.
     func testSurfaceGeometryIsInDevicePixels() throws {
-        let layout = try XCTUnwrap(TerminalGridLayout(
-            bounds: CGSize(width: 10 + 4 * 9.5 + 10, height: 2 + 3 * 21.5 + 16),
-            cell: CGSize(width: 9.5, height: 21.5), padding: padding, pixelsPerPoint: 2
-        ))
+        let layout = try XCTUnwrap(
+            TerminalGridLayout(
+                bounds: CGSize(width: 10 + 4 * 9.5 + 10, height: 2 + 3 * 21.5 + 16),
+                cell: CGSize(width: 9.5, height: 21.5), padding: padding, pixelsPerPoint: 2
+            ))
         XCTAssertEqual(
             layout.surface, SurfaceGeometry(width: 76, height: 129, cellWidth: 19, cellHeight: 43, pixelsPerPoint: 2)
         )

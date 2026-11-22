@@ -33,15 +33,18 @@ public struct MsgPackField: Equatable, Sendable {
     }
 }
 
-public extension MsgPackValue {
-    var isNil: Bool { if case .nil = self { return true }; return false }
+extension MsgPackValue {
+    public var isNil: Bool {
+        if case .nil = self { return true }
+        return false
+    }
 
-    var stringValue: String? {
+    public var stringValue: String? {
         if case .string(let s) = self { return s }
         return nil
     }
 
-    var intValue: Int? {
+    public var intValue: Int? {
         switch self {
         case .int(let n): return Int(exactly: n)
         case .uint(let n): return Int(exactly: n)
@@ -49,7 +52,7 @@ public extension MsgPackValue {
         }
     }
 
-    var uint64Value: UInt64? {
+    public var uint64Value: UInt64? {
         switch self {
         case .int(let n): return n >= 0 ? UInt64(n) : nil
         case .uint(let n): return n
@@ -59,7 +62,7 @@ public extension MsgPackValue {
 
     /// Integers count: serde's `f64` visitor accepts one, so the Rust side reads
     /// `x:1` as `1.0`.
-    var doubleValue: Double? {
+    public var doubleValue: Double? {
         switch self {
         case .double(let d): return d
         case .int(let n): return Double(n)
@@ -68,22 +71,22 @@ public extension MsgPackValue {
         }
     }
 
-    var boolValue: Bool? {
+    public var boolValue: Bool? {
         if case .bool(let b) = self { return b }
         return nil
     }
 
-    var binaryValue: Data? {
+    public var binaryValue: Data? {
         if case .binary(let d) = self { return d }
         return nil
     }
 
-    var arrayValue: [MsgPackValue]? {
+    public var arrayValue: [MsgPackValue]? {
         if case .array(let a) = self { return a }
         return nil
     }
 
-    var mapValue: [String: MsgPackValue]? {
+    public var mapValue: [String: MsgPackValue]? {
         switch self {
         case .map(let m): return m
         case .orderedMap(let fields):
@@ -92,7 +95,7 @@ public extension MsgPackValue {
         }
     }
 
-    subscript(key: String) -> MsgPackValue? { mapValue?[key] }
+    public subscript(key: String) -> MsgPackValue? { mapValue?[key] }
 }
 
 public enum MsgPackError: Error, Equatable, CustomStringConvertible {

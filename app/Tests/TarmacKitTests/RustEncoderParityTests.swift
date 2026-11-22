@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// Every hex string here is what `tarmac_protocol::encode` (rmp_serde
 /// `to_vec_named`) emits for the `Msg` named above it — captured from the Rust
@@ -407,7 +407,8 @@ final class RustEncoderParityTests: XCTestCase {
     /// The daemon's `BTreeMap` writes the records in key order, whatever order
     /// they were made in; the Rust capture is `term_records_are_written_in_key_order`.
     func testTermRecordsAreWrittenInKeyOrder() {
-        let records = Dictionary(uniqueKeysWithValues: ["f", "e", "d", "c", "b", "a"].map { ($0, TermRecord(lastCwd: nil)) })
+        let records = Dictionary(
+            uniqueKeysWithValues: ["f", "e", "d", "c", "b", "a"].map { ($0, TermRecord(lastCwd: nil)) })
         // Msg::Restore { docs: [], tiles: [], …, term_records: {"a".."f": TermRecord { last_cwd: None }} }
         assertParity(
             .restore(docs: [], tiles: [], board: nil, boardID: nil, liveTerms: [], termRecords: records),
@@ -663,14 +664,15 @@ final class RustEncoderParityTests: XCTestCase {
         // Conformance vector 7's structure as Rust re-encodes it: the two keys the
         // vector omits (`repo_root`, `last_changed_ms`) come back as explicit nils.
         assertParity(
-            .docOpened(doc: RestoreDoc(
-                path: "/a.md",
-                via: "cli",
-                repo: "api",
-                repoColor: 3,
-                read: false,
-                lastOpenedMs: 1_718_000_000_000
-            )),
+            .docOpened(
+                doc: RestoreDoc(
+                    path: "/a.md",
+                    via: "cli",
+                    repo: "api",
+                    repoColor: 3,
+                    read: false,
+                    lastOpenedMs: 1_718_000_000_000
+                )),
             """
             89 a1 74 aa 64 6f 63 5f 6f 70 65 6e 65 64 a4 70 61 74 68 a5 2f 61 2e 6d
             64 a3 76 69 61 a3 63 6c 69 a4 72 65 70 6f a3 61 70 69 a9 72 65 70 6f 5f
@@ -684,17 +686,18 @@ final class RustEncoderParityTests: XCTestCase {
         //   last_changed_ms: 1_765_432_100_000, last_opened_ms: 1_765_432_100_123,
         //   term_id: "term-42" })
         assertParity(
-            .docOpened(doc: RestoreDoc(
-                path: "/a.md",
-                via: "user",
-                repo: "infra",
-                repoRoot: "/Users/x/infra",
-                repoColor: 1,
-                read: true,
-                lastChangedMs: 1_765_432_100_000,
-                lastOpenedMs: 1_765_432_100_123,
-                termID: "term-42"
-            )),
+            .docOpened(
+                doc: RestoreDoc(
+                    path: "/a.md",
+                    via: "user",
+                    repo: "infra",
+                    repoRoot: "/Users/x/infra",
+                    repoColor: 1,
+                    read: true,
+                    lastChangedMs: 1_765_432_100_000,
+                    lastOpenedMs: 1_765_432_100_123,
+                    termID: "term-42"
+                )),
             """
             8a a1 74 aa 64 6f 63 5f 6f 70 65 6e 65 64 a4 70 61 74 68 a5 2f 61 2e 6d
             64 a3 76 69 61 a4 75 73 65 72 a4 72 65 70 6f a5 69 6e 66 72 61 a9 72 65

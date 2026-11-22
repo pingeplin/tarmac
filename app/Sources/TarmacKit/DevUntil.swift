@@ -60,7 +60,9 @@ public enum DevUntil {
 
         // `contains` is a word, the rest are symbols; match the word first so a path
         // ending in "contains" cannot be mistaken for the operator.
-        let rawPath: Substring, rawOp: Substring, rawValue: Substring
+        let rawPath: Substring
+        let rawOp: Substring
+        let rawValue: Substring
         if let match = text.firstMatch(of: /^(.*?)\s+(contains)\s+(.*)$/) {
             (rawPath, rawOp, rawValue) = (match.1, match.2, match.3)
         } else if let match = text.firstMatch(of: /^(.*?)\s*(==|!=|~=)\s*(.*)$/) {
@@ -101,7 +103,9 @@ public enum DevUntil {
     /// `===` for the scalars an expression can name; an array or object is never
     /// identical to one.
     private static func identical(_ lhs: JSONValue, _ rhs: JSONValue) -> Bool {
-        if case .string(let a) = lhs, case .string(let b) = rhs { return a.unicodeScalars.elementsEqual(b.unicodeScalars) }
+        if case .string(let a) = lhs, case .string(let b) = rhs {
+            return a.unicodeScalars.elementsEqual(b.unicodeScalars)
+        }
         return lhs == rhs
     }
 
@@ -135,7 +139,7 @@ public enum DevUntil {
         // `Double("0x10")` and `Double("0x1p4")` parse, and `Double("0b11")` does not;
         // the spec grammar admits only a decimal or exponent literal.
         guard source.wholeMatch(of: /[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?/) != nil,
-              let number = Double(source), number.isFinite
+            let number = Double(source), number.isFinite
         else { return nil }
         return .number(number)
     }
@@ -159,10 +163,12 @@ public enum DevUntil {
                 guard let close = rest.lastIndex(of: "]") else { return nil }
                 let id = String(rest[rest.index(rest.startIndex, offsetBy: 6)..<close])
                 guard case .array(let cards)? = field("cards", in: fields) else { return nil }
-                guard let card = cards.first(where: { card in
-                    guard case .object(let cardFields) = card else { return false }
-                    return field("id", in: cardFields).map { identical($0, .string(id)) } ?? false
-                }) else { return nil }
+                guard
+                    let card = cards.first(where: { card in
+                        guard case .object(let cardFields) = card else { return false }
+                        return field("id", in: cardFields).map { identical($0, .string(id)) } ?? false
+                    })
+                else { return nil }
                 node = card
                 rest = rest[rest.index(after: close)...]
                 if rest.first == "." { rest = rest.dropFirst() }

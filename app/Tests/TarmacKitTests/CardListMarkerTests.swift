@@ -1,5 +1,6 @@
 import WebKit
 import XCTest
+
 @testable import TarmacKit
 
 /// The list markers of a magnified HTML card (spec 2611.0019), checked in real
@@ -13,29 +14,29 @@ final class CardListMarkerTests: XCTestCase {
     private static let long = "words of a list item that is long enough to wrap onto a second line"
 
     private static let lines = """
-    function lines(el) {
-      const r = document.createRange(); r.selectNodeContents(el);
-      const by = new Map();
-      for (const q of r.getClientRects()) {
-        if (q.width < 1) continue;
-        const k = Math.round(q.top);
-        by.set(k, Math.min(by.has(k) ? by.get(k) : 1e9, q.left));
-      }
-      return [...by.entries()].sort((a, b) => a[0] - b[0]).map(e => e[1]);
-    }
-    function bands(el) {
-      const r = document.createRange(); r.selectNodeContents(el);
-      const by = new Map();
-      for (const q of r.getClientRects()) {
-        if (q.width < 1) continue;
-        const k = Math.round(q.top);
-        const b = by.get(k) || { left: 1e9, top: q.top, bottom: q.bottom };
-        b.left = Math.min(b.left, q.left); b.bottom = Math.max(b.bottom, q.bottom);
-        by.set(k, b);
-      }
-      return [...by.values()].sort((a, b) => a.top - b.top).map(b => [b.left, b.top, b.bottom]);
-    }
-    """
+        function lines(el) {
+          const r = document.createRange(); r.selectNodeContents(el);
+          const by = new Map();
+          for (const q of r.getClientRects()) {
+            if (q.width < 1) continue;
+            const k = Math.round(q.top);
+            by.set(k, Math.min(by.has(k) ? by.get(k) : 1e9, q.left));
+          }
+          return [...by.entries()].sort((a, b) => a[0] - b[0]).map(e => e[1]);
+        }
+        function bands(el) {
+          const r = document.createRange(); r.selectNodeContents(el);
+          const by = new Map();
+          for (const q of r.getClientRects()) {
+            if (q.width < 1) continue;
+            const k = Math.round(q.top);
+            const b = by.get(k) || { left: 1e9, top: q.top, bottom: q.bottom };
+            b.left = Math.min(b.left, q.left); b.bottom = Math.max(b.bottom, q.bottom);
+            by.set(k, b);
+          }
+          return [...by.values()].sort((a, b) => a.top - b.top).map(b => [b.left, b.top, b.bottom]);
+        }
+        """
 
     /// The script's value, as JSON text decoded.
     private func eval(_ view: WKWebView, _ script: String) throws -> Any? {
@@ -52,13 +53,13 @@ final class CardListMarkerTests: XCTestCase {
         _ body: String, css: String = "", zoom: Double?, fonts: CardFontVariables? = nil, then script: String? = nil
     ) throws -> WKWebView {
         let page = """
-        <!doctype html><script>\(try CardPage.shim(fonts: fonts))</script><html><head><meta charset="utf-8"><style>
-        html { background: #fff; color: #000; }
-        body { margin: 0; padding: 20px 60px; width: 300px; font: 14px -apple-system, sans-serif; }
-        ul, ol { margin: 0; }
-        \(css)
-        </style></head><body>\(body)</body></html>
-        """
+            <!doctype html><script>\(try CardPage.shim(fonts: fonts))</script><html><head><meta charset="utf-8"><style>
+            html { background: #fff; color: #000; }
+            body { margin: 0; padding: 20px 60px; width: 300px; font: 14px -apple-system, sans-serif; }
+            ul, ol { margin: 0; }
+            \(css)
+            </style></head><body>\(body)</body></html>
+            """
         let view = try CardPage.load(page, zoom: zoom)
         if let script { _ = try eval(view, "(\(script), 0)") }
         return view
@@ -72,7 +73,8 @@ final class CardListMarkerTests: XCTestCase {
 
     /// The right edge, in view points, of what is drawn left of `left`
     /// within the marker's reach, between `top` and `bottom`; nil for none.
-    private func ink(_ shot: NSBitmapImageRep, _ view: WKWebView, left: Double, top: Double, bottom: Double) -> Double? {
+    private func ink(_ shot: NSBitmapImageRep, _ view: WKWebView, left: Double, top: Double, bottom: Double) -> Double?
+    {
         let scale = Double(shot.pixelsWide) / Double(view.bounds.width)
         let xs = Int((left - 90) * scale)..<Int((left - 2) * scale)
         let ys = Int((top + 3) * scale)..<Int((bottom - 3) * scale)
@@ -82,14 +84,19 @@ final class CardListMarkerTests: XCTestCase {
 
     /// The marker of `#it`'s item is drawn beside its first line and not
     /// beside its second.
-    private func assertMarkerOnTheFirstLine(_ view: WKWebView, file: StaticString = #filePath, line: UInt = #line) throws {
+    private func assertMarkerOnTheFirstLine(_ view: WKWebView, file: StaticString = #filePath, line: UInt = #line)
+        throws
+    {
         let lines = try XCTUnwrap(eval(view, "bands(document.getElementById('it'))") as? [[Double]])
         XCTAssertGreaterThanOrEqual(lines.count, 2, "the item wraps", file: file, line: line)
         let shot = try CardPage.snapshot(view)
         let marker = ink(shot, view, left: lines[0][0], top: lines[0][1], bottom: lines[0][2])
         XCTAssertNotNil(marker, "a marker beside the first line", file: file, line: line)
-        XCTAssertLessThan(marker ?? .infinity, lines[0][0] - 10, "a gap between the marker and the text", file: file, line: line)
-        XCTAssertNil(ink(shot, view, left: lines[1][0], top: lines[1][1], bottom: lines[1][2]), "no marker beside the second line", file: file, line: line)
+        XCTAssertLessThan(
+            marker ?? .infinity, lines[0][0] - 10, "a gap between the marker and the text", file: file, line: line)
+        XCTAssertNil(
+            ink(shot, view, left: lines[1][0], top: lines[1][1], bottom: lines[1][2]),
+            "no marker beside the second line", file: file, line: line)
     }
 
     /// Checks the item `#it` at zoom 3 against itself at zoom 1, and its
@@ -129,7 +136,8 @@ final class CardListMarkerTests: XCTestCase {
 
     func testS22AnItemInAScrolledBoxHasItsFirstLineInPlace() throws {
         let filler = (1...6).map { "<li>filler \($0) \(Self.long)</li>" }.joined()
-        let body = "<div id=box style='height:150px;overflow:auto'><ul>\(filler)<li id=it>First \(Self.long)</li></ul></div>"
+        let body =
+            "<div id=box style='height:150px;overflow:auto'><ul>\(filler)<li id=it>First \(Self.long)</li></ul></div>"
         let view = try assertLinesInPlace(body, then: "document.getElementById('box').scrollTop = 120")
         XCTAssertEqual(try mark(view, "#it"), "disc")
     }
@@ -143,13 +151,19 @@ final class CardListMarkerTests: XCTestCase {
     }
 
     private func marks(_ view: WKWebView, _ selector: String) throws -> [String?] {
-        let value = try eval(view, "[...document.querySelectorAll(\(json(selector)))].map(li => li.getAttribute('data-tarmac-marker'))")
+        let value = try eval(
+            view, "[...document.querySelectorAll(\(json(selector)))].map(li => li.getAttribute('data-tarmac-marker'))")
         return try XCTUnwrap(value as? [Any]).map { $0 as? String }
     }
 
-    private func style(_ view: WKWebView, _ selector: String, _ property: String, pseudo: String? = nil) throws -> [String] {
+    private func style(_ view: WKWebView, _ selector: String, _ property: String, pseudo: String? = nil) throws
+        -> [String]
+    {
         let pseudoArgument = pseudo.map { ", \(json($0))" } ?? ""
-        let value = try eval(view, "[...document.querySelectorAll(\(json(selector)))].map(el => getComputedStyle(el\(pseudoArgument)).getPropertyValue(\(json(property))))")
+        let value = try eval(
+            view,
+            "[...document.querySelectorAll(\(json(selector)))].map(el => getComputedStyle(el\(pseudoArgument)).getPropertyValue(\(json(property))))"
+        )
         return try XCTUnwrap(value as? [String])
     }
 
@@ -158,20 +172,26 @@ final class CardListMarkerTests: XCTestCase {
     }
 
     private func markerSheets(_ view: WKWebView) throws -> Int {
-        try XCTUnwrap(eval(view, "document.adoptedStyleSheets.filter(s => s.cssRules[0] && s.cssRules[0].selectorText === 'li[data-tarmac-marker]').length") as? Int)
+        try XCTUnwrap(
+            eval(
+                view,
+                "document.adoptedStyleSheets.filter(s => s.cssRules[0] && s.cssRules[0].selectorText === 'li[data-tarmac-marker]').length"
+            ) as? Int)
     }
 
     private func assertControlMarked(_ view: WKWebView, file: StaticString = #filePath, line: UInt = #line) throws {
-        XCTAssertEqual(try marks(view, "#control > li"), ["disc", "disc"], "the control is marked", file: file, line: line)
+        XCTAssertEqual(
+            try marks(view, "#control > li"), ["disc", "disc"], "the control is marked", file: file, line: line)
     }
 
     func testS3NumberedItemsUseTheListItemCounter() throws {
-        let view = try card("""
-        <ol start=5><li>a</li><li>b</li></ol>
-        <ol reversed><li>a</li><li>b</li><li>c</li></ol>
-        <ol><li>a</li><li value=10>b</li><li>c</li></ol>
-        <ol start=3 reversed><li>a</li><li>b</li></ol>
-        """, zoom: 3)
+        let view = try card(
+            """
+            <ol start=5><li>a</li><li>b</li></ol>
+            <ol reversed><li>a</li><li>b</li><li>c</li></ol>
+            <ol><li>a</li><li value=10>b</li><li>c</li></ol>
+            <ol start=3 reversed><li>a</li><li>b</li></ol>
+            """, zoom: 3)
         XCTAssertEqual(try marks(view, "ol > li"), Array(repeating: "decimal", count: 10))
         XCTAssertEqual(try style(view, "ol > li", "list-style-type"), Array(repeating: "none", count: 10))
         for content in try style(view, "ol > li", "content", pseudo: "::before") {
@@ -195,7 +215,8 @@ final class CardListMarkerTests: XCTestCase {
     }
 
     func testS6AListWithNoMarkerGetsNone() throws {
-        let view = try card("<ul class=chips><li>a</li><li>b</li></ul>" + Self.control, css: "ul.chips { list-style: none; }", zoom: 3)
+        let view = try card(
+            "<ul class=chips><li>a</li><li>b</li></ul>" + Self.control, css: "ul.chips { list-style: none; }", zoom: 3)
         XCTAssertEqual(try marks(view, ".chips > li"), [nil, nil])
         for content in try style(view, ".chips > li", "content", pseudo: "::before") {
             XCTAssertTrue(["none", "normal"].contains(content), content)
@@ -210,7 +231,8 @@ final class CardListMarkerTests: XCTestCase {
     }
 
     func testS8AnAuthorsOwnBeforeContentIsLeftAlone() throws {
-        let view = try card("<ul class=ticks><li>a</li></ul>" + Self.control, css: #"ul.ticks li::before { content: "✓ "; }"#, zoom: 3)
+        let view = try card(
+            "<ul class=ticks><li>a</li></ul>" + Self.control, css: #"ul.ticks li::before { content: "✓ "; }"#, zoom: 3)
         XCTAssertEqual(try marks(view, ".ticks > li"), [nil])
         XCTAssertEqual(try style(view, ".ticks > li", "content", pseudo: "::before"), [#""✓ ""#])
         XCTAssertEqual(try style(view, ".ticks > li", "list-style-type"), ["disc"])
@@ -228,17 +250,22 @@ final class CardListMarkerTests: XCTestCase {
             ("hebrew", "list-style-type: hebrew"),
         ]
         let pseudo = """
-        ul.arrow li::marker { content: "→ "; }
-        ul.tail li::after { content: " ·"; }
-        """
-        let css = cases.map { "ul.\($0.0) { \($0.1); }" }.joined(separator: "\n") + "\nul.blocks > li { display: block; }\n" + pseudo
-        let body = (cases.map(\.0) + ["arrow", "tail"]).map { "<ul class=\($0)><li>a</li></ul>" }.joined()
+            ul.arrow li::marker { content: "→ "; }
+            ul.tail li::after { content: " ·"; }
+            """
+        let css =
+            cases.map { "ul.\($0.0) { \($0.1); }" }.joined(separator: "\n") + "\nul.blocks > li { display: block; }\n"
+            + pseudo
+        let body =
+            (cases.map(\.0) + ["arrow", "tail"]).map { "<ul class=\($0)><li>a</li></ul>" }.joined()
             + "<ul class=blocks><li>a</li></ul><div id=div style='display:list-item'>d</div>" + Self.control
         let before = try card(body, css: css, zoom: 1)
         let view = try card(body, css: css, zoom: 3)
         for name in cases.map(\.0) + ["blocks", "arrow", "tail"] {
             XCTAssertEqual(try marks(view, ".\(name) > li"), [nil], name)
-            XCTAssertEqual(try style(view, ".\(name) > li", "list-style-type"), try style(before, ".\(name) > li", "list-style-type"), name)
+            XCTAssertEqual(
+                try style(view, ".\(name) > li", "list-style-type"),
+                try style(before, ".\(name) > li", "list-style-type"), name)
         }
         XCTAssertNil(try mark(view, "#div"), "a list-item div")
         XCTAssertEqual(try style(view, "#div", "list-style-type"), ["disc"], "a list-item div")
@@ -246,7 +273,9 @@ final class CardListMarkerTests: XCTestCase {
     }
 
     func testS10AnAuthorsStrongerImportantTypeKeepsTheNativeMarker() throws {
-        let view = try card("<ul class=keep><li>a</li></ul>" + Self.control, css: "ul.keep > li { list-style-type: square !important; }", zoom: 3)
+        let view = try card(
+            "<ul class=keep><li>a</li></ul>" + Self.control,
+            css: "ul.keep > li { list-style-type: square !important; }", zoom: 3)
         XCTAssertEqual(try marks(view, ".keep > li"), [nil])
         XCTAssertEqual(try style(view, ".keep > li", "list-style-type"), ["square"])
         try assertControlMarked(view)
@@ -260,7 +289,10 @@ final class CardListMarkerTests: XCTestCase {
 
     func testS18AnAuthorsLaterBeforeContentWins() throws {
         let view = try card("<ul><li id=it>a</li></ul>", zoom: 3)
-        _ = try eval(view, #"(document.head.appendChild(Object.assign(document.createElement('style'), { textContent: 'li::before { content: "– " }' })), 0)"#)
+        _ = try eval(
+            view,
+            #"(document.head.appendChild(Object.assign(document.createElement('style'), { textContent: 'li::before { content: "– " }' })), 0)"#
+        )
         XCTAssertEqual(try mark(view, "#it"), "disc")
         XCTAssertEqual(try style(view, "#it", "content", pseudo: "::before"), [#""– ""#])
     }
@@ -305,20 +337,22 @@ final class CardListMarkerTests: XCTestCase {
 
     func testS12ItemsAddedAfterTheZoomAreMarkedBeforeTheNextTask() throws {
         let view = try card("<ul id=first><li>a</li></ul>", zoom: 3)
-        _ = try eval(view, """
-        (() => {
-          const list = document.createElement('ul');
-          list.id = 'added';
-          list.innerHTML = '<li>x</li><li>y</li>';
-          document.body.appendChild(list);
-          document.getElementById('first').appendChild(document.createElement('li'));
-          setTimeout(() => {
-            window.seen = [...document.querySelectorAll('#added > li, #first > li:last-child')]
-              .map(li => li.getAttribute('data-tarmac-marker'));
-          }, 0);
-          return 0;
-        })()
-        """)
+        _ = try eval(
+            view,
+            """
+            (() => {
+              const list = document.createElement('ul');
+              list.id = 'added';
+              list.innerHTML = '<li>x</li><li>y</li>';
+              document.body.appendChild(list);
+              document.getElementById('first').appendChild(document.createElement('li'));
+              setTimeout(() => {
+                window.seen = [...document.querySelectorAll('#added > li, #first > li:last-child')]
+                  .map(li => li.getAttribute('data-tarmac-marker'));
+              }, 0);
+              return 0;
+            })()
+            """)
         try CardPage.spin(until: { (try? self.eval(view, "window.seen !== undefined")) as? Bool == true }, "the task")
         XCTAssertEqual(try eval(view, "window.seen") as? [String], ["disc", "disc", "disc"])
     }
@@ -351,9 +385,9 @@ final class CardListMarkerTests: XCTestCase {
 
     func testS29ItemsBesideAnAuthorsFloatStayBesideIt() throws {
         let body = """
-        <div style="float:left;width:120px;height:200px;margin-right:10px"></div>
-        <ul><li id=f1>one</li><li id=f2>two</li><li id=f3>three</li></ul>
-        """
+            <div style="float:left;width:120px;height:200px;margin-right:10px"></div>
+            <ul><li id=f1>one</li><li id=f2>two</li><li id=f3>three</li></ul>
+            """
         let tops = "['f1', 'f2', 'f3'].map(id => document.getElementById(id).getBoundingClientRect().top)"
         let reference = try XCTUnwrap(eval(card(body, zoom: 1), tops) as? [Double])
         let view = try card(body, zoom: 3)
@@ -381,7 +415,8 @@ final class CardListMarkerTests: XCTestCase {
             "the marker sheet is last in document.styleSheets (GUIDE.md)"
         )
         XCTAssertEqual(
-            try eval(view, "getComputedStyle(document.documentElement).getPropertyValue('--tarmac-prose-size').trim()") as? String,
+            try eval(view, "getComputedStyle(document.documentElement).getPropertyValue('--tarmac-prose-size').trim()")
+                as? String,
             "17px"
         )
         try assertControlMarked(view)

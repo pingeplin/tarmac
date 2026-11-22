@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Spec 2611.0013 S8, S38: the open inbox panel's keys.

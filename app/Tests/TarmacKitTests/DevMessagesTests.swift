@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// The QA driver's wire types against `tarmac_protocol::dev`. Every hex string
 /// is what `dev::encode_request` / `dev::encode_reply` emits for the value named
@@ -199,9 +199,10 @@ final class DevMessagesTests: XCTestCase {
             .zoom(z: 0.5)
         )
         XCTAssertEqual(
-            try DevRequest.decode(.map([
-                "t": .string("press"), "combo": .string("cmd+q"), "hold_ms": .int(1), "pressure": .int(5),
-            ])),
+            try DevRequest.decode(
+                .map([
+                    "t": .string("press"), "combo": .string("cmd+q"), "hold_ms": .int(1), "pressure": .int(5),
+                ])),
             .press(combo: "cmd+q", holdMs: 1, ageMs: nil, busyMs: nil)
         )
     }
@@ -244,7 +245,9 @@ final class DevMessagesTests: XCTestCase {
         XCTAssertThrowsError(try DevRequest.decode(.map(["t": .string("zoom")]))) { error in
             XCTAssertEqual(error as? MessageError, .missingField("z"))
         }
-        XCTAssertThrowsError(try DevRequest.decode(.map(["t": .string("type"), "card": .int(1), "text": .string("x")]))) { error in
+        XCTAssertThrowsError(
+            try DevRequest.decode(.map(["t": .string("type"), "card": .int(1), "text": .string("x")]))
+        ) { error in
             XCTAssertEqual(error as? MessageError, .badField("card"))
         }
         XCTAssertThrowsError(try DevRequest.decode(.array([]))) { error in

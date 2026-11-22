@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Spec 2607.0004 S2: a card's content is addressed by a `tarmac-card://` URL.
@@ -13,7 +14,8 @@ final class CardURLTests: XCTestCase {
         let path = "/tmp/圖表 100%#?.html"
         let url = CardURL.src(path: path, mtimeMs: 7)
         XCTAssertEqual(url, "tarmac-card://doc/%2Ftmp%2F%E5%9C%96%E8%A1%A8%20100%25%23%3F.html?v=7")
-        let segment = try XCTUnwrap(url.split(separator: "/", omittingEmptySubsequences: false).last?.split(separator: "?").first)
+        let segment = try XCTUnwrap(
+            url.split(separator: "/", omittingEmptySubsequences: false).last?.split(separator: "?").first)
         XCTAssertEqual(String(segment).removingPercentEncoding, path)
     }
 

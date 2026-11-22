@@ -53,7 +53,8 @@ enum DocSideTile {
         }
 
         Theme.srgb(palette.line).setStroke()
-        let outline = NSBezierPath(roundedRect: card.insetBy(dx: 0.5, dy: 0.5), xRadius: cardCorner, yRadius: cardCorner)
+        let outline = NSBezierPath(
+            roundedRect: card.insetBy(dx: 0.5, dy: 0.5), xRadius: cardCorner, yRadius: cardCorner)
         outline.lineWidth = 1
         outline.stroke()
     }
@@ -61,6 +62,8 @@ enum DocSideTile {
     private static func line(_ index: Int, x: CGFloat, in body: NSRect, width: CGFloat) {
         let y = body.minY + firstLineTop + CGFloat(index) * lineStep
         let radius = lineHeight / 2
-        NSBezierPath(roundedRect: NSRect(x: x, y: y, width: width, height: lineHeight), xRadius: radius, yRadius: radius).fill()
+        NSBezierPath(
+            roundedRect: NSRect(x: x, y: y, width: width, height: lineHeight), xRadius: radius, yRadius: radius
+        ).fill()
     }
 }

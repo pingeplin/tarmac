@@ -1,5 +1,6 @@
 import GhosttyVt
 import XCTest
+
 @testable import TarmacTerm
 
 @MainActor
@@ -17,7 +18,8 @@ final class TerminalInputTests: XCTestCase {
     }
 
     private func letter(_ key: GhosttyKey, _ character: Character, mods: KeyMods = []) -> KeyInput {
-        KeyInput(key: key, mods: mods, text: String(character), unshiftedCodepoint: character.unicodeScalars.first!.value)
+        KeyInput(
+            key: key, mods: mods, text: String(character), unshiftedCodepoint: character.unicodeScalars.first!.value)
     }
 
     // MARK: keys
@@ -64,14 +66,18 @@ final class TerminalInputTests: XCTestCase {
         XCTAssertEqual(sent(engine.encode(letter(GHOSTTY_KEY_B, "b", mods: .option))), "\u{1b}b")
         engine.optionAsAlt = false
         XCTAssertEqual(
-            sent(engine.encode(KeyInput(key: GHOSTTY_KEY_B, mods: .option, consumedMods: .option, text: "∫", unshiftedCodepoint: 0x62))),
+            sent(
+                engine.encode(
+                    KeyInput(
+                        key: GHOSTTY_KEY_B, mods: .option, consumedMods: .option, text: "∫", unshiftedCodepoint: 0x62))),
             "∫"
         )
     }
 
     func testKeysTheImeConsumedSendNothing() throws {
         let engine = try engine()
-        XCTAssertEqual(engine.encode(KeyInput(key: GHOSTTY_KEY_SPACE, text: " ", unshiftedCodepoint: 0x20, composing: true)), [])
+        XCTAssertEqual(
+            engine.encode(KeyInput(key: GHOSTTY_KEY_SPACE, text: " ", unshiftedCodepoint: 0x20, composing: true)), [])
         XCTAssertEqual(engine.encode(KeyInput(key: GHOSTTY_KEY_BACKSPACE, composing: true)), [])
         XCTAssertEqual(engine.encode(KeyInput(key: GHOSTTY_KEY_ENTER, composing: true)), [])
         XCTAssertEqual(engine.encode(KeyInput(key: GHOSTTY_KEY_ARROW_LEFT, composing: true)), [])

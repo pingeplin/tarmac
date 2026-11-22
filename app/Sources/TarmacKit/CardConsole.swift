@@ -73,7 +73,7 @@ public enum CardConsole {
             return .ready(meta: meta, data: data, load: load)
         case "console":
             guard let name = payload["level"] as? String, let level = Level(rawValue: name),
-                  let rawArgs = payload["args"] as? [Any]
+                let rawArgs = payload["args"] as? [Any]
             else { return nil }
             var args: [JSONValue] = []
             for raw in rawArgs {

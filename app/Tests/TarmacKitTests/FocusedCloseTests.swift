@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// 2606.0004: ⌘W "close the focused card" routing (issue #15).

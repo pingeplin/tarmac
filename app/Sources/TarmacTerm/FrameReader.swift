@@ -47,7 +47,8 @@ final class FrameReader {
         let newRows = Int(get(GHOSTTY_RENDER_STATE_DATA_ROWS, UInt16(0)))
         let dirty = get(GHOSTTY_RENDER_STATE_DATA_DIRTY, GHOSTTY_RENDER_STATE_DIRTY_FULL)
         let newDefaults = (foreground: RGB(colors.foreground), background: RGB(colors.background))
-        let redrawAll = dirty == GHOSTTY_RENDER_STATE_DIRTY_FULL || newCols != cols || newRows != rows.count
+        let redrawAll =
+            dirty == GHOSTTY_RENDER_STATE_DIRTY_FULL || newCols != cols || newRows != rows.count
             || newDefaults != defaults
         defaults = newDefaults
         if redrawAll {
@@ -87,13 +88,15 @@ final class FrameReader {
         var cursor = GhosttyRenderStateCursor()
         cursor.size = MemoryLayout<GhosttyRenderStateCursor>.size
         guard ghostty_render_state_get(state, GHOSTTY_RENDER_STATE_DATA_CURSOR, &cursor) == GHOSTTY_SUCCESS,
-              cursor.visible, cursor.viewport_has_value else { return nil }
-        let shape: CursorShape = switch cursor.visual_style {
-        case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BAR: .bar
-        case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_UNDERLINE: .underline
-        case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK_HOLLOW: .hollowBlock
-        default: .block
-        }
+            cursor.visible, cursor.viewport_has_value
+        else { return nil }
+        let shape: CursorShape =
+            switch cursor.visual_style {
+            case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BAR: .bar
+            case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_UNDERLINE: .underline
+            case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK_HOLLOW: .hollowBlock
+            default: .block
+            }
         return FrameCursor(
             col: Int(cursor.viewport_x), row: Int(cursor.viewport_y),
             shape: shape, blinks: cursor.blinking, onWideTail: cursor.wide_tail
@@ -112,7 +115,9 @@ final class FrameReader {
 
         var selection = GhosttyRenderStateRowSelection()
         selection.size = MemoryLayout<GhosttyRenderStateRowSelection>.size
-        if ghostty_render_state_row_get(iterator, GHOSTTY_RENDER_STATE_ROW_DATA_SELECTION, &selection) == GHOSTTY_SUCCESS {
+        if ghostty_render_state_row_get(iterator, GHOSTTY_RENDER_STATE_ROW_DATA_SELECTION, &selection)
+            == GHOSTTY_SUCCESS
+        {
             row.selection = Int(selection.start_x)...Int(selection.end_x)
         }
         return row
@@ -125,11 +130,12 @@ final class FrameReader {
         ghostty_render_state_row_cells_get(rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_RAW, &raw)
         var wide = GHOSTTY_CELL_WIDE_NARROW
         ghostty_cell_get(raw, GHOSTTY_CELL_DATA_WIDE, &wide)
-        cell.width = switch wide {
-        case GHOSTTY_CELL_WIDE_WIDE: .wide
-        case GHOSTTY_CELL_WIDE_SPACER_TAIL, GHOSTTY_CELL_WIDE_SPACER_HEAD: .spacer
-        default: .narrow
-        }
+        cell.width =
+            switch wide {
+            case GHOSTTY_CELL_WIDE_WIDE: .wide
+            case GHOSTTY_CELL_WIDE_SPACER_TAIL, GHOSTTY_CELL_WIDE_SPACER_HEAD: .spacer
+            default: .narrow
+            }
 
         var length: UInt32 = 0
         ghostty_render_state_row_cells_get(rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_LEN, &length)
@@ -144,7 +150,9 @@ final class FrameReader {
         }
 
         var background = GhosttyColorRgb()
-        if ghostty_render_state_row_cells_get(rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_BG_COLOR, &background) == GHOSTTY_SUCCESS {
+        if ghostty_render_state_row_cells_get(rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_BG_COLOR, &background)
+            == GHOSTTY_SUCCESS
+        {
             cell.style.background = RGB(background)
         }
 
@@ -153,7 +161,9 @@ final class FrameReader {
         guard styled else { return cell }
 
         var foreground = GhosttyColorRgb()
-        if ghostty_render_state_row_cells_get(rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_FG_COLOR, &foreground) == GHOSTTY_SUCCESS {
+        if ghostty_render_state_row_cells_get(rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_FG_COLOR, &foreground)
+            == GHOSTTY_SUCCESS
+        {
             cell.style.foreground = RGB(foreground)
         }
         var style = GhosttyStyle()

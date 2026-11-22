@@ -72,7 +72,7 @@ public struct KeyPress: Equatable, Sendable {
     /// One UTF-16 unit, as the web app counts a key's length.
     public var typed: String? {
         guard !command, !option, !control, key.utf16.count == 1,
-              let scalar = key.unicodeScalars.first, BoardSwitcher.isTypable(scalar: scalar.value)
+            let scalar = key.unicodeScalars.first, BoardSwitcher.isTypable(scalar: scalar.value)
         else { return nil }
         return key
     }

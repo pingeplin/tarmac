@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Spec 2611.0013 S6, S36: where a jump from the inbox goes, and what it does

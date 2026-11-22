@@ -14,7 +14,8 @@ final class QuitNoticePanel {
         // Non-activating and click-through: the notice must never take key
         // focus from the terminal. `hidesOnDeactivate` off, because a panel
         // otherwise vanishes when the app is deactivated mid-hold (⌘Tab).
-        panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel = NSPanel(
+            contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
@@ -64,9 +65,10 @@ final class QuitNoticePanel {
             height: textHeight
         )
         if let visible = screen?.visibleFrame {
-            let frame = QuitNotice.frame(visibleFrame: QuitNotice.Rect(
-                x: visible.minX, y: visible.minY, w: visible.width, h: visible.height
-            ))
+            let frame = QuitNotice.frame(
+                visibleFrame: QuitNotice.Rect(
+                    x: visible.minX, y: visible.minY, w: visible.width, h: visible.height
+                ))
             panel.setFrame(NSRect(x: frame.x, y: frame.y, width: frame.w, height: frame.h), display: false)
         }
         alpha = 1

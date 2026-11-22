@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Issue #434: the box behind a code span in the inbox preview pane has the
@@ -32,7 +33,8 @@ final class CodeSpanBoxTests: XCTestCase {
     func testOnATallerLineTheBoxFollowsTheBaseline() {
         let glyphs = CGRect(x: 40, y: 17, width: 49.2, height: 22)
         XCTAssertEqual(
-            CodeSpanBox.rect(glyphs: glyphs, baseline: 17 + 14, face: face), CGRect(x: 37, y: 20, width: 52.2, height: 14)
+            CodeSpanBox.rect(glyphs: glyphs, baseline: 17 + 14, face: face),
+            CGRect(x: 37, y: 20, width: 52.2, height: 14)
         )
     }
 

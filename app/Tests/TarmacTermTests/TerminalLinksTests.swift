@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacTerm
 
 @MainActor
@@ -92,9 +93,11 @@ final class TerminalLinksTests: XCTestCase {
         let (rows, engine) = try screen("https://example.com/aaaa/bbbb/cc", cols: 12)
         let link = TerminalLinks.link(in: rows, atCol: 5, row: 1, wraps: engine.isSoftWrapped(row:))
         XCTAssertEqual(link?.url, "https://example.com/aaaa/bbbb/cc")
-        XCTAssertEqual(link?.spans, [
-            LinkSpan(row: 0, cols: 0...11), LinkSpan(row: 1, cols: 0...11), LinkSpan(row: 2, cols: 0...7),
-        ])
+        XCTAssertEqual(
+            link?.spans,
+            [
+                LinkSpan(row: 0, cols: 0...11), LinkSpan(row: 1, cols: 0...11), LinkSpan(row: 2, cols: 0...7),
+            ])
     }
 
     /// The program went to a new line itself with room left on the row, so
@@ -127,7 +130,8 @@ final class TerminalLinksTests: XCTestCase {
         TerminalLinks.link(in: screen.rows, atCol: col, row: row, wraps: screen.engine.isSoftWrapped(row:))
     }
 
-    private let longUrl = "https://example.com/tarmac-probe/seg01-alpha-bravo-charlie/seg02_delta_echo_foxtrot"
+    private let longUrl =
+        "https://example.com/tarmac-probe/seg01-alpha-bravo-charlie/seg02_delta_echo_foxtrot"
         + "/seg03golfhotelindiajuliet/seg04-kilo.lima.mike/seg05-november-oscar-papa/seg06_quebec_romeo_sierra"
         + "/seg07tangouniformvictor/seg08-whiskey-xray-yankee/end-marker"
 
@@ -140,10 +144,12 @@ final class TerminalLinksTests: XCTestCase {
             "  g08-whiskey-xray-yankee/end-marker for the full details",
         ])
         XCTAssertEqual((0..<5).map(reply.engine.isSoftWrapped(row:)), [false, false, false, false, false])
-        let whole = TerminalLink(url: longUrl, spans: [
-            LinkSpan(row: 0, cols: 25...59), LinkSpan(row: 1, cols: 2...59), LinkSpan(row: 2, cols: 2...59),
-            LinkSpan(row: 3, cols: 2...59), LinkSpan(row: 4, cols: 2...35),
-        ])
+        let whole = TerminalLink(
+            url: longUrl,
+            spans: [
+                LinkSpan(row: 0, cols: 25...59), LinkSpan(row: 1, cols: 2...59), LinkSpan(row: 2, cols: 2...59),
+                LinkSpan(row: 3, cols: 2...59), LinkSpan(row: 4, cols: 2...35),
+            ])
         XCTAssertEqual(link(reply, atCol: 30, row: 0), whole)
         XCTAssertEqual(link(reply, atCol: 10, row: 2), whole)
         XCTAssertEqual(link(reply, atCol: 5, row: 4), whole)
@@ -232,9 +238,11 @@ final class TerminalLinksTests: XCTestCase {
             "⏺ First red green blue yellow https://example.com/docs/guide",
             "  then some more ordinary words follow right here.",
         ])
-        XCTAssertEqual(link(reply, atCol: 40, row: 0), TerminalLink(
-            url: "https://example.com/docs/guide", spans: [LinkSpan(row: 0, cols: 30...59)]
-        ))
+        XCTAssertEqual(
+            link(reply, atCol: 40, row: 0),
+            TerminalLink(
+                url: "https://example.com/docs/guide", spans: [LinkSpan(row: 0, cols: 30...59)]
+            ))
         XCTAssertNil(link(reply, atCol: 3, row: 1))
     }
 

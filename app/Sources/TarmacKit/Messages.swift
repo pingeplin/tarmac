@@ -330,12 +330,12 @@ public enum MessageError: Error, Equatable, CustomStringConvertible {
     }
 }
 
-public extension Message {
-    static func decode(payload: Data) throws -> Message {
+extension Message {
+    public static func decode(payload: Data) throws -> Message {
         try decode(MsgPack.decode(payload))
     }
 
-    static func decode(_ value: MsgPackValue) throws -> Message {
+    public static func decode(_ value: MsgPackValue) throws -> Message {
         guard let map = value.mapValue else { throw MessageError.notAMap }
         guard let t = map["t"]?.stringValue else { throw MessageError.missingField("t") }
         let fields = MapReader(map)
@@ -527,9 +527,11 @@ public extension Message {
                 boardID: try fields.opt("board_id", \.stringValue)
             )
         case "term_new_ok":
-            return .termNewOK(reqID: try fields.opt("req_id", \.uint64Value), termID: try fields.req("term_id", \.stringValue))
+            return .termNewOK(
+                reqID: try fields.opt("req_id", \.uint64Value), termID: try fields.req("term_id", \.stringValue))
         case "term_new_err":
-            return .termNewErr(reqID: try fields.req("req_id", \.uint64Value), msg: try fields.req("msg", \.stringValue))
+            return .termNewErr(
+                reqID: try fields.req("req_id", \.uint64Value), msg: try fields.req("msg", \.stringValue))
         default:
             return .unknown(type: t)
         }
@@ -563,7 +565,9 @@ public extension Message {
     private static func resumeRecord(_ raw: MsgPackValue?) throws -> ResumeRecord? {
         guard let raw, !raw.isNil else { return nil }
         guard let m = raw.mapValue else { throw MessageError.badField("resume") }
-        guard let cmd = try MapReader(m).opt("cmd", \.stringValue) else { throw MessageError.missingField("resume.cmd") }
+        guard let cmd = try MapReader(m).opt("cmd", \.stringValue) else {
+            throw MessageError.missingField("resume.cmd")
+        }
         return ResumeRecord(cmd: cmd)
     }
 
@@ -622,7 +626,7 @@ public extension Message {
         return out
     }
 
-    func encodedValue() -> MsgPackValue {
+    public func encodedValue() -> MsgPackValue {
         switch self {
         case .hello(let role, let v, let appVersion):
             return Self.tagged("hello") {
@@ -659,11 +663,14 @@ public extension Message {
             }
         case .restore(let docs, let tiles, let board, let boardID, let liveTerms, let termRecords):
             return Self.tagged("restore") {
-                $0.put("docs", .array(docs.map { doc in
-                    var entry = WireFields()
-                    Self.putDocEntry(doc, into: &entry)
-                    return .orderedMap(entry.fields)
-                }))
+                $0.put(
+                    "docs",
+                    .array(
+                        docs.map { doc in
+                            var entry = WireFields()
+                            Self.putDocEntry(doc, into: &entry)
+                            return .orderedMap(entry.fields)
+                        }))
                 $0.put("tiles", .array(tiles.map(Self.layoutTileValue)))
                 $0.put("board", unlessNil: board.map(Self.boardValue))
                 $0.put("board_id", unlessNil: boardID.map(MsgPackValue.string))
@@ -773,13 +780,16 @@ public extension Message {
             }
         case .boardList(let boards, let active):
             return Self.tagged("board_list") {
-                $0.put("boards", .array(boards.map { meta in
-                    var entry = WireFields()
-                    entry.put("board_id", .string(meta.boardID))
-                    entry.put("name", unlessNil: meta.name.map(MsgPackValue.string))
-                    entry.put("running", unlessNil: meta.running.map { .int(Int64($0)) })
-                    return .orderedMap(entry.fields)
-                }))
+                $0.put(
+                    "boards",
+                    .array(
+                        boards.map { meta in
+                            var entry = WireFields()
+                            entry.put("board_id", .string(meta.boardID))
+                            entry.put("name", unlessNil: meta.name.map(MsgPackValue.string))
+                            entry.put("running", unlessNil: meta.running.map { .int(Int64($0)) })
+                            return .orderedMap(entry.fields)
+                        }))
                 $0.put("active", .string(active))
             }
         case .boardSwitch(let boardID):
@@ -827,7 +837,7 @@ public extension Message {
         }
     }
 
-    func encodedPayload() -> Data {
+    public func encodedPayload() -> Data {
         MsgPack.encode(encodedValue())
     }
 
@@ -876,12 +886,13 @@ public extension Message {
 
     /// Keys in sorted order, as the daemon's `BTreeMap` writes them.
     private static func termRecordsValue(_ records: [String: TermRecord]) -> MsgPackValue {
-        .orderedMap(records.sorted { $0.key < $1.key }.map { id, record in
-            var m = WireFields()
-            m.put("last_cwd", unlessNil: record.lastCwd.map(MsgPackValue.string))
-            m.put("resume", unlessNil: record.resume.map { .orderedMap([MsgPackField("cmd", .string($0.cmd))]) })
-            return MsgPackField(id, .orderedMap(m.fields))
-        })
+        .orderedMap(
+            records.sorted { $0.key < $1.key }.map { id, record in
+                var m = WireFields()
+                m.put("last_cwd", unlessNil: record.lastCwd.map(MsgPackValue.string))
+                m.put("resume", unlessNil: record.resume.map { .orderedMap([MsgPackField("cmd", .string($0.cmd))]) })
+                return MsgPackField(id, .orderedMap(m.fields))
+            })
     }
 
     private static func termInfoValue(_ info: TermInfo) -> MsgPackValue {

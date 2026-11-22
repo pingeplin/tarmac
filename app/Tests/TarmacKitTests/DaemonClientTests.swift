@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// A stand-in for `tarmacd`: binds a real Unix socket, accepts connections one
 /// after another, records every frame each one writes, and can push frames
@@ -266,14 +266,16 @@ private struct ScriptedDaemon {
     @discardableResult
     func install(named name: String = "fake-tarmacd", replying reply: Message) throws -> String {
         try Framing.frame(reply.encodedPayload()).write(to: URL(fileURLWithPath: dir + "/reply"))
-        return try install(named: name, body: """
-            echo started
-            echo oops >&2
-            rm -f "$TARMAC_SOCKET" "$dir/stdin"
-            mkfifo "$dir/stdin"
-            cat "$dir/reply" > "$dir/stdin" &
-            exec nc -lU "$TARMAC_SOCKET" <> "$dir/stdin" > /dev/null
-            """)
+        return try install(
+            named: name,
+            body: """
+                echo started
+                echo oops >&2
+                rm -f "$TARMAC_SOCKET" "$dir/stdin"
+                mkfifo "$dir/stdin"
+                cat "$dir/reply" > "$dir/stdin" &
+                exec nc -lU "$TARMAC_SOCKET" <> "$dir/stdin" > /dev/null
+                """)
     }
 
     /// A daemon that runs `body` after recording its launch.
@@ -402,9 +404,10 @@ final class DaemonClientTests: XCTestCase {
 
     /// A process standing in for a daemon the client may be told to terminate.
     private func victim() throws -> pid_t {
-        let pid = try XCTUnwrap(DaemonSpawner.spawn(
-            program: "/bin/sleep", arguments: ["30"], environment: [:], logPath: "/dev/null"
-        ))
+        let pid = try XCTUnwrap(
+            DaemonSpawner.spawn(
+                program: "/bin/sleep", arguments: ["30"], environment: [:], logPath: "/dev/null"
+            ))
         victims.append(pid)
         return pid
     }
@@ -878,7 +881,8 @@ final class DaemonClientTests: XCTestCase {
 
         XCTAssertTrue(eventually { fake.launches == 1 })
         let passes = statuses.all.count
-        XCTAssertEqual(statuses.first(passes + 2).count, passes + 2, "two more connect passes ran while the child slept")
+        XCTAssertEqual(
+            statuses.first(passes + 2).count, passes + 2, "two more connect passes ran while the child slept")
         XCTAssertEqual(fake.launches, 1)
         XCTAssertTrue(eventually(timeout: 5) { fake.launches >= 2 }, "the dead child was never replaced")
     }

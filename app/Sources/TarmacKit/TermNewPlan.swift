@@ -68,12 +68,14 @@ public enum TermNewPlan {
             return .refuse(notReady(request.boardID))
         }
         let owner = board.ownerFrame == nil ? nil : request.ownerTermID
-        return .place(Place(
-            frame: TermPlacement.newTerminalFrame(prime: board.ownerFrame ?? board.primeFrame, existing: board.existing),
-            z: ZOrder.raised(above: board.zs),
-            owner: owner,
-            spawn: SpawnRequest(cwd: request.cwd),
-            cmd: request.cmd
-        ))
+        return .place(
+            Place(
+                frame: TermPlacement.newTerminalFrame(
+                    prime: board.ownerFrame ?? board.primeFrame, existing: board.existing),
+                z: ZOrder.raised(above: board.zs),
+                owner: owner,
+                spawn: SpawnRequest(cwd: request.cwd),
+                cmd: request.cmd
+            ))
     }
 }

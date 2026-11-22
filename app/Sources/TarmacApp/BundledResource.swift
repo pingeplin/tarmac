@@ -10,8 +10,9 @@ enum BundledResource {
     /// Contents/Resources, where `Bundle.module` finds no package bundle and
     /// traps, so the main bundle is asked first.
     var text: String {
-        guard let url = Bundle.main.url(forResource: name, withExtension: nil, subdirectory: subdirectory)
-            ?? Bundle.module.url(forResource: name, withExtension: nil, subdirectory: subdirectory),
+        guard
+            let url = Bundle.main.url(forResource: name, withExtension: nil, subdirectory: subdirectory)
+                ?? Bundle.module.url(forResource: name, withExtension: nil, subdirectory: subdirectory),
             let text = try? String(contentsOf: url, encoding: .utf8)
         else { fatalError("missing bundled resource \(name)") }
         return text

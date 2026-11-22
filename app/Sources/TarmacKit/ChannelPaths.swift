@@ -22,9 +22,9 @@ public enum ChannelPaths {
         /// and a debug daemon meet on the `dev/` socket by default.
         public static var build: Channel {
             #if DEBUG
-            return .dev
+                return .dev
             #else
-            return .release
+                return .release
             #endif
         }
     }

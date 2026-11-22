@@ -11,9 +11,9 @@ extension AppController {
     /// The seam for the live check is compiled out of a release build.
     private static var sampleIntervalSeconds: TimeInterval {
         #if DEBUG
-        SampleInterval.seconds(override: ProcessInfo.processInfo.environment["TARMAC_SAMPLE_INTERVAL_S"])
+            SampleInterval.seconds(override: ProcessInfo.processInfo.environment["TARMAC_SAMPLE_INTERVAL_S"])
         #else
-        SampleInterval.defaultSeconds
+            SampleInterval.defaultSeconds
         #endif
     }
 
@@ -36,7 +36,8 @@ extension AppController {
                 if let html = card.htmlBody {
                     sample.cardsHTML += 1
                     let peak = html.takePendingPeak()
-                    sample.pending.append(SampleLine.Pending(path: path, largest: peak.largest, timesOver: peak.timesOver))
+                    sample.pending.append(
+                        SampleLine.Pending(path: path, largest: peak.largest, timesOver: peak.timesOver))
                 } else {
                     sample.cardsMarkdown += 1
                 }

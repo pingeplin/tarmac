@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Where the card shim's `<script>` goes (spec 2610.0011). Every vector is literal
@@ -21,7 +22,9 @@ final class ShimPlacementTests: XCTestCase {
         _ vectors: [(prefix: String, offset: Int)], file: StaticString = #filePath, line: UInt = #line
     ) {
         for vector in vectors {
-            XCTAssertEqual(offset(vector.prefix + doctype + rest), vector.offset, vector.prefix.debugDescription, file: file, line: line)
+            XCTAssertEqual(
+                offset(vector.prefix + doctype + rest), vector.offset, vector.prefix.debugDescription, file: file,
+                line: line)
         }
     }
 
@@ -73,10 +76,19 @@ final class ShimPlacementTests: XCTestCase {
     func testS4ADoctypeEndsAtItsFirstGreaterThanWhateverItHolds() {
         let vectors: [(String, Int)] = [
             ("<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\">", 63),
-            ("<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">", 102),
+            (
+                "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">",
+                102
+            ),
             ("<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">", 90),
-            ("<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">", 121),
-            ("<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">", 109),
+            (
+                "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">",
+                121
+            ),
+            (
+                "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">",
+                109
+            ),
             ("<!DOCTYPE html SYSTEM \"about:legacy-compat\">", 44),
             ("<!doctype>", 10),
             ("<!DOCTYPE html PUBLIC \"-//W3C//DTD>X\" >", 35),

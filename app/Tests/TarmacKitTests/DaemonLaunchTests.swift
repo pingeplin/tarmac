@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// 2606.0002: bundled-daemon-path resolution and PTY `PATH` injection.
@@ -65,12 +66,12 @@ final class DaemonLaunchTests: XCTestCase {
     /// hold `nil` cleanly alongside `""`).
     func testInjectCLIPathGrid() {
         let cases: [(base: String, cliDir: String, expected: String)] = [
-            ("/usr/bin:/bin", "/opt/homebrew/bin", "/opt/homebrew/bin:/usr/bin:/bin"),     // S3: prepend
-            ("/usr/bin:/opt/homebrew/bin", "/opt/homebrew/bin", "/usr/bin:/opt/homebrew/bin"), // S6: already present → unchanged
-            ("", "/opt/homebrew/bin", "/opt/homebrew/bin"),                                 // S7: empty base
-            ("/usr/bin:", "/x", "/x:/usr/bin:"),                                            // S8: trailing empty segment preserved
-            ("/opt/homebrew/binfoo", "/opt/homebrew/bin", "/opt/homebrew/bin:/opt/homebrew/binfoo"), // S9: substring is not a segment
-            ("/usr/bin:/bin", "", "/usr/bin:/bin"),                                         // S12: empty cliDir → unchanged
+            ("/usr/bin:/bin", "/opt/homebrew/bin", "/opt/homebrew/bin:/usr/bin:/bin"),  // S3: prepend
+            ("/usr/bin:/opt/homebrew/bin", "/opt/homebrew/bin", "/usr/bin:/opt/homebrew/bin"),  // S6: already present → unchanged
+            ("", "/opt/homebrew/bin", "/opt/homebrew/bin"),  // S7: empty base
+            ("/usr/bin:", "/x", "/x:/usr/bin:"),  // S8: trailing empty segment preserved
+            ("/opt/homebrew/binfoo", "/opt/homebrew/bin", "/opt/homebrew/bin:/opt/homebrew/binfoo"),  // S9: substring is not a segment
+            ("/usr/bin:/bin", "", "/usr/bin:/bin"),  // S12: empty cliDir → unchanged
         ]
         for c in cases {
             XCTAssertEqual(
@@ -109,11 +110,11 @@ final class DaemonLaunchTests: XCTestCase {
     /// breaks the first case here.
     func testInjectCLIPathIdempotent() {
         let inputs: [(base: String, cliDir: String)] = [
-            ("/usr/bin:/bin", "/opt/homebrew/bin"),       // prepend branch
-            ("/usr/bin:/opt/homebrew/bin", "/opt/homebrew/bin"), // already-present branch
-            ("", "/opt/homebrew/bin"),                     // empty-base branch
-            ("/opt/homebrew/binfoo", "/opt/homebrew/bin"), // substring branch
-            ("/usr/bin:", "/x"),                           // trailing-colon branch
+            ("/usr/bin:/bin", "/opt/homebrew/bin"),  // prepend branch
+            ("/usr/bin:/opt/homebrew/bin", "/opt/homebrew/bin"),  // already-present branch
+            ("", "/opt/homebrew/bin"),  // empty-base branch
+            ("/opt/homebrew/binfoo", "/opt/homebrew/bin"),  // substring branch
+            ("/usr/bin:", "/x"),  // trailing-colon branch
         ]
         for input in inputs {
             let once = DaemonLaunch.injectCLIPath(base: input.base, cliDir: input.cliDir)
@@ -161,9 +162,9 @@ final class DaemonLaunchTests: XCTestCase {
     /// latch stops a respawn that still mismatches from thrashing.
     func testShouldRestartGrid() {
         let cases: [(expected: String, reported: String?, already: Bool, restart: Bool)] = [
-            ("0.1.0", "0.1.0", false, false), // equal versions
+            ("0.1.0", "0.1.0", false, false),  // equal versions
             ("0.2.0", "0.1.0", false, true),  // differing versions
-            ("0.1.0", nil, false, true),      // a daemon that predates the key
+            ("0.1.0", nil, false, true),  // a daemon that predates the key
             ("0.2.0", "0.1.0", true, false),  // already restarted once
             ("0.1.0", nil, true, false),
             ("0.1.0", "0.1.0", true, false),

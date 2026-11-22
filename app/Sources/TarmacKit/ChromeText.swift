@@ -23,7 +23,7 @@ public enum ChromeText {
     /// Seconds are floored at 1.
     public static func recencyLabel(lastChangedMs: UInt64?, nowMs: UInt64) -> String? {
         guard let changed = lastChangedMs,
-              nowMs < changed || nowMs - changed < recentWindowMs
+            nowMs < changed || nowMs - changed < recentWindowMs
         else { return nil }
         let elapsedMs = nowMs > changed ? nowMs - changed : 0
         return "✎ \(max(1, Int((Double(elapsedMs) / 1000).rounded())))s"

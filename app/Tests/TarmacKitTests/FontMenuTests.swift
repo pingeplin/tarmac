@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// 2610.0005: the list a Settings row shows and the entry it selects.
@@ -37,7 +38,8 @@ final class FontMenuTests: XCTestCase {
     /// S23
     func testHiddenSystemFamiliesAreNotListed() {
         let menu = FontMenu(
-            role: .terminal, installed: [family(".SF NS Mono"), family(".AppleSystemUIFontMonospaced"), family("Menlo")],
+            role: .terminal,
+            installed: [family(".SF NS Mono"), family(".AppleSystemUIFontMonospaced"), family("Menlo")],
             saved: ".SF NS Mono"
         )
         XCTAssertEqual(menu.families, ["Menlo"])
@@ -46,7 +48,8 @@ final class FontMenuTests: XCTestCase {
 
     /// S24
     func testAFamilyIsListedOnce() {
-        let menu = FontMenu(role: .terminal, installed: [family("Menlo"), family("Monaco"), family("Menlo")], saved: "Monaco")
+        let menu = FontMenu(
+            role: .terminal, installed: [family("Menlo"), family("Monaco"), family("Menlo")], saved: "Monaco")
         XCTAssertEqual(menu.families, ["Menlo", "Monaco"])
         XCTAssertEqual(menu.selected, 2)
     }

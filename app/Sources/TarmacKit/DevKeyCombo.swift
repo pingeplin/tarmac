@@ -31,7 +31,8 @@ public struct DevKeyStroke: Equatable, Sendable {
     public var characters: String
     public var charactersIgnoringModifiers: String
 
-    public init(keyCode: UInt16, modifierFlags: ModifierFlags, characters: String, charactersIgnoringModifiers: String) {
+    public init(keyCode: UInt16, modifierFlags: ModifierFlags, characters: String, charactersIgnoringModifiers: String)
+    {
         self.keyCode = keyCode
         self.modifierFlags = modifierFlags
         self.characters = characters
@@ -234,7 +235,7 @@ public enum DevKeyCombo {
     /// The key behind a chord's base: one lowercase ASCII letter or digit.
     private static func chordKey(_ base: String) -> USKey? {
         guard base.unicodeScalars.count == 1, let scalar = base.unicodeScalars.first,
-              ("a"..."z").contains(scalar) || ("0"..."9").contains(scalar)
+            ("a"..."z").contains(scalar) || ("0"..."9").contains(scalar)
         else { return nil }
         return usKeys.first { $0.plain == scalar }
     }

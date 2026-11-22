@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// Spec 2609.0009 for the suffix (ported from `desktop/src/kit/devTitle.test.ts`)
 /// and `App.tsx`'s title effect for the rest.

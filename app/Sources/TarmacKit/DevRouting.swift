@@ -56,7 +56,8 @@ public enum DevRouting {
         public var restoreCard: [RestoreCard.Choice.Action]?
 
         public init(
-            cards: [Card], keyboardFocusCard: String?, borrowedCard: String?, zoom: CGFloat, center: CGPoint, viewSize: CGSize,
+            cards: [Card], keyboardFocusCard: String?, borrowedCard: String?, zoom: CGFloat, center: CGPoint,
+            viewSize: CGSize,
             activeBoardID: String, boardIDs: [String], restoreCard: [RestoreCard.Choice.Action]? = nil
         ) {
             self.restoreCard = restoreCard
@@ -110,7 +111,9 @@ public enum DevRouting {
     }
 
     /// The verbs this build answers, for a newer CLI that sends another.
-    public static let implementedVerbs = ["snapshot", "zoom", "focus", "resize", "type", "key", "press", "board", "click"]
+    public static let implementedVerbs = [
+        "snapshot", "zoom", "focus", "resize", "type", "key", "press", "board", "click",
+    ]
 
     /// Saying which verbs exist is more use to a newer CLI than naming the verb
     /// it sent back at it.
@@ -136,10 +139,11 @@ public enum DevRouting {
         case .board(let id?):
             if id == context.activeBoardID { return .activeBoard(id) }
             guard context.boardIDs.contains(id) else {
-                return .refused(DevError(
-                    .noSuchBoard, "the app knows no board with that id",
-                    extra: ["board_id": .string(id), "boards": .array(context.boardIDs.map(JSONValue.string))]
-                ))
+                return .refused(
+                    DevError(
+                        .noSuchBoard, "the app knows no board with that id",
+                        extra: ["board_id": .string(id), "boards": .array(context.boardIDs.map(JSONValue.string))]
+                    ))
             }
             return .switchBoard(to: id)
         case .zoom(let z):
@@ -197,27 +201,33 @@ public enum DevRouting {
                 return refused(.unsupportedCardKind, "only a terminal card has these controls", card: id)
             }
             guard context.restoreCard == nil else {
-                return .refused(DevError(
-                    .controlCovered, "the restore card covers every card; click one of its controls first",
-                    extra: ["card": .string(id), "control": .string(name)]
-                ))
+                return .refused(
+                    DevError(
+                        .controlCovered, "the restore card covers every card; click one of its controls first",
+                        extra: ["card": .string(id), "control": .string(name)]
+                    ))
             }
-            guard card.controls.contains(control) else { return noSuchControl(card: id, control, present: card.controls) }
+            guard card.controls.contains(control) else {
+                return noSuchControl(card: id, control, present: card.controls)
+            }
             guard isVisible(card, in: context) else {
-                return refused(.cardHidden, "that card is culled off-screen and its controls are hidden; zoom out", card: id)
+                return refused(
+                    .cardHidden, "that card is culled off-screen and its controls are hidden; zoom out", card: id)
             }
             return .click(card: id, control: control)
         }
     }
 
-    private static func noSuchControl(card: String?, _ control: DevClick.Control, present: [DevClick.Control]) -> Route {
-        .refused(DevError(
-            .noSuchControl, "that control is not showing now",
-            extra: [
-                "card": card.map(JSONValue.string) ?? .null, "control": .string(control.rawValue),
-                "present": .array(present.map { .string($0.rawValue) }),
-            ]
-        ))
+    private static func noSuchControl(card: String?, _ control: DevClick.Control, present: [DevClick.Control]) -> Route
+    {
+        .refused(
+            DevError(
+                .noSuchControl, "that control is not showing now",
+                extra: [
+                    "card": card.map(JSONValue.string) ?? .null, "control": .string(control.rawValue),
+                    "present": .array(present.map { .string($0.rawValue) }),
+                ]
+            ))
     }
 
     private static func onCard(_ id: String, in context: Context, _ then: (Card) -> Route) -> Route {
@@ -230,7 +240,8 @@ public enum DevRouting {
     private static func onFocusedTerminal(_ id: String, in context: Context, _ then: () -> Route) -> Route {
         onCard(id, in: context) { card in
             guard card.kind == .term else {
-                return refused(.unsupportedCardKind, "doc cards take `focus`, but cannot be typed into or keyed", card: id)
+                return refused(
+                    .unsupportedCardKind, "doc cards take `focus`, but cannot be typed into or keyed", card: id)
             }
             guard context.keyboardFocusCard == id else {
                 return refused(

@@ -24,7 +24,8 @@ public enum BoardSwitcher {
         /// Unread reports in the inbox (2611.0013), visited board or not.
         public let report: Int
 
-        public init(boardID: String, name: String?, running: Int, bell: Int, cards: Int?, isLive: Bool, report: Int = 0) {
+        public init(boardID: String, name: String?, running: Int, bell: Int, cards: Int?, isLive: Bool, report: Int = 0)
+        {
             self.boardID = boardID
             self.name = name
             self.running = running
@@ -74,7 +75,8 @@ public enum BoardSwitcher {
     /// filter keeps every board. Display order is preserved.
     public static func rows(summaries: [BoardSummary], active: String, filter: String) -> [BoardRow] {
         let q = filter.lowercased()
-        return summaries
+        return
+            summaries
             .filter { q.isEmpty || $0.display.lowercased().hasPrefix(q) }
             .map { s in
                 BoardRow(

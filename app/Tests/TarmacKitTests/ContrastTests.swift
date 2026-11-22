@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// 2610.0007: the WCAG 2 contrast ratio the palette tests measure with.
