@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -81,6 +81,7 @@ console.log("progress line of the tool");
 const out = join(args[outAt + 1], "mutants.out");
 mkdirSync(out, { recursive: true });
 for (const [name, lines] of Object.entries(plan.files ?? {})) writeFileSync(join(out, name), lines.map((line) => line + "\\n").join(""));
+if (plan.signal) process.kill(process.pid, plan.signal);
 process.exit(plan.exit ?? 0);
 `;
 
@@ -631,10 +632,88 @@ test("S48: the pull-request job installs the toolchain and the tool only for a R
   const workflow = readFileSync(join(ROOT, ".github/workflows/mutants.yml"), "utf8");
   const diffJob = workflow.match(/^ {2}in-diff:\n([\s\S]*?)^ {2}all:\n/m)[1];
   const steps = diffJob.split(/^ {6}- /m).slice(1);
-  const gated = steps.filter((step) => /if: steps\.changed\.outputs\.rust == 'true'/.test(step)).map((step) => step.match(/(rustup toolchain install|rust-cache|install-action)/)?.[1]);
+  const gated = steps.filter((step) => /if: steps\.changed\.outputs\.rust == 'true'/.test(step)).map((step) => step.match(/(rustup toolchain install|install-action)/)?.[1]);
   const check = steps.find((step) => /run: make mutants/.test(step));
 
   assert.match(diffJob, /id: changed\n\s+run: echo "rust=\$\(node scripts\/check\/mutants\.mjs --changed --base origin\/\$\{\{ github\.base_ref \}\}\)" >> "\$GITHUB_OUTPUT"/);
-  assert.deepEqual(gated, ["rustup toolchain install", "rust-cache", "install-action"]);
+  assert.deepEqual(gated, ["rustup toolchain install", "install-action"]);
   assert.doesNotMatch(check, /\bif:/);
+});
+
+/** A `git` that fails with `code` when `word` is among its arguments, and is the real one otherwise. */
+function gitFailingOn(word, code) {
+  const bin = scratch("mutants-git-");
+  const real = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\nfor arg in "$@"; do [ "$arg" = "${word}" ] && exit ${code}; done\nexec ${real} "$@"\n`);
+  chmodSync(join(bin, "git"), 0o755);
+  return bin;
+}
+
+test("S42: a failed listing of the untracked files, or an untracked file that cannot be read, is not no Rust change", () => {
+  const cargo = tool();
+  const listing = mutants(changed(), cargo, ["--base", "main"], { PATH: [gitFailingOn("ls-files", 128), cargo, process.env.PATH].join(delimiter) });
+  const unreadable = repo();
+  mkdirSync(join(unreadable, "core/crates/y"), { recursive: true });
+  symlinkSync("../../y", join(unreadable, "core/crates/x/src/links_to_a_directory.rs"));
+  const link = mutants(unreadable, cargo);
+  const gone = mutants(changedUntracked(), cargo, ["--base", "main"], { PATH: [gitFailingOn("--no-index", 1), cargo, process.env.PATH].join(delimiter) });
+
+  for (const run of [listing, link, gone]) {
+    assert.equal(run.code, 2);
+    assert.match(run.err, /^✗ mutants: cannot read the changes from git$/m);
+  }
+  assert.deepEqual(calls(cargo), []);
+});
+
+function changedUntracked() {
+  const dir = repo();
+  write(dir, { "core/crates/x/src/new.rs": "fn one() {}\n" });
+  return dir;
+}
+
+test("S38: the diff of an untracked file has the same prefixes, whatever the user's settings", () => {
+  for (const setting of ["diff.mnemonicPrefix", "diff.noprefix"]) {
+    const cargo = tool();
+    const dir = changedUntracked();
+    git(dir, "config", setting, "true");
+    mutants(dir, cargo);
+
+    assert.match(calls(cargo)[0].diff, /^\+\+\+ b\/crates\/x\/src\/new\.rs$/m, setting);
+  }
+});
+
+test("S38: a text conversion in the user's git config does not reach the diff", () => {
+  const cargo = tool();
+  const dir = changed();
+  write(dir, { ".gitattributes": "*.rs diff=shout\n", [SOURCE]: "fn a() -> u8 {\n    5\n}\nfn quiet() {}\n" });
+  git(dir, "config", "diff.shout.textconv", "tr a-z A-Z <");
+  mutants(dir, cargo);
+
+  assert.match(calls(cargo)[0].diff, /^\+fn quiet\(\) \{\}$/m);
+});
+
+test("S9: nothing is left in the temp directory when the check stops before the tool is started", () => {
+  const left = (plan, env = {}) => {
+    const temp = scratch("mutants-tmp-");
+    const run = mutants(changed(), tool(plan), ["--base", "main"], { TMPDIR: temp, ...env });
+    return [run.code, readdirSync(temp)];
+  };
+
+  assert.deepEqual(left({ version: "26.0.0" }), [2, []]);
+  assert.deepEqual(left({ version: null }), [2, []]);
+  assert.deepEqual(left({ exit: 0 }), [0, []]);
+});
+
+test("S2: one caught mutant is one change", () => {
+  const run = mutants(changed(), tool({ exit: 0, files: { "caught.txt": ["a"] } }));
+
+  assert.equal(run.err.split("\n").at(-2), "mutants: 1 change to the code tried, and a test saw it");
+});
+
+test("S16: a tool that a signal ended is named as that", () => {
+  const cargo = tool({ signal: "SIGKILL" });
+  const run = mutants(changed(), cargo);
+
+  assert.equal(run.code, 2);
+  assert.match(run.err, /^✗ mutants: cargo-mutants was ended by SIGKILL$/m);
 });

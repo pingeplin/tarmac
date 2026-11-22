@@ -81,7 +81,12 @@ function rustDiff(core, base) {
   const untracked = read(core, ["ls-files", "--others", "--exclude-standard", "-z", "--", "*.rs"])
     .split("\0")
     .filter(Boolean)
-    .map((file) => read(core, [...DIFF, "--no-index", "--", "/dev/null", file], [0, 1]));
+    .map((file) => {
+      // git also exits 1, with no output, for a file it cannot read; a new file always has a header.
+      const added = read(core, [...DIFF, "--no-index", "--", "/dev/null", file], [0, 1]);
+      if (added === "") throw new Blocked("cannot read the changes from git", [`core/${file} is not tracked, and git could not read it`], "git status");
+      return added;
+    });
   return [tracked, ...untracked].join("");
 }
 
@@ -108,16 +113,18 @@ function requireTool(core, env) {
 
 const linesOf = (out, name) => (existsSync(join(out, name)) ? readFileSync(join(out, name), "utf8").split("\n").filter(Boolean) : []);
 
-function verdict(code, out) {
+function verdict({ status: code, signal }, out) {
   const missed = linesOf(out, "missed.txt");
   const timedOut = linesOf(out, "timeout.txt").map((line) => `${line} (the tests did not end)`);
   if (code === 0) {
     const unviable = linesOf(out, "unviable.txt").length;
-    return { code: 0, text: `mutants: ${linesOf(out, "caught.txt").length} changes to the code tried, each one seen by a test${unviable ? ` (${unviable} more did not compile)` : ""}\n` };
+    const caught = linesOf(out, "caught.txt").length;
+    const tried = caught === 1 ? "1 change to the code tried, and a test saw it" : `${caught} changes to the code tried, each one seen by a test`;
+    return { code: 0, text: `mutants: ${tried}${unviable ? ` (${unviable} more did not compile)` : ""}\n` };
   }
   if (code === 4) throw new Blocked("the tests fail with no mutation", ["a mutant is judged by a test that fails, so the tests must pass first"], "make test");
   if (code === 5 || code === 6) throw new Blocked("the diff does not fit the tree", ["cargo-mutants could not match the changed lines with the files on disk"], "git status");
-  if (code !== 2 && code !== 3) throw new Blocked(`cargo-mutants ended with exit code ${code}`, ["see its output above"], THEN);
+  if (code !== 2 && code !== 3) throw new Blocked(signal ? `cargo-mutants was ended by ${signal}` : `cargo-mutants ended with exit code ${code}`, ["see its output above"], THEN);
   if ((code === 2 ? missed : timedOut).length === 0) throw new Blocked("cannot read the result of cargo-mutants", [`it ended with exit code ${code}, and its result files name no such mutant`], THEN);
   const at = [...missed, ...timedOut];
   const text = failure({
@@ -148,7 +155,7 @@ function mutate(core, diff, options, caller) {
     rmSync(join(core, "mutants.out"), { recursive: true, force: true });
     // The tool's progress is for the person who waits; stdout stays empty like the other checks'.
     const tool = spawnSync("cargo", ["mutants", "--workspace", "--no-shuffle", "--jobs", options.jobs, ...scope, "--output", core], { cwd: core, env, stdio: ["ignore", 2, 2] });
-    return verdict(tool.status, join(core, "mutants.out"));
+    return verdict(tool, join(core, "mutants.out"));
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }

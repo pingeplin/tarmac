@@ -119,7 +119,7 @@ editor/IDE may show stale SourceKit diagnostics — `make` is the source of trut
    Code, `.claude/settings.json` runs the format and lint checks after each
    edit and at the end of a turn, and refuses a command that kills a Tarmac
    process by name (see `CLAUDE.md`); these hooks do not run clippy. One CI job
-   has no hook: `mutants (rust, in diff)` changes the Rust lines of your pull
+   that no hook runs is `mutants (rust, in diff)`: it changes the Rust lines of your pull
    request, one expression at a time, and fails when the tests still pass. Run
    it yourself with `make mutants` (it needs `cargo-mutants` 27.1.0).
 2. Make your change, keeping it focused. Format it with `make fmt` (rustfmt and

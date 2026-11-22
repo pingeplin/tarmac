@@ -51,10 +51,8 @@ jobs:
         if: steps.changed.outputs.rust == 'true'
         run: rustup toolchain install
 
-      - uses: Swatinem/rust-cache@v2
-        if: steps.changed.outputs.rust == 'true'
-        with:
-          workspaces: core
+      # No build cache: the tool builds in a copy of core/ of its own, so a saved
+      # core/target is never read.
 
       # The version scripts/check/mutants.mjs names; the script refuses another.
       - uses: taiki-e/install-action@v2
@@ -89,10 +87,6 @@ jobs:
 
       - name: install the pinned toolchain
         run: rustup toolchain install
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: core
 
       - uses: taiki-e/install-action@v2
         with:
