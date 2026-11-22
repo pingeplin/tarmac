@@ -156,11 +156,13 @@ test("Rust is read as edition 2024, the workspace's edition", () => {
   assert.deepEqual(runCheck(repo({ "core/src/main.rs": asyncBlock })), CLEAN);
 });
 
-test("a tracked file that was deleted and not yet staged is not a failure", () => {
-  const dir = repo({ "core/src/gone.rs": UGLY });
+test("a tracked path that is no longer a file is not a failure", () => {
+  const dir = repo({ "core/src/gone.rs": UGLY, "core/src/dir.rs": UGLY });
   rmSync(join(dir, "core/src/gone.rs"));
+  rmSync(join(dir, "core/src/dir.rs"));
+  mkdirSync(join(dir, "core/src/dir.rs"));
 
-  assert.deepEqual(runCheck(dir), CLEAN);
+  assert.deepEqual([runCheck(dir), runWrite(dir)], [CLEAN, CLEAN]);
 });
 
 test("outside a git repository the check cannot run", () => {

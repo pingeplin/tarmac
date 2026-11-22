@@ -11,7 +11,7 @@
 // "could not run".
 
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -74,8 +74,8 @@ async function each(items, limit, work) {
 /** Runs one language; returns the report it owes, if any, and the files it found unformatted. */
 async function run(language, root, write) {
   const listed = execFileSync("git", ["ls-files", "-z", "--", language.glob], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
-  // A tracked file that was deleted and not yet staged has no text to format.
-  const paths = listed.filter((path) => existsSync(join(root, path)));
+  // A tracked path that is no longer a file (deleted or replaced, not yet staged) has no text to format.
+  const paths = listed.filter((path) => statSync(join(root, path), { throwIfNoEntry: false })?.isFile());
   const results = await each(paths, availableParallelism(), async (path) => {
     const file = join(root, path);
     const before = readFileSync(file, "utf8");
