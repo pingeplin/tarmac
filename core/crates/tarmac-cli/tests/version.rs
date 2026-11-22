@@ -245,10 +245,7 @@ fn extra_arguments_are_a_usage_error() {
 
     assert_eq!(out.code(), Some(2));
     assert_eq!(out.stdout, "", "a usage error prints no report");
-    assert!(
-        out.stderr.contains("usage"),
-        "a usage error must say so on stderr, like every other verb"
-    );
+    assert!(out.stderr.contains("usage"), "a usage error must say so on stderr, like every other verb");
 }
 
 // S18: --help carries the verb and its exit-status exception.

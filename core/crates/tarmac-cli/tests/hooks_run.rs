@@ -72,10 +72,7 @@ fn silent_to_hello() -> Double {
 
 fn run_against(double: &Double, input: Vec<u8>) -> Report {
     let dir = sandbox();
-    Report::of_input(
-        run_claude(&dir).env("TARMAC_SOCKET", &double.sock),
-        input,
-    )
+    Report::of_input(run_claude(&dir).env("TARMAC_SOCKET", &double.sock), input)
 }
 
 fn report(kind: &str, text: Option<&str>) -> Msg {
@@ -91,7 +88,10 @@ fn s6_hooks_run_sends_the_message_of_its_input() {
         (fixture("user-prompt-submit"), report("clear", None), "prompt"),
         (
             fixture("session-start"),
-            Msg::Resume { term_id: "t9".into(), cmd: Some("claude --resume 00000000-0000-0000-0000-000000000000".into()) },
+            Msg::Resume {
+                term_id: "t9".into(),
+                cmd: Some("claude --resume 00000000-0000-0000-0000-000000000000".into()),
+            },
             "captured session start",
         ),
     ] {
@@ -114,10 +114,7 @@ fn s20_no_daemon_is_fast_silent_and_says_so_on_stderr() {
     drop(std::os::unix::net::UnixListener::bind(&dead).unwrap());
     for sock in [sandbox().join("absent.sock"), dead] {
         let (best, outs) = fastest(5, sandbox, |dir| {
-            Report::of_input(
-                run_claude(dir).env("TARMAC_SOCKET", &sock),
-                stop_input("Done."),
-            )
+            Report::of_input(run_claude(dir).env("TARMAC_SOCKET", &sock), stop_input("Done."))
         });
 
         for out in &outs {
@@ -144,7 +141,10 @@ fn s21_a_daemon_that_never_answers_is_given_up_on_at_the_deadline() {
             assert_silent_success(out, "silent daemon");
             assert_eq!(out.one_stderr_line(), "tarmac: hooks run: no answer from the daemon in 500 ms\n");
         }
-        assert!(best >= Duration::from_millis(450) && best <= Duration::from_millis(1000), "the fastest run took {best:?}");
+        assert!(
+            best >= Duration::from_millis(450) && best <= Duration::from_millis(1000),
+            "the fastest run took {best:?}"
+        );
     }
 }
 
@@ -213,7 +213,11 @@ fn s24_bad_input_exits_0_without_connecting() {
         (b"not json".to_vec(), "not json"),
         (b"[]".to_vec(), "an array"),
         (br#"{"hook_event_name": 7}"#.to_vec(), "a number as the event"),
-        (br#"{"hook_event_name": "Notification", "notification_type": "idle_prompt", "message": "waiting"}"#.to_vec(), "idle"),
+        (
+            br#"{"hook_event_name": "Notification", "notification_type": "idle_prompt", "message": "waiting"}"#
+                .to_vec(),
+            "idle",
+        ),
         (stop_input_of_len((4 << 20) + 1), "over 4 MiB"),
     ] {
         let out = Report::of_input(&mut run_claude(&sandbox()), input);

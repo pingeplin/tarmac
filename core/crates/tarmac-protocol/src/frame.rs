@@ -46,10 +46,7 @@ pub async fn read_async(r: &mut (impl tokio::io::AsyncRead + Unpin)) -> io::Resu
 }
 
 #[cfg(feature = "async")]
-pub async fn write_async(
-    w: &mut (impl tokio::io::AsyncWrite + Unpin),
-    payload: &[u8],
-) -> io::Result<()> {
+pub async fn write_async(w: &mut (impl tokio::io::AsyncWrite + Unpin), payload: &[u8]) -> io::Result<()> {
     use tokio::io::AsyncWriteExt;
     w.write_all(&header(payload)?).await?;
     w.write_all(payload).await
@@ -65,7 +62,7 @@ pub async fn write_msg_async(w: &mut (impl tokio::io::AsyncWrite + Unpin), msg: 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{encode, Msg};
+    use crate::{Msg, encode};
 
     #[test]
     fn frame_roundtrip_and_oversize_rejection() {

@@ -115,9 +115,7 @@ fn a_relative_path_is_sent_made_absolute_against_the_cwd() {
     let dir = scratch();
     let expected = std::fs::canonicalize(&dir).unwrap().join("rel/dash.html");
     let daemon = PushDaemon::acking();
-    let out = Report::of(
-        tarmac_at(&daemon.double.sock).current_dir(&dir).args(["push", "rel/dash.html", "1"]),
-    );
+    let out = Report::of(tarmac_at(&daemon.double.sock).current_dir(&dir).args(["push", "rel/dash.html", "1"]));
 
     assert_eq!(out.code(), Some(0), "stderr: {}", out.stderr);
     assert_eq!(daemon.pushes(), vec![push_msg(expected.to_str().unwrap(), "1")]);

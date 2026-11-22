@@ -17,7 +17,12 @@ pub fn run(args: &[String]) -> i32 {
         Ok(terms) => {
             let mut out = std::io::stdout().lock();
             for row in &terms {
-                let row = Row { term: &row.term_id, board: &row.board_id, cwd: row.cwd.as_deref(), proc: row.proc.as_deref() };
+                let row = Row {
+                    term: &row.term_id,
+                    board: &row.board_id,
+                    cwd: row.cwd.as_deref(),
+                    proc: row.proc.as_deref(),
+                };
                 let _ = writeln!(out, "{}", serde_json::to_string(&row).unwrap_or_default());
             }
             0

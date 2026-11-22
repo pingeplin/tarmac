@@ -87,9 +87,10 @@ fn a_change_that_keeps_the_mtime_is_reported() {
     file.set_modified(kept).unwrap();
     drop(file);
 
-    app.recv_until("a file_event with the mtime that was kept", |m| {
-        matches!(m, Msg::FileEvent { path, mtime_ms } if *path == y && *mtime_ms == kept_ms)
-    });
+    app.recv_until(
+        "a file_event with the mtime that was kept",
+        |m| matches!(m, Msg::FileEvent { path, mtime_ms } if *path == y && *mtime_ms == kept_ms),
+    );
 }
 
 #[test]

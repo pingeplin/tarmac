@@ -36,9 +36,7 @@ impl Conn {
     /// The app-slot fields of a fresh `cli` handshake: `(app_connected, app_version)`.
     pub fn probe_app_slot(sock: &Path) -> (Option<bool>, Option<String>) {
         let (_, reply) = Conn::hello_as(sock, "cli", None);
-        let Msg::HelloOk { app_connected, app_version, .. } = reply else {
-            panic!("expected hello_ok, got {reply:?}")
-        };
+        let Msg::HelloOk { app_connected, app_version, .. } = reply else { panic!("expected hello_ok, got {reply:?}") };
         (app_connected, app_version)
     }
 
@@ -51,8 +49,8 @@ impl Conn {
         let remaining = deadline.saturating_duration_since(Instant::now());
         assert!(!remaining.is_zero(), "timed out waiting for {what}");
         self.0.set_read_timeout(Some(remaining)).unwrap();
-        let payload = frame::read_sync(&mut self.0)
-            .unwrap_or_else(|e| panic!("read frame while waiting for {what}: {e}"));
+        let payload =
+            frame::read_sync(&mut self.0).unwrap_or_else(|e| panic!("read frame while waiting for {what}: {e}"));
         proto::decode(&payload).expect("decode frame")
     }
 
@@ -85,9 +83,10 @@ impl Conn {
     }
 
     pub fn recv_restore_for(&mut self, board: &str) -> Restore {
-        Restore::from(self.recv_until(&format!("restore for {board}"), |m| {
-            matches!(m, Msg::Restore { board_id, .. } if board_id.as_deref() == Some(board))
-        }))
+        Restore::from(self.recv_until(
+            &format!("restore for {board}"),
+            |m| matches!(m, Msg::Restore { board_id, .. } if board_id.as_deref() == Some(board)),
+        ))
     }
 
     /// `board_create`: the daemon names the new board `id` and makes it active.
@@ -114,9 +113,8 @@ impl Conn {
     }
 
     pub fn recv_doc_opened_for(&mut self, path: &str) -> DocEntry {
-        let msg = self.recv_until(&format!("doc_opened for {path}"), |m| {
-            matches!(m, Msg::DocOpened(e) if e.path == path)
-        });
+        let msg =
+            self.recv_until(&format!("doc_opened for {path}"), |m| matches!(m, Msg::DocOpened(e) if e.path == path));
         let Msg::DocOpened(entry) = msg else { unreachable!() };
         entry
     }
@@ -130,9 +128,10 @@ impl Conn {
 
     /// Like `recv_file_event_for`, but skips events older than `min_mtime_ms`.
     pub fn recv_file_event_since(&mut self, path: &str, min_mtime_ms: u64) -> u64 {
-        let msg = self.recv_until(&format!("file_event for {path} since {min_mtime_ms}"), |m| {
-            matches!(m, Msg::FileEvent { path: p, mtime_ms } if p == path && *mtime_ms >= min_mtime_ms)
-        });
+        let msg = self.recv_until(
+            &format!("file_event for {path} since {min_mtime_ms}"),
+            |m| matches!(m, Msg::FileEvent { path: p, mtime_ms } if p == path && *mtime_ms >= min_mtime_ms),
+        );
         let Msg::FileEvent { mtime_ms, .. } = msg else { unreachable!() };
         mtime_ms
     }
@@ -146,9 +145,10 @@ impl Conn {
 
     /// Waits for a single output chunk of `term_id` that contains `needle`.
     pub fn recv_output_containing(&mut self, term_id: &str, needle: &str) {
-        self.recv_until(&format!("output containing {needle:?}"), |m| {
-            matches!(m, Msg::Output { term_id: t, bytes } if t == term_id && contains(bytes, needle.as_bytes()))
-        });
+        self.recv_until(
+            &format!("output containing {needle:?}"),
+            |m| matches!(m, Msg::Output { term_id: t, bytes } if t == term_id && contains(bytes, needle.as_bytes())),
+        );
     }
 
     /// Echo `marker` through a live `cat` and wait until the daemon has seen it, so
@@ -339,7 +339,15 @@ impl Spawn {
 
 impl Default for Spawn {
     fn default() -> Self {
-        Spawn { cols: 80, rows: 24, cwd: None, board_id: None, inherit_cwd_from: None, succeeds: None, login_shell: false }
+        Spawn {
+            cols: 80,
+            rows: 24,
+            cwd: None,
+            board_id: None,
+            inherit_cwd_from: None,
+            succeeds: None,
+            login_shell: false,
+        }
     }
 }
 

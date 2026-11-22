@@ -6,8 +6,8 @@ mod common;
 use std::time::{Duration, Instant};
 
 use common::{
-    Conn, JOB_SHELL, LONG, SAVE_WINDOW, Spawn, TestDaemon, canon_dir, has_record, no_err_frame, probe_until, probe_until_cwd, saved_cwd,
-    signal, signal_and_wait, term_records, wait_exit,
+    Conn, JOB_SHELL, LONG, SAVE_WINDOW, Spawn, TestDaemon, canon_dir, has_record, no_err_frame, probe_until,
+    probe_until_cwd, saved_cwd, signal, signal_and_wait, term_records, wait_exit,
 };
 use serde_json::{Value, json};
 use tarmac_protocol::{Msg, Tile};
@@ -59,9 +59,10 @@ fn wait_output(app: &mut Conn, term_id: &str, needle: &str) {
 
 /// The pid of `term_id`'s next `term_proc` that `pred` takes.
 fn proc_pid(app: &mut Conn, term_id: &str, what: &str, pred: impl Fn(&str, i64) -> bool) -> i64 {
-    let msg = app.recv_until(what, |m| {
-        matches!(m, Msg::TermProc { term_id: t, name, pid: Some(pid) } if t == term_id && pred(name, *pid))
-    });
+    let msg = app.recv_until(
+        what,
+        |m| matches!(m, Msg::TermProc { term_id: t, name, pid: Some(pid) } if t == term_id && pred(name, *pid)),
+    );
     let Msg::TermProc { pid: Some(pid), .. } = msg else { unreachable!() };
     pid
 }
@@ -100,11 +101,8 @@ fn a_command_records_the_cwd_with_no_shutdown() {
 #[test]
 fn a_new_pid_with_the_same_name_records_the_cwd() {
     let daemon = TestDaemon::start();
-    let (a, b, c) = (
-        canon_dir(&daemon.dir.join("a")),
-        canon_dir(&daemon.dir.join("b")),
-        canon_dir(&daemon.dir.join("c")),
-    );
+    let (a, b, c) =
+        (canon_dir(&daemon.dir.join("a")), canon_dir(&daemon.dir.join("b")), canon_dir(&daemon.dir.join("c")));
     let (mut app, first) = job_shell_recorded(&daemon, &a);
 
     app.type_line("T", &format!("cd '{b}' && sleep 1.6 && cd '{c}' && sleep 5"));
@@ -297,7 +295,9 @@ fn a_clean_exit_deletes_the_record_and_a_failure_keeps_it() {
     let (_app, restore) = daemon.probe();
     let kept: Vec<&String> = restore.term_records.keys().collect();
     assert_eq!(kept, ["T2", "T3"]);
-    daemon.wait_for_state("no record of T1", |v| !has_record(v, 0, "T1") && has_record(v, 0, "T2") && has_record(v, 0, "T3"));
+    daemon.wait_for_state("no record of T1", |v| {
+        !has_record(v, 0, "T1") && has_record(v, 0, "T2") && has_record(v, 0, "T3")
+    });
 }
 
 // S26
@@ -400,7 +400,12 @@ fn a_spawn_that_cannot_exec_moves_nothing() {
     let daemon = TestDaemon::start_seeded(&seeded(json!({"T": {"last_cwd": "/seeded"}})));
     let mut app = daemon.connect_app_drained();
 
-    spawn(&mut app, "X", &["/nonexistent/tarmac-no-such-shell".to_string()], Spawn { succeeds: Some("T".into()), ..Default::default() });
+    spawn(
+        &mut app,
+        "X",
+        &["/nonexistent/tarmac-no-such-shell".to_string()],
+        Spawn { succeeds: Some("T".into()), ..Default::default() },
+    );
 
     let err = app.recv_until("err", |m| matches!(m, Msg::Err { .. }));
     assert!(matches!(&err, Msg::Err { msg } if msg.starts_with("spawn failed")), "{err:?}");
@@ -415,7 +420,12 @@ fn succeeds_does_not_reach_another_board() {
     let daemon = TestDaemon::start_seeded(&seeded_on_board_1());
     let mut app = daemon.connect_app_drained();
 
-    spawn(&mut app, "T2", &plain("echo UP; read _"), Spawn { succeeds: Some("T".into()), ..Spawn::on_board("board-0") });
+    spawn(
+        &mut app,
+        "T2",
+        &plain("echo UP; read _"),
+        Spawn { succeeds: Some("T".into()), ..Spawn::on_board("board-0") },
+    );
 
     wait_output(&mut app, "T2", "UP");
     let restore = app.switch_to("board-1");

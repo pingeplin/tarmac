@@ -12,7 +12,11 @@ pub fn run(args: &[String]) -> i32 {
         eprintln!("tarmac: {USAGE}");
         return 2;
     };
-    crate::daemon::for_terminal(NEEDS_TERM, |term_id| Msg::Report { term_id, kind: kind.to_owned(), text: text.map(cap_report_text) })
+    crate::daemon::for_terminal(NEEDS_TERM, |term_id| Msg::Report {
+        term_id,
+        kind: kind.to_owned(),
+        text: text.map(cap_report_text),
+    })
 }
 
 /// The kind and the text; an empty text is no text. `clear ""` is plain

@@ -34,13 +34,7 @@ pub fn edit(path: impl AsRef<Path>) -> u64 {
 
 /// The file's mtime, truncated exactly as the daemon truncates it for a file_event.
 pub fn mtime_ms(path: impl AsRef<Path>) -> u64 {
-    std::fs::metadata(path)
-        .unwrap()
-        .modified()
-        .unwrap()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
+    std::fs::metadata(path).unwrap().modified().unwrap().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
 }
 
 /// Lets the watcher go quiet before an edit: a watch that was just attached, or

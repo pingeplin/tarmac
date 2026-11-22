@@ -38,9 +38,12 @@ fn recv_with_none_for(app: &mut Conn, what: &str, paths: &[&str], mut msg_is: im
 /// window after it: the events of one look come in no set order.
 fn look_with_none_for(app: &mut Conn, other: &str, paths: &[&str]) {
     let edited = edit(other);
-    recv_with_none_for(app, &format!("the look's file_event for {other}"), paths, |m| {
-        matches!(m, Msg::FileEvent { path, mtime_ms } if path == other && *mtime_ms >= edited)
-    });
+    recv_with_none_for(
+        app,
+        &format!("the look's file_event for {other}"),
+        paths,
+        |m| matches!(m, Msg::FileEvent { path, mtime_ms } if path == other && *mtime_ms >= edited),
+    );
     assert!(
         none_within(app, Duration::from_millis(800), |m| is_event_for_any(m, paths)),
         "a file_event for one of {paths:?} after the look"
@@ -52,17 +55,23 @@ fn look_with_none_for(app: &mut Conn, other: &str, paths: &[&str]) {
 /// answer to a `doc_refresh` sent now comes after it.
 fn none_at_once_for(app: &mut Conn, other: &str, paths: &[&str]) {
     app.send(&Msg::DocRefresh { path: other.into() });
-    recv_with_none_for(app, &format!("the refresh's file_event for {other}"), paths, |m| {
-        matches!(m, Msg::FileEvent { path, .. } if path == other)
-    });
+    recv_with_none_for(
+        app,
+        &format!("the refresh's file_event for {other}"),
+        paths,
+        |m| matches!(m, Msg::FileEvent { path, .. } if path == other),
+    );
 }
 
 /// `board_switch`, failing on a `file_event` for `data` before the restore.
 fn switch_with_restore_first(app: &mut Conn, board: &str, data: &str) {
     app.send(&Msg::BoardSwitch { board_id: board.into() });
-    recv_with_none_for(app, &format!("restore for {board}"), &[data], |m| {
-        matches!(m, Msg::Restore { board_id, .. } if board_id.as_deref() == Some(board))
-    });
+    recv_with_none_for(
+        app,
+        &format!("restore for {board}"),
+        &[data],
+        |m| matches!(m, Msg::Restore { board_id, .. } if board_id.as_deref() == Some(board)),
+    );
 }
 
 /// An HTML doc and a doc beside it, both open on board-0, and the data file
@@ -362,9 +371,12 @@ fn a_change_of_a_data_file_in_the_background_is_reported_at_the_switch() {
 
     let edited = edit(&card.stats);
     let b1_edited = edit(&b1);
-    recv_with_none_for(&mut app, "file_event for b1", &[&card.stats], |m| {
-        matches!(m, Msg::FileEvent { path, mtime_ms } if *path == b1 && *mtime_ms >= b1_edited)
-    });
+    recv_with_none_for(
+        &mut app,
+        "file_event for b1",
+        &[&card.stats],
+        |m| matches!(m, Msg::FileEvent { path, mtime_ms } if *path == b1 && *mtime_ms >= b1_edited),
+    );
     assert!(quiet(&mut app, &card.stats), "board-1 does not read the data file");
 
     switch_with_restore_first(&mut app, "board-0", &card.stats);
@@ -720,7 +732,10 @@ fn one_write_through_a_link_in_the_tree_is_one_file_event_for_the_path_named() {
     let edited = edit(&real);
     assert_eq!(app.recv_file_event_since(&named, edited), edited);
     assert!(quiet(&mut app, &named), "one file_event for one write");
-    assert!(none_within(&mut app, Duration::from_millis(200), |m| is_file_event_for(m, &real)), "none for the resolved path");
+    assert!(
+        none_within(&mut app, Duration::from_millis(200), |m| is_file_event_for(m, &real)),
+        "none for the resolved path"
+    );
 }
 
 // S26b. The new app names no file: neither registration of the app that

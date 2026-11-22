@@ -4,19 +4,19 @@ use std::sync::atomic::AtomicU32;
 use std::time::{Duration, SystemTime};
 
 mod counts;
-mod looks;
-mod stuck_reads;
-mod opens;
-mod watches;
-mod restart;
-mod spawn_cwd;
-mod pushes;
 mod data_dirs;
-mod term_records;
-mod reports;
-mod resumes;
 mod events;
+mod looks;
+mod opens;
+mod pushes;
+mod reports;
+mod restart;
+mod resumes;
+mod spawn_cwd;
+mod stuck_reads;
 mod term_news;
+mod term_records;
+mod watches;
 
 async fn open_doc(daemon: &Daemon, board: Option<&str>, doc: &Path) {
     daemon.open_doc(board, doc, "t", None, crate::reader::stamp(doc), None).await.unwrap();
@@ -27,10 +27,7 @@ async fn watched(daemon: &Daemon, dir: &Path) -> bool {
 }
 
 fn state_with_docs(docs: &[&Path]) -> String {
-    let docs: Vec<_> = docs
-        .iter()
-        .map(|p| serde_json::json!({"path": p, "via": "cli", "read": false}))
-        .collect();
+    let docs: Vec<_> = docs.iter().map(|p| serde_json::json!({"path": p, "via": "cli", "read": false})).collect();
     serde_json::json!({"boards": [{"board_id": "board-0", "docs": docs}]}).to_string()
 }
 
@@ -352,7 +349,8 @@ async fn spawn(daemon: &Arc<Daemon>, term_id: &str, argv: &[&str], opts: SpawnOp
     let cwd = opts.cwd.map(|c| c.to_string_lossy().into_owned());
     let started = std::time::Instant::now();
     within(tokio::spawn(async move {
-        crate::conn::spawn_requested(&daemon, term_id, (80, 24), cwd, Some(cmd), board, inherit_cwd_from, succeeds).await
+        crate::conn::spawn_requested(&daemon, term_id, (80, 24), cwd, Some(cmd), board, inherit_cwd_from, succeeds)
+            .await
     }))
     .await;
     started.elapsed()

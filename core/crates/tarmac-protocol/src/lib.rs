@@ -6,8 +6,7 @@ pub mod dev;
 pub mod frame;
 
 pub use channel::{
-    channel_dir, channel_label, check_socket_path_len, resolve_socket_path, resolve_state_path,
-    Channel,
+    Channel, channel_dir, channel_label, check_socket_path_len, resolve_socket_path, resolve_state_path,
 };
 
 use std::collections::BTreeMap;

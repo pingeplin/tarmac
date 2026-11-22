@@ -177,7 +177,11 @@ async fn a_restart_walks_once_for_the_repo_of_each_dir() {
     assert_eq!(fs.calls(Call::RepoOf), 2);
     for doc in &docs {
         let (dir, name) = if doc.starts_with(&one) { (&one, "first") } else { (&two, "second") };
-        let repo = (Some(name.to_owned()), Some(dir.to_string_lossy().into_owned()), Some(tarmac_protocol::repo_color_index(name)));
+        let repo = (
+            Some(name.to_owned()),
+            Some(dir.to_string_lossy().into_owned()),
+            Some(tarmac_protocol::repo_color_index(name)),
+        );
         assert_eq!(repo_of(&daemon, doc).await, repo, "{}", doc.display());
     }
 
@@ -261,7 +265,11 @@ async fn a_restart_gives_a_background_board_s_docs_their_repo() {
     let daemon = gated(&tmp, fs).await;
 
     let entry = daemon.boards.lock().await.registry_mut(Some("board-1")).entry(&doc).unwrap();
-    let repo = (Some("first".to_owned()), Some(one.to_string_lossy().into_owned()), Some(tarmac_protocol::repo_color_index("first")));
+    let repo = (
+        Some("first".to_owned()),
+        Some(one.to_string_lossy().into_owned()),
+        Some(tarmac_protocol::repo_color_index("first")),
+    );
     assert_eq!((entry.repo, entry.repo_root, entry.repo_color), repo);
 
     let _ = std::fs::remove_dir_all(&tmp);

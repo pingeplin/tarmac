@@ -6,7 +6,8 @@
 use crate::agents;
 
 #[cfg(debug_assertions)]
-const DEV_SOCKET: &str = " The dev driver's socket sits beside it as\ntarmac-dev.sock; override with TARMAC_DEV_SOCKET.";
+const DEV_SOCKET: &str =
+    " The dev driver's socket sits beside it as\ntarmac-dev.sock; override with TARMAC_DEV_SOCKET.";
 #[cfg(not(debug_assertions))]
 const DEV_SOCKET: &str = "";
 

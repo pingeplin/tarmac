@@ -7,7 +7,10 @@ use tarmac_protocol::Msg;
 
 mod common;
 use common::frames::{bell, exit, term_report};
-use common::{Double, Report, Step, Streamer, Then, assert_never_answered, assert_no_answer, assert_usage, start, tarmac_at, untouched};
+use common::{
+    Double, Report, Step, Streamer, Then, assert_never_answered, assert_no_answer, assert_usage, start, tarmac_at,
+    untouched,
+};
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
@@ -74,7 +77,13 @@ fn a_frame_with_a_board_names_it_after_the_terminal() {
 
     let out = daemon.run(&["events"]);
 
-    assert_eq!(lines(&out), [r#"{"event":"bell","term":"t1","board":"board-1"}"#, r#"{"event":"exit","term":"t1","board":"board-1","code":2}"#]);
+    assert_eq!(
+        lines(&out),
+        [
+            r#"{"event":"bell","term":"t1","board":"board-1"}"#,
+            r#"{"event":"exit","term":"t1","board":"board-1","code":2}"#
+        ]
+    );
 }
 
 // S12
@@ -84,12 +93,21 @@ fn s12_the_filter_flags_are_sent_as_given() {
 
     daemon.run(&["events", "--term", "t1", "--kind", "exit,bell"]);
 
-    assert_eq!(daemon.request().0, Msg::Subscribe { kinds: Some(vec!["exit".into(), "bell".into()]), term_id: Some("t1".into()) });
+    assert_eq!(
+        daemon.request().0,
+        Msg::Subscribe { kinds: Some(vec!["exit".into(), "bell".into()]), term_id: Some("t1".into()) }
+    );
 }
 
 #[test]
 fn frames_the_filter_does_not_take_are_skipped() {
-    let daemon = Streamer::writing(vec![Msg::Ack, bell("t2"), exit("t1", Some(0)), bell("t1"), Msg::FileEvent { path: "/a.md".into(), mtime_ms: 5 }]);
+    let daemon = Streamer::writing(vec![
+        Msg::Ack,
+        bell("t2"),
+        exit("t1", Some(0)),
+        bell("t1"),
+        Msg::FileEvent { path: "/a.md".into(), mtime_ms: 5 },
+    ]);
 
     let out = daemon.run(&["events", "--term", "t1", "--kind", "bell"]);
 
@@ -99,7 +117,10 @@ fn frames_the_filter_does_not_take_are_skipped() {
 // After `ack` the stream has no time limit: the 5 s wait is for the answer.
 #[test]
 fn a_stream_quiet_for_longer_than_5_s_goes_on() {
-    let daemon = Streamer::start(vec![Step::Write(Msg::Ack), Step::Pause(Duration::from_millis(5500)), Step::Write(bell("t1"))], Then::Close);
+    let daemon = Streamer::start(
+        vec![Step::Write(Msg::Ack), Step::Pause(Duration::from_millis(5500)), Step::Write(bell("t1"))],
+        Then::Close,
+    );
 
     let out = daemon.run(&["events"]);
 
@@ -129,7 +150,10 @@ fn s32_a_lagged_stream_is_named() {
 
     let out = daemon.run(&["events"]);
 
-    assert_eq!((out.code(), out.stderr.as_str()), (Some(1), "tarmac: the daemon dropped this stream: it fell behind (lagged)\n"));
+    assert_eq!(
+        (out.code(), out.stderr.as_str()),
+        (Some(1), "tarmac: the daemon dropped this stream: it fell behind (lagged)\n")
+    );
 }
 
 // S33: the whole matrix is `parse`'s unit test.
@@ -137,7 +161,10 @@ fn s32_a_lagged_stream_is_named() {
 fn s33_a_usage_error_exits_2_with_no_connection() {
     let daemon = Streamer::writing(vec![Msg::Ack]);
 
-    assert_usage(&Report::of(tarmac_at(&daemon.double.sock).args(["events", "--term", "t1", "--kind", "changed"])), "events");
+    assert_usage(
+        &Report::of(tarmac_at(&daemon.double.sock).args(["events", "--term", "t1", "--kind", "changed"])),
+        "events",
+    );
     assert!(untouched(&daemon.double));
 }
 

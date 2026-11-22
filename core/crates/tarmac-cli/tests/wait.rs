@@ -11,7 +11,10 @@ use tarmac_protocol::Msg;
 
 mod common;
 use common::frames::{bell, exit, term_report};
-use common::{Double, Report, Step, Streamer, Then, assert_never_answered, assert_no_answer, assert_usage, scratch, start, tarmac, tarmac_at, untouched};
+use common::{
+    Double, Report, Step, Streamer, Then, assert_never_answered, assert_no_answer, assert_usage, scratch, start,
+    tarmac, tarmac_at, untouched,
+};
 
 const NOT_ANSWERED: &str = "tarmac: wait: timed out before the daemon answered\n";
 
@@ -41,7 +44,12 @@ fn s9_an_exit_prints_its_code() {
 fn s10_a_report_of_the_kind_prints_it_and_others_are_skipped() {
     let blocked = term_report("t9", Some("blocked"), Some("May I?"), Some("claude"), true);
     for frames in [
-        vec![Msg::Ack, term_report("t9", Some("done"), None, None, false), term_report("t9", None, None, None, false), blocked.clone()],
+        vec![
+            Msg::Ack,
+            term_report("t9", Some("done"), None, None, false),
+            term_report("t9", None, None, None, false),
+            blocked.clone(),
+        ],
         vec![blocked.clone(), Msg::Ack],
     ] {
         let daemon = Streamer::holding(frames);
@@ -49,7 +57,10 @@ fn s10_a_report_of_the_kind_prints_it_and_others_are_skipped() {
         let out = daemon.run(&["wait", "--report", "blocked", "--term", "t9"]);
 
         assert_eq!(out.code(), Some(0), "{}", out.stderr);
-        assert_eq!(out.stdout, "{\"kind\":\"blocked\",\"text\":\"May I?\",\"proc\":\"claude\",\"at_ms\":1700000000000,\"read\":true}\n");
+        assert_eq!(
+            out.stdout,
+            "{\"kind\":\"blocked\",\"text\":\"May I?\",\"proc\":\"claude\",\"at_ms\":1700000000000,\"read\":true}\n"
+        );
         assert_eq!(daemon.request().0, subscribe(&["report", "exit"]));
     }
 }
@@ -101,7 +112,11 @@ fn s30_an_exit_ends_a_wait_for_a_bell_or_a_report() {
 
         let out = Report::of(tarmac_at(&daemon.double.sock).arg("wait").args(args));
 
-        assert_eq!((out.code(), out.stdout.as_str(), out.stderr.as_str()), (Some(1), "", "tarmac: terminal t9 exited\n"), "{args:?}");
+        assert_eq!(
+            (out.code(), out.stdout.as_str(), out.stderr.as_str()),
+            (Some(1), "", "tarmac: terminal t9 exited\n"),
+            "{args:?}"
+        );
     }
 }
 
@@ -180,7 +195,10 @@ fn the_timeout_counts_a_slow_handshake() {
 // After `ack` a wait with no `--timeout` has no time limit.
 #[test]
 fn a_wait_quiet_for_longer_than_5_s_goes_on() {
-    let daemon = Streamer::start(vec![Step::Write(Msg::Ack), Step::Pause(Duration::from_millis(5500)), Step::Write(exit("t9", Some(0)))], Then::Hold);
+    let daemon = Streamer::start(
+        vec![Step::Write(Msg::Ack), Step::Pause(Duration::from_millis(5500)), Step::Write(exit("t9", Some(0)))],
+        Then::Hold,
+    );
 
     let out = daemon.run(&["wait", "--exit", "t9"]);
 
@@ -197,7 +215,10 @@ fn s32_the_daemon_going_away_or_a_lag_exits_1() {
 
     let lagged = Streamer::writing(vec![Msg::Ack, Msg::Err { msg: "lagged".into() }]);
     let out = lagged.run(&["wait", "--exit", "t9"]);
-    assert_eq!((out.code(), out.stderr.as_str()), (Some(1), "tarmac: the daemon dropped this stream: it fell behind (lagged)\n"));
+    assert_eq!(
+        (out.code(), out.stderr.as_str()),
+        (Some(1), "tarmac: the daemon dropped this stream: it fell behind (lagged)\n")
+    );
 }
 
 // S33: the whole matrix is `parse`'s unit test.
@@ -262,14 +283,23 @@ fn s13_a_change_of_the_file_ends_the_wait() {
             "{\"deleted\":false}\n",
         ),
         ("delete", Box::new(|f| std::fs::remove_file(f).unwrap()), "{\"deleted\":true}\n"),
-        ("touch", Box::new(|f| File::options().write(true).open(f).unwrap().set_modified(SystemTime::now()).unwrap()), "{\"deleted\":false}\n"),
+        (
+            "touch",
+            Box::new(|f| File::options().write(true).open(f).unwrap().set_modified(SystemTime::now()).unwrap()),
+            "{\"deleted\":false}\n",
+        ),
     ];
     for (name, act, want) in cases {
         let file = old_file(&dir, &format!("{name}.txt"));
 
         let (out, _) = changed_with(&file, &["--timeout", "5000"], Duration::from_millis(300), || act(&file));
 
-        assert_eq!((out.status.code(), stdout(&out)), (Some(0), want), "{name}: {}", String::from_utf8_lossy(&out.stderr));
+        assert_eq!(
+            (out.status.code(), stdout(&out)),
+            (Some(0), want),
+            "{name}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 }
 
@@ -278,7 +308,8 @@ fn s13_a_change_of_the_file_ends_the_wait() {
 fn s13_a_missing_file_that_is_made_ends_the_wait() {
     let file = scratch().join("later.txt");
 
-    let (out, _) = changed_with(&file, &["--timeout", "5000"], Duration::from_millis(300), || std::fs::write(&file, "a").unwrap());
+    let (out, _) =
+        changed_with(&file, &["--timeout", "5000"], Duration::from_millis(300), || std::fs::write(&file, "a").unwrap());
 
     assert_eq!((out.status.code(), stdout(&out)), (Some(0), "{\"deleted\":false}\n"));
 }
@@ -305,11 +336,12 @@ fn s27_a_change_after_2_s_is_seen_within_one_slow_poll() {
 fn s27_settle_waits_for_the_last_change() {
     let file = old_file(&scratch(), "settle.txt");
 
-    let (out, took) = changed_with(&file, &["--settle", "500", "--timeout", "5000"], Duration::from_millis(300), || {
-        append(&file);
-        std::thread::sleep(Duration::from_millis(300));
-        append(&file);
-    });
+    let (out, took) =
+        changed_with(&file, &["--settle", "500", "--timeout", "5000"], Duration::from_millis(300), || {
+            append(&file);
+            std::thread::sleep(Duration::from_millis(300));
+            append(&file);
+        });
 
     assert_eq!((out.status.code(), stdout(&out)), (Some(0), "{\"deleted\":false}\n"));
     assert!(took >= Duration::from_millis(1100), "{took:?}");
@@ -338,7 +370,12 @@ fn a_change_of_the_size_alone_or_of_the_mtime_below_a_second_ends_the_wait() {
                 File::options().write(true).open(f).unwrap().set_modified(mtime).unwrap();
             }),
         ),
-        ("nsec", Box::new(|f, mtime| File::options().write(true).open(f).unwrap().set_modified(mtime + Duration::from_micros(1)).unwrap())),
+        (
+            "nsec",
+            Box::new(|f, mtime| {
+                File::options().write(true).open(f).unwrap().set_modified(mtime + Duration::from_micros(1)).unwrap()
+            }),
+        ),
     ];
     for (name, act) in cases {
         let (file, mtime) = file_at_half_second(&dir, &format!("{name}.txt"));
@@ -376,9 +413,10 @@ fn s28_a_change_before_the_start_does_not_count() {
 fn s44_a_timeout_while_it_settles_exits_124() {
     let file = old_file(&scratch(), "unsettled.txt");
 
-    let (out, took) = changed_with(&file, &["--settle", "1000", "--timeout", "800"], Duration::from_millis(200), || {
-        File::options().write(true).open(&file).unwrap().set_modified(SystemTime::now()).unwrap();
-    });
+    let (out, took) =
+        changed_with(&file, &["--settle", "1000", "--timeout", "800"], Duration::from_millis(200), || {
+            File::options().write(true).open(&file).unwrap().set_modified(SystemTime::now()).unwrap();
+        });
 
     assert_eq!((out.status.code(), stdout(&out)), (Some(124), ""));
     assert!(took >= Duration::from_millis(800) && took < Duration::from_millis(1100), "{took:?}");
@@ -449,7 +487,8 @@ fn the_stat_runs_in_one_helper_process_given_the_path_as_typed() {
     old_file(&dir, "a.txt");
     let wait = start(tarmac().args(["wait", "--changed", "a.txt", "--timeout", "3000"]).current_dir(&dir));
     let children = || {
-        let out = std::process::Command::new("pgrep").args(["-l", "-f", "-P"]).arg(wait.id().to_string()).output().unwrap();
+        let out =
+            std::process::Command::new("pgrep").args(["-l", "-f", "-P"]).arg(wait.id().to_string()).output().unwrap();
         String::from_utf8_lossy(&out.stdout).into_owned()
     };
     let until = Instant::now() + Duration::from_millis(2500);

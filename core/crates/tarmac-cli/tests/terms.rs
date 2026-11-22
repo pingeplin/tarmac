@@ -8,7 +8,12 @@ mod common;
 use common::{Double, Report, Streamer, assert_never_answered, assert_no_answer, assert_usage, tarmac_at, untouched};
 
 fn row(cwd: Option<&str>, proc: Option<&str>) -> TermInfo {
-    TermInfo { term_id: "t1".into(), board_id: "board-0".into(), cwd: cwd.map(str::to_string), proc: proc.map(str::to_string) }
+    TermInfo {
+        term_id: "t1".into(),
+        board_id: "board-0".into(),
+        cwd: cwd.map(str::to_string),
+        proc: proc.map(str::to_string),
+    }
 }
 
 // S14
@@ -19,7 +24,10 @@ fn s14_each_row_is_one_json_line_in_the_daemons_order() {
     let out = daemon.run(&["terms"]);
 
     assert_eq!((out.code(), out.stderr.as_str()), (Some(0), ""));
-    assert_eq!(out.stdout, "{\"term\":\"t1\",\"board\":\"board-0\",\"cwd\":\"/w\",\"proc\":\"zsh\"}\n{\"term\":\"t1\",\"board\":\"board-0\"}\n");
+    assert_eq!(
+        out.stdout,
+        "{\"term\":\"t1\",\"board\":\"board-0\",\"cwd\":\"/w\",\"proc\":\"zsh\"}\n{\"term\":\"t1\",\"board\":\"board-0\"}\n"
+    );
     assert_eq!(daemon.request().0, Msg::TermsList);
 }
 

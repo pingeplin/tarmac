@@ -119,10 +119,14 @@ back from a rendered bitmap.
 
 - **Smallest correct diff.** Prefer the narrow change to the thorough one. Do not
   reformat, rename, or reorganise code you are not otherwise changing.
-- **Match the surrounding file.** There is no formatter and no linter here — no
-  `rustfmt.toml`, no `.swiftformat`, no SwiftLint config, no `.editorconfig` —
-  and CI checks neither. Do **not** run `cargo fmt`: local rustfmt disagrees with
-  the entire committed tree and produces pure churn.
+- **Rust layout belongs to rustfmt.** `make fmt` formats every tracked Rust file
+  (`core/rustfmt.toml`: lines to 120, and a literal or a call stays on one line
+  while it fits); `make fmt-check` and CI fail on a file it would rewrite. Do not
+  lay Rust out by hand, and do not add `#[rustfmt::skip]` without a reason in a
+  comment beside it.
+- **In Swift, match the surrounding file.** There is no Swift formatter
+  configuration and no linter yet — no `.swift-format`, no SwiftLint config, no
+  `.editorconfig` — and CI does not check Swift layout.
 - **One responsibility per module.** Depend on the narrow contract — the `Msg`
   enum, a pure function signature — rather than reaching across a layer.
 - **A comment earns its place by explaining a non-obvious *why***: a constraint,
@@ -252,7 +256,8 @@ back from a rendered bitmap.
 1. The test you added was **seen failing** before the code that makes it pass —
    or the change is on the exception list and you have discharged what §1.3 owes
    it.
-2. `make test` passes (docs-check plus both suites).
+2. `make test` passes (docs-check, the check scripts' tests and both suites), and
+   `make fmt-check` reports nothing.
 3. Commits are Conventional and carry both trailers named in
    [`workflow.md`](workflow.md) — the DCO `Signed-off-by:` and `Co-Authored-By:`.
    `make dco-check` verifies the branch.

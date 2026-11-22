@@ -87,9 +87,7 @@ fn path_name(pid: Pid) -> Option<String> {
     // SAFETY: buf is a valid, sized buffer; proc_pidpath writes at most
     // `buffersize` bytes and returns the number written (<= buffersize) or <= 0
     // on error. We never read past `len`.
-    let len = unsafe {
-        libc::proc_pidpath(pid, buf.as_mut_ptr() as *mut libc::c_void, buf.len() as u32)
-    };
+    let len = unsafe { libc::proc_pidpath(pid, buf.as_mut_ptr() as *mut libc::c_void, buf.len() as u32) };
     if len <= 0 {
         return None;
     }
@@ -110,13 +108,7 @@ pub fn pid_cwd(pid: libc::pid_t) -> Option<String> {
     // SAFETY: `info` is a valid, zeroed, exactly-sized buffer; proc_pidinfo
     // writes at most `size` bytes and returns <=0 on error.
     let ret = unsafe {
-        libc::proc_pidinfo(
-            pid,
-            libc::PROC_PIDVNODEPATHINFO,
-            0,
-            &mut info as *mut _ as *mut libc::c_void,
-            size,
-        )
+        libc::proc_pidinfo(pid, libc::PROC_PIDVNODEPATHINFO, 0, &mut info as *mut _ as *mut libc::c_void, size)
     };
     if ret <= 0 {
         return None;
@@ -127,9 +119,7 @@ pub fn pid_cwd(pid: libc::pid_t) -> Option<String> {
     let vip_path = &info.pvi_cdir.vip_path;
     // SAFETY: vip_path is a field of `info`, alive for this call; the length is
     // its exact byte size (path is c_char == u8-sized on this target).
-    let bytes = unsafe {
-        std::slice::from_raw_parts(vip_path.as_ptr() as *const u8, std::mem::size_of_val(vip_path))
-    };
+    let bytes = unsafe { std::slice::from_raw_parts(vip_path.as_ptr() as *const u8, std::mem::size_of_val(vip_path)) };
     let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
     let cwd = String::from_utf8_lossy(&bytes[..end]).into_owned();
     (!cwd.is_empty()).then_some(cwd)

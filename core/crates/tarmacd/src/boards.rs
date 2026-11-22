@@ -406,11 +406,7 @@ impl Boards {
         if boards.is_empty() {
             return Boards::single();
         }
-        let active = if boards.iter().any(|b| b.id == active) {
-            active
-        } else {
-            boards[0].id.clone()
-        };
+        let active = if boards.iter().any(|b| b.id == active) { active } else { boards[0].id.clone() };
         Boards { boards, active }
     }
 
@@ -436,17 +432,21 @@ impl Boards {
 
     /// The registry of board `id`; `None` or an unknown id falls back to the active board.
     pub fn registry_mut(&mut self, id: Option<&str>) -> &mut Registry {
-        let idx = id
-            .and_then(|id| self.index_of(id))
-            .or_else(|| self.index_of(&self.active))
-            .expect("active board present");
+        let idx =
+            id.and_then(|id| self.index_of(id)).or_else(|| self.index_of(&self.active)).expect("active board present");
         &mut self.boards[idx].registry
     }
 
     /// `Registry::apply_layout` on board `id`, or on the active board when the
     /// frame names none. False, with nothing changed, for an unknown id: the
     /// active board is not the one that layout describes (#383).
-    pub fn apply_layout(&mut self, id: Option<&str>, dock: Vec<String>, tiles: Vec<Tile>, board: Option<BoardViewport>) -> bool {
+    pub fn apply_layout(
+        &mut self,
+        id: Option<&str>,
+        dock: Vec<String>,
+        tiles: Vec<Tile>,
+        board: Option<BoardViewport>,
+    ) -> bool {
         let registry = match id {
             Some(id) => self.known_registry_mut(id),
             None => Some(self.active_registry_mut()),
@@ -753,7 +753,20 @@ mod tests {
     }
 
     fn doc_info() -> DocInfo {
-        DocInfo { via: "t".into(), read: false, repo: None, repo_root: None, repo_color: None, last_changed_ms: None, seen: None, untold: false, unread: false, last_opened_ms: 0, term_id: None, data: None }
+        DocInfo {
+            via: "t".into(),
+            read: false,
+            repo: None,
+            repo_root: None,
+            repo_color: None,
+            last_changed_ms: None,
+            seen: None,
+            untold: false,
+            unread: false,
+            last_opened_ms: 0,
+            term_id: None,
+            data: None,
+        }
     }
 
     /// A read of `file` that counts nothing.
@@ -771,7 +784,11 @@ mod tests {
         boards.registry_mut(Some(&other)).docs.insert(doc.clone(), doc_info());
 
         for spelling in ["/tmp/k/dash.html", "/tmp/k/./dash.html", "//tmp/k/dash.html", "/tmp/k/dash.html/"] {
-            assert_eq!(boards.doc_key(Path::new(spelling)).map(|key| key.to_str().unwrap()), Some("/tmp/k/dash.html"), "{spelling}");
+            assert_eq!(
+                boards.doc_key(Path::new(spelling)).map(|key| key.to_str().unwrap()),
+                Some("/tmp/k/dash.html"),
+                "{spelling}"
+            );
         }
         assert_eq!(boards.doc_key(Path::new("/tmp/k/other.html")), None);
     }

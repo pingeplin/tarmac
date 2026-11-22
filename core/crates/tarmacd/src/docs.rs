@@ -36,7 +36,6 @@ pub fn derive_repo(doc: &Path) -> Option<RepoInfo> {
     None
 }
 
-
 // Single code path for CLI ("cli") and app ("user") opens. `term_id` is the
 // calling terminal card, None when unknown or not live. The doc lands on
 // `board_id`, else the board owning the calling term, else the active board.
@@ -71,10 +70,8 @@ pub async fn handle_open(
         };
         gate.run(&canon, walk).await.ok().flatten()
     };
-    let entry = daemon
-        .open_doc(target.as_deref(), &canon, via, term_id, Some(seen), repo)
-        .await
-        .map_err(|e| e.to_string())?;
+    let entry =
+        daemon.open_doc(target.as_deref(), &canon, via, term_id, Some(seen), repo).await.map_err(|e| e.to_string())?;
     debug!("doc opened via {via}: {}", canon.display());
     daemon.push(Msg::DocOpened(entry)).await;
     Ok(())

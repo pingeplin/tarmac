@@ -32,10 +32,9 @@ fn m0_end_to_end() {
                     break;
                 }
             }
-            Msg::Exit { .. } => panic!(
-                "exit before expected output; collected: {:?}",
-                String::from_utf8_lossy(&collected)
-            ),
+            Msg::Exit { .. } => {
+                panic!("exit before expected output; collected: {:?}", String::from_utf8_lossy(&collected))
+            }
             _ => {}
         }
     }
@@ -84,11 +83,7 @@ fn m0_end_to_end() {
 fn hello_ok_reports_daemon_version_and_pid() {
     let daemon = TestDaemon::start();
     let mut app = Conn::connect(&daemon.sock);
-    app.send(&Msg::Hello {
-        role: "app".into(),
-        v: tarmac_protocol::PROTOCOL_VERSION,
-        app_version: None,
-    });
+    app.send(&Msg::Hello { role: "app".into(), v: tarmac_protocol::PROTOCOL_VERSION, app_version: None });
     let reply = app.recv(Instant::now() + LONG, "hello_ok");
     let Msg::HelloOk { v, daemon_version, daemon_pid, .. } = reply else {
         panic!("expected hello_ok, got {reply:?}");
@@ -125,7 +120,11 @@ fn open_errors_for_missing_or_relative_paths() {
     let daemon = TestDaemon::start();
     let mut cli = Conn::hello(&daemon.sock, "cli");
 
-    cli.send(&Msg::Open { path: daemon.dir.join("nope.md").to_string_lossy().into_owned(), term_id: None, board_id: None });
+    cli.send(&Msg::Open {
+        path: daemon.dir.join("nope.md").to_string_lossy().into_owned(),
+        term_id: None,
+        board_id: None,
+    });
     let reply = cli.recv(Instant::now() + LONG, "err for missing file");
     assert!(matches!(reply, Msg::Err { .. }), "expected err, got {reply:?}");
 
@@ -277,9 +276,7 @@ fn the_daemon_makes_no_app_claim_to_an_app() {
     // is built before install_app runs, so an arm that read the slot would report
     // app 1 here — which is what makes the two-app form the one that can fail.
     let (_second, reply) = Conn::hello_as(&daemon.sock, "app", Some("7.7.7"));
-    let Msg::HelloOk { app_version, app_connected, .. } = reply else {
-        panic!("expected hello_ok, got {reply:?}")
-    };
+    let Msg::HelloOk { app_version, app_connected, .. } = reply else { panic!("expected hello_ok, got {reply:?}") };
     assert_eq!(app_version, None);
     assert_eq!(app_connected, None);
 }
@@ -309,7 +306,13 @@ fn a_daemon_started_at_256_files_gives_its_shells_open_max_and_keeps_the_hard_li
     let mut size = std::mem::size_of::<libc::c_int>();
     // SAFETY: the name is NUL-terminated and `per_proc` is `size` bytes.
     let rc = unsafe {
-        libc::sysctlbyname(c"kern.maxfilesperproc".as_ptr(), (&raw mut per_proc).cast(), &mut size, std::ptr::null_mut(), 0)
+        libc::sysctlbyname(
+            c"kern.maxfilesperproc".as_ptr(),
+            (&raw mut per_proc).cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
     };
     assert_eq!(rc, 0);
     let daemon = TestDaemon::start_with(|cmd| {
@@ -333,4 +336,3 @@ fn a_daemon_started_at_256_files_gives_its_shells_open_max_and_keeps_the_hard_li
     let hard = if hard == libc::RLIM_INFINITY { "unlimited".to_string() } else { hard.to_string() };
     app.recv_output_containing("t1", &format!("nofile={soft}/{hard}."));
 }
-

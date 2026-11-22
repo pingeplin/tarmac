@@ -118,7 +118,6 @@ fn load(path: &Path) -> Result<SettingsFile, String> {
     Ok(file)
 }
 
-
 /// Exit 1 when a file is unreadable; `not installed` is not an error.
 fn status() -> i32 {
     let Some(env) = Env::from_process() else { return 1 };

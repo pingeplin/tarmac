@@ -8,7 +8,8 @@ mod common;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use common::{
-    ACK, Conn, FrameLog, JOB_SHELL, Spawn, TestDaemon, assert_ack, canon_dir, is_exec_proc_for, is_report_for, none_within, probe_until_cwd,
+    ACK, Conn, FrameLog, JOB_SHELL, Spawn, TestDaemon, assert_ack, canon_dir, is_exec_proc_for, is_report_for,
+    none_within, probe_until_cwd,
 };
 use tarmac_protocol::{self as proto, Msg, Tile};
 
@@ -22,7 +23,9 @@ struct Seen {
 }
 
 fn seen(msg: &Msg) -> Seen {
-    let Msg::TermReport { kind, text, at_ms, proc, read, .. } = msg.clone() else { panic!("not a term_report: {msg:?}") };
+    let Msg::TermReport { kind, text, at_ms, proc, read, .. } = msg.clone() else {
+        panic!("not a term_report: {msg:?}")
+    };
     Seen { kind, text, at_ms, proc, read }
 }
 
@@ -124,7 +127,10 @@ fn s3_an_unattributed_report_is_held_by_the_foreground_leader() {
     let mut app = job_shell(&daemon, &["T"]);
     app.type_line("T", "sleep 5");
     let typed = Instant::now();
-    app.recv_until("term_proc sleep", |m| matches!(m, Msg::TermProc { term_id, name, .. } if term_id == "T" && name == "sleep"));
+    app.recv_until(
+        "term_proc sleep",
+        |m| matches!(m, Msg::TermProc { term_id, name, .. } if term_id == "T" && name == "sleep"),
+    );
 
     let frame = report_from_test(&daemon, &mut app, "T", "done", None);
     assert_eq!((frame.kind.as_deref(), frame.proc.as_deref(), frame.text), (Some("done"), Some("sleep"), None));
@@ -221,7 +227,10 @@ fn s14_a_new_app_connection_gets_every_report_after_its_restore() {
     assert_eq!((u_frame.kind.as_deref(), u_frame.read), (Some("done"), false));
     let first_output = (restore..log.len()).find(|&i| matches!(log.0[i].msg, Msg::Output { .. })).unwrap();
     for i in [t[0], u[0]] {
-        assert!(restore < i && i < first_output, "report frame {i} between restore {restore} and output {first_output}");
+        assert!(
+            restore < i && i < first_output,
+            "report frame {i} between restore {restore} and output {first_output}"
+        );
     }
     assert!(first_output <= t_output.min(u_output));
 }
@@ -238,12 +247,15 @@ fn s15_a_background_boards_reports_come_with_each_of_its_restores() {
     let first = report_from_test(&daemon, &mut app, "T", "blocked", None);
 
     app.switch_to("board-1");
-    let again = app.recv_within(Duration::from_secs(2), |m| is_report_for(m, "T")).expect("a report frame after the restore");
+    let again =
+        app.recv_within(Duration::from_secs(2), |m| is_report_for(m, "T")).expect("a report frame after the restore");
     assert_eq!(seen(&again).at_ms, first.at_ms);
 
     app.switch_to("board-0");
     app.switch_to("board-1");
-    let third = app.recv_within(Duration::from_secs(2), |m| is_report_for(m, "T")).expect("a report frame after the second restore");
+    let third = app
+        .recv_within(Duration::from_secs(2), |m| is_report_for(m, "T"))
+        .expect("a report frame after the second restore");
     assert_eq!(seen(&third).at_ms, first.at_ms);
 }
 
@@ -254,7 +266,10 @@ fn s32_a_report_removed_while_no_app_is_connected_is_removed_at_the_next_restore
     let mut app = job_shell(&daemon, &["T", "U"]);
     app.type_line("T", "sleep 2");
     let typed = Instant::now();
-    app.recv_until("term_proc sleep", |m| matches!(m, Msg::TermProc { term_id, name, .. } if term_id == "T" && name == "sleep"));
+    app.recv_until(
+        "term_proc sleep",
+        |m| matches!(m, Msg::TermProc { term_id, name, .. } if term_id == "T" && name == "sleep"),
+    );
     let frame = report_from_test(&daemon, &mut app, "T", "blocked", None);
     assert_eq!(frame.proc.as_deref(), Some("sleep"));
     drop(app);
@@ -382,7 +397,6 @@ fn s33_a_report_typed_at_the_prompt_is_held_by_the_shell() {
     assert!(typed.elapsed() <= Duration::from_millis(1500), "removed {:?} after sleep 2", typed.elapsed());
 }
 
-
 // Spec 2611.0013: the place of a report, the connect replay of other boards'
 // reports, and the board of a bell and an exit.
 
@@ -479,13 +493,24 @@ fn s12_s13_a_new_connection_gets_other_boards_reports_once_after_its_first_resto
     assert!(log.reports_for("U", 0).is_empty(), "U has no report and gets no frame");
     let first_output = (restore..log.len()).find(|&i| matches!(log.0[i].msg, Msg::Output { .. })).unwrap();
     for i in [a[0], t[0]] {
-        assert!(restore < i && i < first_output, "report frame {i} between restore {restore} and output {first_output}");
+        assert!(
+            restore < i && i < first_output,
+            "report frame {i} between restore {restore} and output {first_output}"
+        );
     }
 
     app.send(&Msg::BoardSwitch { board_id: "board-1".into() });
-    let shown = app.log_until(&mut log, "board-1's restore", |m| matches!(m, Msg::Restore { board_id, .. } if board_id.as_deref() == Some("board-1")));
+    let shown = app.log_until(
+        &mut log,
+        "board-1's restore",
+        |m| matches!(m, Msg::Restore { board_id, .. } if board_id.as_deref() == Some("board-1")),
+    );
     app.send(&Msg::BoardSwitch { board_id: "board-0".into() });
-    let back = app.log_until(&mut log, "board-0's restore", |m| matches!(m, Msg::Restore { board_id, .. } if board_id.as_deref() == Some("board-0")));
+    let back = app.log_until(
+        &mut log,
+        "board-0's restore",
+        |m| matches!(m, Msg::Restore { board_id, .. } if board_id.as_deref() == Some("board-0")),
+    );
     app.log_for(&mut log, Duration::from_millis(500));
 
     let between = |term: &str| log.reports_for(term, shown).into_iter().filter(|&i| i < back).count();

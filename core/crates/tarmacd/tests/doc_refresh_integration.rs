@@ -9,8 +9,8 @@ mod common;
 use std::time::Duration;
 
 use common::{
-    Conn, TestDaemon, cli_open, doc_entry, dock_index, has_doc, is_file_event_for, mtime_ms, none_within, quiet,
-    touch, wait_for_last_changed, write_doc,
+    Conn, TestDaemon, cli_open, doc_entry, dock_index, has_doc, is_file_event_for, mtime_ms, none_within, quiet, touch,
+    wait_for_last_changed, write_doc,
 };
 use serde_json::json;
 use tarmac_protocol::Msg;
@@ -54,11 +54,7 @@ fn doc_refresh_pushes_the_files_current_mtime() {
 
     app.send(&Msg::DocRefresh { path: a.clone() });
 
-    assert_eq!(
-        recv_refresh_event(&mut app, &a),
-        mtime_ms(&a),
-        "doc_refresh must push the file's real current mtime"
-    );
+    assert_eq!(recv_refresh_event(&mut app, &a), mtime_ms(&a), "doc_refresh must push the file's real current mtime");
     // recv_refresh_event only catches a doc_opened that arrives BEFORE the
     // file_event; a handler pushing them the other way round would slip past it.
     assert!(
@@ -109,11 +105,7 @@ fn doc_refresh_records_the_mtime_durably_and_changes_nothing_else() {
     );
     // Tie the persisted value to the FILE, not merely to what was pushed: without
     // this the pair is self-consistent even if both are `now` rather than the mtime.
-    assert_eq!(
-        after["last_changed_ms"],
-        json!(mtime_ms(&a)),
-        "the persisted change time must be the file's mtime"
-    );
+    assert_eq!(after["last_changed_ms"], json!(mtime_ms(&a)), "the persisted change time must be the file's mtime");
 
     // Durable: the value comes back out of a cold restart.
     drop(app);
@@ -121,11 +113,7 @@ fn doc_refresh_records_the_mtime_durably_and_changes_nothing_else() {
     let mut app2 = daemon.connect_app();
     let docs = app2.recv_restore().docs;
     let entry = docs.iter().find(|d| d.path == a).expect("doc a survives restart");
-    assert_eq!(
-        entry.last_changed_ms,
-        Some(pushed),
-        "the refreshed mtime must survive a daemon restart"
-    );
+    assert_eq!(entry.last_changed_ms, Some(pushed), "the refreshed mtime must survive a daemon restart");
 }
 
 // S5: scoping. A doc parked on a background board is not refreshable; the same
@@ -260,11 +248,7 @@ fn doc_refresh_unknown_path_is_a_silent_noop() {
     );
 
     app.send(&Msg::DocRefresh { path: a.clone() });
-    assert_eq!(
-        recv_refresh_event(&mut app, &a),
-        mtime_ms(&a),
-        "the unrelated open doc must still refresh normally"
-    );
+    assert_eq!(recv_refresh_event(&mut app, &a), mtime_ms(&a), "the unrelated open doc must still refresh normally");
 }
 
 // S10: an open doc whose file has been deleted emits nothing (watch_loop's

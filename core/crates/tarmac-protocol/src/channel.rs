@@ -79,18 +79,20 @@ mod tests {
     fn resolve_socket_path_cases() {
         let cases: &[(Option<&str>, &str, Channel, &str)] = &[
             // release is the legacy flat path, byte-for-byte
-            (None, "/Users/eplin", Channel::Release,
-             "/Users/eplin/Library/Application Support/tarmac/tarmacd.sock"),
+            (None, "/Users/eplin", Channel::Release, "/Users/eplin/Library/Application Support/tarmac/tarmacd.sock"),
             // dev inserts exactly the `dev/` segment
-            (None, "/Users/eplin", Channel::Dev,
-             "/Users/eplin/Library/Application Support/tarmac/dev/tarmacd.sock"),
+            (None, "/Users/eplin", Channel::Dev, "/Users/eplin/Library/Application Support/tarmac/dev/tarmacd.sock"),
             (Some("/tmp/x.sock"), "/Users/eplin", Channel::Release, "/tmp/x.sock"),
             // the override wins even in dev: the integration harness injects
             // TARMAC_SOCKET into debug builds and must bypass the `dev/` segment
             (Some("/tmp/x.sock"), "/Users/eplin", Channel::Dev, "/tmp/x.sock"),
             // an empty override is treated as unset
-            (Some(""), "/Users/eplin", Channel::Dev,
-             "/Users/eplin/Library/Application Support/tarmac/dev/tarmacd.sock"),
+            (
+                Some(""),
+                "/Users/eplin",
+                Channel::Dev,
+                "/Users/eplin/Library/Application Support/tarmac/dev/tarmacd.sock",
+            ),
         ];
         for (over, home, channel, expected) in cases {
             assert_eq!(
@@ -107,24 +109,18 @@ mod tests {
         let home = OsStr::new("/Users/eplin");
         let release = resolve_socket_path(None, home, Channel::Release);
         let dev = resolve_socket_path(None, home, Channel::Dev);
-        let expected = release
-            .to_str()
-            .unwrap()
-            .replace("/tarmacd.sock", "/dev/tarmacd.sock");
+        let expected = release.to_str().unwrap().replace("/tarmacd.sock", "/dev/tarmacd.sock");
         assert_eq!(dev.to_str().unwrap(), expected);
     }
 
     #[test]
     fn resolve_state_path_cases() {
         let cases: &[(Option<&str>, &str, Channel, &str)] = &[
-            (None, "/Users/eplin", Channel::Release,
-             "/Users/eplin/Library/Application Support/tarmac/state.json"),
+            (None, "/Users/eplin", Channel::Release, "/Users/eplin/Library/Application Support/tarmac/state.json"),
             // state carries the same `dev/` segment as the socket
-            (None, "/Users/eplin", Channel::Dev,
-             "/Users/eplin/Library/Application Support/tarmac/dev/state.json"),
+            (None, "/Users/eplin", Channel::Dev, "/Users/eplin/Library/Application Support/tarmac/dev/state.json"),
             (Some("/tmp/s.json"), "/Users/eplin", Channel::Dev, "/tmp/s.json"),
-            (Some(""), "/Users/eplin", Channel::Dev,
-             "/Users/eplin/Library/Application Support/tarmac/dev/state.json"),
+            (Some(""), "/Users/eplin", Channel::Dev, "/Users/eplin/Library/Application Support/tarmac/dev/state.json"),
         ];
         for (over, home, channel, expected) in cases {
             assert_eq!(
@@ -142,11 +138,7 @@ mod tests {
         for channel in [Channel::Release, Channel::Dev] {
             let sock = resolve_socket_path(None, home, channel);
             let state = resolve_state_path(None, home, channel);
-            assert_eq!(
-                sock.parent(),
-                state.parent(),
-                "socket and state must share the per-channel dir ({channel:?})"
-            );
+            assert_eq!(sock.parent(), state.parent(), "socket and state must share the per-channel dir ({channel:?})");
         }
     }
 
@@ -157,17 +149,11 @@ mod tests {
     fn dev_socket_byte_boundary() {
         let home51 = format!("/{}", "a".repeat(50)); // 51 bytes
         assert_eq!(home51.len(), 51);
-        assert_eq!(
-            resolve_socket_path(None, OsStr::new(&home51), Channel::Dev).as_os_str().len(),
-            103,
-        );
+        assert_eq!(resolve_socket_path(None, OsStr::new(&home51), Channel::Dev).as_os_str().len(), 103,);
 
         let home52 = format!("/{}", "a".repeat(51)); // 52 bytes
         assert_eq!(home52.len(), 52);
-        assert_eq!(
-            resolve_socket_path(None, OsStr::new(&home52), Channel::Dev).as_os_str().len(),
-            104,
-        );
+        assert_eq!(resolve_socket_path(None, OsStr::new(&home52), Channel::Dev).as_os_str().len(), 104,);
     }
 
     // 103 bytes is the last accepted length; 104 (the sun_path cap) is rejected
@@ -176,10 +162,7 @@ mod tests {
     fn check_socket_path_len_boundary() {
         let path103 = PathBuf::from(format!("/{}", "a".repeat(102))); // "/" + 102 = 103
         assert_eq!(path103.as_os_str().len(), 103);
-        assert!(
-            check_socket_path_len(&path103).is_ok(),
-            "103-byte path must be accepted"
-        );
+        assert!(check_socket_path_len(&path103).is_ok(), "103-byte path must be accepted");
 
         let path104 = PathBuf::from(format!("/{}", "a".repeat(103))); // "/" + 103 = 104
         assert_eq!(path104.as_os_str().len(), 104);
@@ -187,14 +170,8 @@ mod tests {
         assert!(err.is_err(), "104-byte path must be rejected");
 
         let msg = err.unwrap_err();
-        assert!(
-            msg.contains("104"),
-            "error message must contain \"104\", got: {msg}"
-        );
-        assert!(
-            msg.contains("TARMAC_SOCKET"),
-            "error message must contain \"TARMAC_SOCKET\", got: {msg}"
-        );
+        assert!(msg.contains("104"), "error message must contain \"104\", got: {msg}");
+        assert!(msg.contains("TARMAC_SOCKET"), "error message must contain \"TARMAC_SOCKET\", got: {msg}");
 
         // over-cap: 150-byte path — cap literal "104" must still appear independently
         // of the interpolated length ("150").
@@ -203,10 +180,7 @@ mod tests {
         let err150 = check_socket_path_len(&path150);
         assert!(err150.is_err(), "150-byte path must be rejected");
         let msg150 = err150.unwrap_err();
-        assert!(
-            msg150.contains("104"),
-            "error message for 150-byte path must still contain \"104\", got: {msg150}"
-        );
+        assert!(msg150.contains("104"), "error message for 150-byte path must still contain \"104\", got: {msg150}");
         assert!(
             msg150.contains("TARMAC_SOCKET"),
             "error message for 150-byte path must contain \"TARMAC_SOCKET\", got: {msg150}"

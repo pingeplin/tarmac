@@ -37,7 +37,9 @@ fn s6_a_report_is_sent_for_the_calling_terminal_and_success_prints_nothing() {
 // S6
 #[test]
 fn s6_clear_and_a_report_with_no_or_an_empty_text_send_no_text_key() {
-    for (args, kind) in [(&["clear"][..], "clear"), (&["done"], "done"), (&["done", ""], "done"), (&["clear", ""], "clear")] {
+    for (args, kind) in
+        [(&["clear"][..], "clear"), (&["done"], "done"), (&["done", ""], "done"), (&["clear", ""], "clear")]
+    {
         let daemon = OneAnswer::acking();
         let out = daemon.run("report", args);
 

@@ -160,7 +160,8 @@ async fn a_reopen_behind_a_pending_unwatch_keeps_its_dir_watched() {
     let (fs, _unheld) = stuck_fs();
     let (source, calls, release) = held_source(&[(Change::Unwatch, &x)]);
     // A limit that the release after the poll below cannot miss.
-    let daemon = Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Wake::default()), fs, Duration::from_secs(30)).await;
+    let daemon =
+        Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Wake::default()), fs, Duration::from_secs(30)).await;
     assert_eq!(try_open(&daemon, &busy).await, Ok(()));
     assert_eq!(try_open(&daemon, &doc).await, Ok(()));
     assert!(try_close(&daemon, &busy).await);
@@ -289,10 +290,8 @@ async fn a_retry_unwatches_every_dir_that_was_skipped() {
     assert!(watched(&daemon, &outer).await && watched(&daemon, &inner).await, "both are skipped");
 
     drop(release);
-    eventually("both unwatches", || {
-        calls.of(Change::Unwatch, &outer) == 1 && calls.of(Change::Unwatch, &inner) == 1
-    })
-    .await;
+    eventually("both unwatches", || calls.of(Change::Unwatch, &outer) == 1 && calls.of(Change::Unwatch, &inner) == 1)
+        .await;
 
     let _ = std::fs::remove_dir_all(&tmp);
 }

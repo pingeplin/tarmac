@@ -20,14 +20,21 @@ async fn inherit_out(tag: &str) -> Rig {
     r
 }
 
-async fn spawn_pwd(daemon: &Arc<Daemon>, term_id: &str, cwd: Option<&Path>, inherit_cwd_from: Option<&str>) -> Duration {
-    spawn(daemon, term_id, &["/bin/sh", "-c", "pwd -P"], SpawnOpts { cwd, inherit_cwd_from, ..Default::default() }).await
+async fn spawn_pwd(
+    daemon: &Arc<Daemon>,
+    term_id: &str,
+    cwd: Option<&Path>,
+    inherit_cwd_from: Option<&str>,
+) -> Duration {
+    spawn(daemon, term_id, &["/bin/sh", "-c", "pwd -P"], SpawnOpts { cwd, inherit_cwd_from, ..Default::default() })
+        .await
 }
 
 /// A terminal `src` in `dir`, at a `read` once this returns, whose own
 /// first `pid_cwd` (2611.0007) has been recorded.
 async fn source_in(daemon: &Arc<Daemon>, app: &mut mpsc::Receiver<Msg>, dir: &Path) {
-    spawn(daemon, "src", &["/bin/sh", "-c", "echo UP; read _"], SpawnOpts { cwd: Some(dir), ..Default::default() }).await;
+    spawn(daemon, "src", &["/bin/sh", "-c", "echo UP; read _"], SpawnOpts { cwd: Some(dir), ..Default::default() })
+        .await;
     printed(app, "src", Some("UP")).await;
     eventually_async("the record of src's cwd", || async {
         daemon.boards.lock().await.active_registry().term_records["src"].last_cwd.is_some()

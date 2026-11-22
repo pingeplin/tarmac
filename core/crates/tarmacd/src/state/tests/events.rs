@@ -108,8 +108,13 @@ async fn subscribers_and_the_terms_list_make_no_watch() {
     open_doc(&daemon, None, &doc).await;
     assert!(watched(&daemon, doc.parent().unwrap()).await);
     daemon.terms.lock().await.insert("T".into(), TermHandle::detached());
-    let shapes: [(Option<&[&str]>, Option<&str>); 5] =
-        [(None, None), (None, Some("T")), (Some(&["changed"]), None), (Some(&["exit", "report"]), Some("T")), (Some(&["later"]), None)];
+    let shapes: [(Option<&[&str]>, Option<&str>); 5] = [
+        (None, None),
+        (None, Some("T")),
+        (Some(&["changed"]), None),
+        (Some(&["exit", "report"]), Some("T")),
+        (Some(&["later"]), None),
+    ];
 
     let mut subscribers = Vec::new();
     for (kinds, term_id) in shapes {

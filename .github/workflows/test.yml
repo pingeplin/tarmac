@@ -1,6 +1,6 @@
-# The test suites — everything `make test` runs except docs-check, which keeps
-# its own workflow on purpose: it is plain node and sub-second, and must never
-# queue behind a build.
+# The two test suites of `make test`. What else it runs is plain node and
+# sub-second, and must never queue behind a build, so it has its own workflows
+# on purpose: docs-check in docs-check.yml, the check scripts' tests in lint.yml.
 #
 # Both suites run on macOS, the only platform Tarmac ships on. The daemon
 # resolves a term's foreground process name and live cwd through
@@ -27,7 +27,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # The version rust-toolchain.toml pins, so CI and a local build agree.
+      - name: install the pinned toolchain
+        run: rustup toolchain install
 
       - uses: Swatinem/rust-cache@v2
         with:

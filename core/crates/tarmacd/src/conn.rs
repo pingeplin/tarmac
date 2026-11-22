@@ -116,7 +116,12 @@ async fn cli_session(daemon: Arc<Daemon>, mut stream: UnixStream, peer_pid: Opti
 
 /// The rest of a cli session that sent `subscribe` (spec 2611.0012): `err`,
 /// or the snapshot, `ack` and the live frames, until the client goes.
-async fn subscribe(daemon: &Daemon, mut stream: UnixStream, kinds: Option<Vec<String>>, term_id: Option<String>) -> anyhow::Result<()> {
+async fn subscribe(
+    daemon: &Daemon,
+    mut stream: UnixStream,
+    kinds: Option<Vec<String>>,
+    term_id: Option<String>,
+) -> anyhow::Result<()> {
     let sub = match daemon.subscribe(kinds, term_id).await {
         Ok(sub) => sub,
         Err(msg) => return reject(&mut stream, msg).await,
@@ -242,11 +247,7 @@ async fn change_and_send_active_board(
     true
 }
 
-async fn app_session(
-    daemon: Arc<Daemon>,
-    stream: UnixStream,
-    app_version: Option<String>,
-) -> anyhow::Result<()> {
+async fn app_session(daemon: Arc<Daemon>, stream: UnixStream, app_version: Option<String>) -> anyhow::Result<()> {
     let (mut rd, mut wr) = stream.into_split();
     let (tx, mut rx) = mpsc::channel::<Msg>(256);
     let (generation, cancel) = daemon.install_app(tx.clone(), app_version).await;
@@ -363,11 +364,7 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
         Msg::BoardRename { board_id, name } => {
             // An empty name clears it. The boards lock is released before the
             // board_list re-push, which locks it again after the term maps.
-            let renamed = daemon
-                .boards
-                .lock()
-                .await
-                .rename(&board_id, (!name.is_empty()).then_some(name));
+            let renamed = daemon.boards.lock().await.rename(&board_id, (!name.is_empty()).then_some(name));
             if renamed {
                 daemon.mark_dirty();
                 daemon.push(daemon.board_list_msg().await).await;
@@ -388,7 +385,9 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
         }
         Msg::DataFile { board_id, path, file } => {
             if !docs::record_data(daemon, &board_id, Path::new(&path), file.map(PathBuf::from)).await {
-                debug!("data_file ignored for {path} on {board_id} (an unknown board or doc, or a data file not under the doc's directory)");
+                debug!(
+                    "data_file ignored for {path} on {board_id} (an unknown board or doc, or a data file not under the doc's directory)"
+                );
             }
         }
         Msg::TermNewOk { req_id: Some(req_id), term_id } => daemon.term_new_answered(req_id, Ok(term_id)).await,
@@ -434,9 +433,7 @@ pub(crate) async fn spawn_requested(
 // An explicit, known board_id wins, else the active board.
 async fn owning_board(daemon: &Daemon, board_id: Option<String>) -> BoardId {
     let boards = daemon.boards.lock().await;
-    board_id
-        .filter(|id| boards.contains(id))
-        .unwrap_or_else(|| boards.active_id().to_string())
+    board_id.filter(|id| boards.contains(id)).unwrap_or_else(|| boards.active_id().to_string())
 }
 
 // A new terminal inherits its source's LIVE cwd, not its spawn cwd. An explicit

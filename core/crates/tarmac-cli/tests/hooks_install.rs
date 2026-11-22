@@ -414,7 +414,11 @@ fn s9_uninstall_leaves_every_near_match_as_it_was() {
         {"command": "tarmac hooks run claude"},
         "tarmac hooks run claude"
     ]);
-    let mut all = vec![handler(), serde_json::json!({"type": "command", "command": "tarmac hooks run claude"}), serde_json::json!({"type": "command", "command": " tarmac hooks run claude "})];
+    let mut all = vec![
+        handler(),
+        serde_json::json!({"type": "command", "command": "tarmac hooks run claude"}),
+        serde_json::json!({"type": "command", "command": " tarmac hooks run claude "}),
+    ];
     all.extend(foreign.as_array().unwrap().iter().cloned());
     put(&path, &serde_json::json!({"hooks": {"Stop": [{"hooks": all}]}}).to_string());
 
@@ -434,10 +438,24 @@ fn s10_an_old_form_shows_in_status_and_install_replaces_it() {
         v
     };
     let forms = [
-        ("a", serde_json::json!({"hooks": {"Notification": [{"hooks": [bare]}], "Stop": [{"hooks": [bare]}], "UserPromptSubmit": [{"hooks": [bare]}], "SessionStart": [{"hooks": [bare]}]}})),
-        ("b", with(&|v| { v["hooks"].as_object_mut().unwrap().shift_remove("SessionStart"); })),
+        (
+            "a",
+            serde_json::json!({"hooks": {"Notification": [{"hooks": [bare]}], "Stop": [{"hooks": [bare]}], "UserPromptSubmit": [{"hooks": [bare]}], "SessionStart": [{"hooks": [bare]}]}}),
+        ),
+        (
+            "b",
+            with(&|v| {
+                v["hooks"].as_object_mut().unwrap().shift_remove("SessionStart");
+            }),
+        ),
         ("c", with(&|v| v["hooks"]["Stop"].as_array_mut().unwrap().push(serde_json::json!({"hooks": [handler()]})))),
-        ("d", with(&|v| v["hooks"]["Stop"] = serde_json::json!([{"hooks": [{"type": "command", "command": "say done"}, handler()]}]))),
+        (
+            "d",
+            with(&|v| {
+                v["hooks"]["Stop"] =
+                    serde_json::json!([{"hooks": [{"type": "command", "command": "say done"}, handler()]}])
+            }),
+        ),
         ("e", with(&|v| v["hooks"]["Notification"][0]["matcher"] = serde_json::json!("permission_prompt"))),
         ("f", with(&|v| v["hooks"]["PreToolUse"] = serde_json::json!([{"hooks": [handler()]}]))),
     ];
@@ -445,18 +463,31 @@ fn s10_an_old_form_shows_in_status_and_install_replaces_it() {
         let dir = sandbox();
         put(&user_settings(&dir), &serde_json::to_string_pretty(&form).unwrap());
         let status = hooks(&dir, &["status"]);
-        assert!(status_line(&status, "claude-code  user").ends_with("installed, old form (run tarmac hooks install)"), "({name}) {}", status.stdout);
+        assert!(
+            status_line(&status, "claude-code  user").ends_with("installed, old form (run tarmac hooks install)"),
+            "({name}) {}",
+            status.stdout
+        );
 
         assert_eq!(claude(&dir, "install", &[]).code(), Some(0), "({name})");
 
         let status = hooks(&dir, &["status"]);
         assert!(status_line(&status, "claude-code  user").ends_with("  installed"), "({name}) {}", status.stdout);
         let v = json(&user_settings(&dir));
-        let ours = v["hooks"].as_object().unwrap().values().flat_map(|g| g.as_array().unwrap())
-            .flat_map(|g| g["hooks"].as_array().unwrap()).filter(|h| h["command"].as_str().is_some_and(|c| c.contains("tarmac"))).count();
+        let ours = v["hooks"]
+            .as_object()
+            .unwrap()
+            .values()
+            .flat_map(|g| g.as_array().unwrap())
+            .flat_map(|g| g["hooks"].as_array().unwrap())
+            .filter(|h| h["command"].as_str().is_some_and(|c| c.contains("tarmac")))
+            .count();
         assert_eq!(ours, 4, "({name}) {v}");
         if name == "d" {
-            assert_eq!(v["hooks"]["Stop"][0], serde_json::json!({"hooks": [{"type": "command", "command": "say done"}]}));
+            assert_eq!(
+                v["hooks"]["Stop"][0],
+                serde_json::json!({"hooks": [{"type": "command", "command": "say done"}]})
+            );
         }
     }
 }
@@ -504,7 +535,12 @@ fn s13_claude_config_dir_and_project_scope_pick_the_file() {
         assert_eq!(lines.next(), Some(format!("installed: {}", local.display()).as_str()));
         assert_eq!(lines.next(), Some(format!("backup: {}", backup.display()).as_str()));
         let hint = lines.next().unwrap_or_default();
-        assert!(hint.starts_with("hint: ") && hint.contains(&local.display().to_string()) && hint.contains(&backup.display().to_string()), "{hint}");
+        assert!(
+            hint.starts_with("hint: ")
+                && hint.contains(&local.display().to_string())
+                && hint.contains(&backup.display().to_string()),
+            "{hint}"
+        );
         assert_eq!(json(&local)["hooks"], four_groups());
         assert_eq!(read(&shared), F_CLAUDE);
     }

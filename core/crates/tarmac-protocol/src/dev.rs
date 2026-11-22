@@ -2,8 +2,8 @@
 //! deliberately not `Msg` variants: the main protocol is additive-only, so
 //! anything added there would be permanent.
 
-use crate::channel::resolve;
 use crate::Channel;
+use crate::channel::resolve;
 use serde::{Deserialize, Serialize};
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
@@ -156,10 +156,7 @@ mod tests {
     fn every_dev_request_variant_roundtrips() {
         let all = [
             DevRequest::Snapshot { until: None, timeout_ms: None },
-            DevRequest::Snapshot {
-                until: Some("cards[t-1].term.cols != 80".into()),
-                timeout_ms: Some(1500),
-            },
+            DevRequest::Snapshot { until: Some("cards[t-1].term.cols != 80".into()), timeout_ms: Some(1500) },
             DevRequest::Zoom { z: 0.5 },
             DevRequest::Focus { card: Some("t-1".into()) },
             DevRequest::Focus { card: None },
@@ -186,7 +183,11 @@ mod tests {
     #[test]
     fn a_press_carries_its_repeats_under_that_key() {
         let held = DevRequest::Press {
-            combo: "enter".into(), hold_ms: Some(1000), age_ms: None, busy_ms: None, repeats: Some(20),
+            combo: "enter".into(),
+            hold_ms: Some(1000),
+            age_ms: None,
+            busy_ms: None,
+            repeats: Some(20),
         };
         assert_eq!(
             hex(&encode_request(&held).unwrap()),
@@ -256,7 +257,11 @@ mod tests {
     fn unknown_keys_are_ignored() {
         // A `zoom` request from a newer CLI that also sends an `anchor` key.
         #[derive(serde::Serialize)]
-        struct Future<'a> { t: &'a str, z: f64, anchor: &'a str }
+        struct Future<'a> {
+            t: &'a str,
+            z: f64,
+            anchor: &'a str,
+        }
         let bytes = rmp_serde::to_vec_named(&Future { t: "zoom", z: 0.5, anchor: "pointer" }).unwrap();
         assert_eq!(decode_request(&bytes).unwrap(), DevRequest::Zoom { z: 0.5 });
     }
@@ -266,7 +271,9 @@ mod tests {
     #[test]
     fn unknown_request_types_decode_to_unknown() {
         #[derive(serde::Serialize)]
-        struct Future<'a> { t: &'a str }
+        struct Future<'a> {
+            t: &'a str,
+        }
         let bytes = rmp_serde::to_vec_named(&Future { t: "teleport" }).unwrap();
         assert_eq!(decode_request(&bytes).unwrap(), DevRequest::Unknown);
     }
@@ -275,23 +282,53 @@ mod tests {
     /// are absent keys, not nils.
     #[test]
     fn press_roundtrips_and_skips_absent_flags() {
-        let bare = DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms: None, repeats: None };
+        let bare =
+            DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms: None, repeats: None };
         let all = [
             bare.clone(),
-            DevRequest::Press { combo: "cmd+q".into(), hold_ms: Some(1000), age_ms: None, busy_ms: None, repeats: None },
-            DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: Some(2500), busy_ms: None, repeats: None },
-            DevRequest::Press { combo: "alt+cmd+q".into(), hold_ms: Some(10000), age_ms: Some(0), busy_ms: None, repeats: None },
+            DevRequest::Press {
+                combo: "cmd+q".into(),
+                hold_ms: Some(1000),
+                age_ms: None,
+                busy_ms: None,
+                repeats: None,
+            },
+            DevRequest::Press {
+                combo: "cmd+q".into(),
+                hold_ms: None,
+                age_ms: Some(2500),
+                busy_ms: None,
+                repeats: None,
+            },
+            DevRequest::Press {
+                combo: "alt+cmd+q".into(),
+                hold_ms: Some(10000),
+                age_ms: Some(0),
+                busy_ms: None,
+                repeats: None,
+            },
             DevRequest::Press { combo: "nonsense".into(), hold_ms: None, age_ms: None, busy_ms: None, repeats: None },
-            DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms: Some(1000), repeats: None },
-            DevRequest::Press { combo: "enter".into(), hold_ms: Some(1000), age_ms: None, busy_ms: None, repeats: Some(20) },
+            DevRequest::Press {
+                combo: "cmd+q".into(),
+                hold_ms: None,
+                age_ms: None,
+                busy_ms: Some(1000),
+                repeats: None,
+            },
+            DevRequest::Press {
+                combo: "enter".into(),
+                hold_ms: Some(1000),
+                age_ms: None,
+                busy_ms: None,
+                repeats: Some(20),
+            },
         ];
         for req in all {
             assert_eq!(roundtrip(&req), req, "roundtrip changed {req:?}");
         }
         let bytes = encode_request(&bare).unwrap();
         assert_eq!(rmp_serde::from_slice::<Tag>(&bytes).unwrap().t, "press");
-        let keys: std::collections::BTreeMap<String, serde::de::IgnoredAny> =
-            rmp_serde::from_slice(&bytes).unwrap();
+        let keys: std::collections::BTreeMap<String, serde::de::IgnoredAny> = rmp_serde::from_slice(&bytes).unwrap();
         assert_eq!(keys.keys().cloned().collect::<Vec<_>>(), ["combo", "t"]);
     }
 
@@ -299,7 +336,8 @@ mod tests {
     /// wait out the freeze.
     #[test]
     fn press_budget_is_its_busy_ms() {
-        let press = |busy_ms| DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms, repeats: None };
+        let press =
+            |busy_ms| DevRequest::Press { combo: "cmd+q".into(), hold_ms: None, age_ms: None, busy_ms, repeats: None };
         assert_eq!(press(Some(1000)).timeout_ms(), Some(1000));
         assert_eq!(press(None).timeout_ms(), None);
     }
@@ -331,7 +369,8 @@ mod tests {
     /// absent `card`, and these are the bytes `DevMessagesTests` pins.
     #[test]
     fn click_bytes_are_what_the_swift_codec_is_pinned_to() {
-        let on_card = encode_request(&DevRequest::Click { card: Some("t-1".into()), control: "resume".into() }).unwrap();
+        let on_card =
+            encode_request(&DevRequest::Click { card: Some("t-1".into()), control: "resume".into() }).unwrap();
         assert_eq!(rmp_serde::from_slice::<Tag>(&on_card).unwrap().t, "click");
         assert_eq!(
             hex(&on_card),
@@ -349,7 +388,10 @@ mod tests {
     #[test]
     fn a_click_with_no_control_does_not_decode() {
         #[derive(serde::Serialize)]
-        struct Bare { t: &'static str, card: &'static str }
+        struct Bare {
+            t: &'static str,
+            card: &'static str,
+        }
         let bytes = rmp_serde::to_vec_named(&Bare { t: "click", card: "t-1" }).unwrap();
         assert!(decode_request(&bytes).is_err());
     }
@@ -358,7 +400,12 @@ mod tests {
     #[test]
     fn unknown_keys_on_press_are_ignored() {
         #[derive(serde::Serialize)]
-        struct Future<'a> { t: &'a str, combo: &'a str, hold_ms: u32, pressure: u32 }
+        struct Future<'a> {
+            t: &'a str,
+            combo: &'a str,
+            hold_ms: u32,
+            pressure: u32,
+        }
         let bytes = rmp_serde::to_vec_named(&Future { t: "press", combo: "cmd+q", hold_ms: 1, pressure: 5 }).unwrap();
         assert_eq!(
             decode_request(&bytes).unwrap(),
@@ -414,10 +461,7 @@ mod tests {
         for channel in [Channel::Release, Channel::Dev] {
             let dev = resolve_dev_socket_path(None, home, channel);
             assert_eq!(dev.parent().unwrap(), channel_dir(Path::new(home), channel));
-            assert_eq!(
-                dev.parent(),
-                resolve_socket_path(None, home, channel).parent(),
-            );
+            assert_eq!(dev.parent(), resolve_socket_path(None, home, channel).parent(),);
             assert_eq!(dev.file_name().unwrap(), "tarmac-dev.sock");
         }
     }

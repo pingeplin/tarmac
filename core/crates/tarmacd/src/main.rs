@@ -32,11 +32,7 @@ const ACCEPT_RETRY: std::time::Duration = std::time::Duration::from_millis(100);
 /// code — see the `core/Cargo.toml` note forbidding `debug-assertions` profile
 /// overrides, which would silently flip this without touching path code.
 fn current_channel() -> Channel {
-    if cfg!(debug_assertions) {
-        Channel::Dev
-    } else {
-        Channel::Release
-    }
+    if cfg!(debug_assertions) { Channel::Dev } else { Channel::Release }
 }
 
 fn home_dir() -> OsString {

@@ -172,9 +172,7 @@ fn snapshot(boards: &Boards) -> PersistedState {
 }
 
 fn write_atomic(path: &Path, state: &PersistedState) -> anyhow::Result<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("state path has no parent: {}", path.display()))?;
+    let parent = path.parent().ok_or_else(|| anyhow::anyhow!("state path has no parent: {}", path.display()))?;
     std::fs::create_dir_all(parent)?;
     let tmp = path.with_extension("json.tmp");
     let mut f = std::fs::File::create(&tmp)?;
@@ -254,10 +252,7 @@ mod tests {
         assert_eq!(b.name, None);
 
         let reg = boards.active_registry();
-        assert_eq!(
-            reg.dock,
-            vec![PathBuf::from("/nx-tarmac/plan.md"), PathBuf::from("/nx-tarmac/notes.md")]
-        );
+        assert_eq!(reg.dock, vec![PathBuf::from("/nx-tarmac/plan.md"), PathBuf::from("/nx-tarmac/notes.md")]);
         // read flags preserved; repo not taken from disk.
         let plan = reg.docs.get(Path::new("/nx-tarmac/plan.md")).unwrap();
         assert!(!plan.read);

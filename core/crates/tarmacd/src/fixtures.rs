@@ -106,7 +106,8 @@ impl StuckFs {
         count.0 += 1;
         count.1 += u32::from(held);
         drop(counts);
-        let slow = self.slows.lock().unwrap().iter().find(|(c, under, _)| *c == call && path.starts_with(under)).map(|s| s.2);
+        let slow =
+            self.slows.lock().unwrap().iter().find(|(c, under, _)| *c == call && path.starts_with(under)).map(|s| s.2);
         if let Some(delay) = slow {
             std::thread::sleep(delay);
         }

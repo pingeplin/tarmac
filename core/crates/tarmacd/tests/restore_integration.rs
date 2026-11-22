@@ -299,13 +299,8 @@ fn shelf_loose_and_term_id_survive_daemon_restart() {
     assert_eq!(opened.term_id.as_deref(), Some("term-7"), "open must carry the term_id");
 
     // Park the doc on the shelf: kind "doc", shelf:true, loose:true, no geometry.
-    let shelf_tile = Tile {
-        kind: "doc".into(),
-        path: Some(a.clone()),
-        loose: Some(true),
-        shelf: Some(true),
-        ..Default::default()
-    };
+    let shelf_tile =
+        Tile { kind: "doc".into(), path: Some(a.clone()), loose: Some(true), shelf: Some(true), ..Default::default() };
     app.send(&Msg::Layout {
         dock: vec![a.clone()],
         tiles: vec![term_tile(), shelf_tile.clone()],
@@ -357,7 +352,12 @@ fn sidebar_keys_survive_daemon_restart() {
     app.recv_doc_opened();
 
     let tile = Tile { sidebar_w: Some(300.5), sidebar_open: Some(false), ..doc_tile(&a) };
-    app.send(&Msg::Layout { dock: vec![a.clone()], tiles: vec![term_tile(), tile.clone()], board: None, board_id: None });
+    app.send(&Msg::Layout {
+        dock: vec![a.clone()],
+        tiles: vec![term_tile(), tile.clone()],
+        board: None,
+        board_id: None,
+    });
 
     daemon.wait_for_state("doc tile sidebar keys", |v| {
         v["boards"][0]["tiles"].as_array().is_some_and(|t| {

@@ -221,9 +221,7 @@ fn board_delete_kills_terms_fixes_active_and_refuses_last() {
     while !(saw_exit && saw_final_list) {
         match app.recv(deadline, "post-delete frames") {
             Msg::Exit { term_id, .. } if term_id == "tdel" => saw_exit = true,
-            Msg::BoardList { boards, active }
-                if board_ids(&boards) == vec!["board-0"] && active == "board-0" =>
-            {
+            Msg::BoardList { boards, active } if board_ids(&boards) == vec!["board-0"] && active == "board-0" => {
                 saw_final_list = true
             }
             _ => {}
@@ -243,10 +241,7 @@ fn board_rename_sets_clears_and_ignores_unknown() {
     // Rename board-0 → "infra": the re-pushed board_list carries the new name.
     app.send(&Msg::BoardRename { board_id: "board-0".into(), name: "infra".into() });
     let (boards, _) = app.recv_board_list();
-    assert_eq!(
-        boards.iter().find(|b| b.board_id == "board-0").and_then(|b| b.name.as_deref()),
-        Some("infra")
-    );
+    assert_eq!(boards.iter().find(|b| b.board_id == "board-0").and_then(|b| b.name.as_deref()), Some("infra"));
 
     // An empty name clears it back to None (the slug fallback).
     app.send(&Msg::BoardRename { board_id: "board-0".into(), name: String::new() });
@@ -299,9 +294,7 @@ fn term_exit_recomputes_board_running_count() {
 
     // When techo exits, the next (re-pushed) board_list reports board-0 running
     // Some(1) — the surviving tlong, with the exited techo correctly excluded.
-    app.recv_until("techo exit", |m| {
-        matches!(m, Msg::Exit { term_id, .. } if term_id.as_str() == "techo")
-    });
+    app.recv_until("techo exit", |m| matches!(m, Msg::Exit { term_id, .. } if term_id.as_str() == "techo"));
     let (boards, _) = app.recv_board_list();
     assert_eq!(
         running(&boards, "board-0"),
@@ -331,16 +324,9 @@ fn reconnect_rebinds_live_terms_and_replays_scrollback() {
     // replays, so the app re-binds rather than respawns.
     let mut app2 = daemon.connect_app();
     let (boards, _) = app2.recv_board_list();
-    assert_eq!(
-        running(&boards, "board-0"),
-        Some(1),
-        "board_list reports the surviving shell as running"
-    );
+    assert_eq!(running(&boards, "board-0"), Some(1), "board_list reports the surviving shell as running");
     let live_terms = app2.recv_restore().live_terms;
-    assert!(
-        live_terms.contains(&"t0".to_string()),
-        "reconnect restore lists the live term, got {live_terms:?}"
-    );
+    assert!(live_terms.contains(&"t0".to_string()), "reconnect restore lists the live term, got {live_terms:?}");
     app2.recv_output_containing("t0", "scrollmark");
 }
 
@@ -435,7 +421,12 @@ fn a_layout_for_a_deleted_board_does_not_land_on_the_active_board() {
     app.recv_restore();
 
     let stray = BoardViewport { zoom: 2.0, cx: 9.0, cy: 9.0 };
-    app.send(&Msg::Layout { dock: vec![], tiles: vec![term_tile("t1", 120.0)], board: Some(stray), board_id: Some("board-1".into()) });
+    app.send(&Msg::Layout {
+        dock: vec![],
+        tiles: vec![term_tile("t1", 120.0)],
+        board: Some(stray),
+        board_id: Some("board-1".into()),
+    });
     // A round trip on the same connection: the daemon has read the layout.
     app.send(&Msg::BoardRename { board_id: "board-0".into(), name: "read".into() });
     app.recv_board_list();

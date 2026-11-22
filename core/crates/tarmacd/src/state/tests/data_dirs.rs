@@ -46,7 +46,8 @@ impl Card {
         let dir = tmp.join("d");
         let dash = write_doc(dir.join("dash.html"));
         let (fs, release) = stuck_fs();
-        let daemon = Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Wake::default()), fs.clone(), limit).await;
+        let daemon =
+            Daemon::with_fs(tmp.join("state.json"), source, Arc::new(Wake::default()), fs.clone(), limit).await;
         let (generation, mut app) = take_the_place(&daemon).await;
         open_doc(&daemon, None, &dash).await;
         flushed(&mut app, &dash).await;
@@ -401,7 +402,9 @@ async fn a_restart_watches_no_data_directory_until_a_data_file_names_the_file() 
 
 /// Every call the gate made, of each kind.
 fn gate_calls(fs: &StuckFs) -> Vec<u32> {
-    [Call::Resolve, Call::ResolveDir, Call::Stamp, Call::RepoOf, Call::IsDir, Call::PidCwd].map(|c| fs.calls(c)).to_vec()
+    [Call::Resolve, Call::ResolveDir, Call::Stamp, Call::RepoOf, Call::IsDir, Call::PidCwd]
+        .map(|c| fs.calls(c))
+        .to_vec()
 }
 
 /// A change of `doc`, a wake given as the file system's, and that wake's

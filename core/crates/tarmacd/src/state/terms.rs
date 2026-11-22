@@ -164,7 +164,9 @@ impl Daemon {
         }
         let order: Vec<BoardId> = self.boards.lock().await.iter().map(|b| b.id.clone()).collect();
         // Ids sort as text, so `t10` comes before `t2`.
-        rows.sort_by_cached_key(|row| (order.iter().position(|b| *b == row.board_id).unwrap_or(usize::MAX), row.term_id.clone()));
+        rows.sort_by_cached_key(|row| {
+            (order.iter().position(|b| *b == row.board_id).unwrap_or(usize::MAX), row.term_id.clone())
+        });
         rows
     }
 }

@@ -11,11 +11,19 @@ const MAX_HOPS: usize = 32;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Holder {
     /// `started` tells the process from a later one with the same pid.
-    Agent { pid: Pid, started: u64 },
+    Agent {
+        pid: Pid,
+        started: u64,
+    },
     /// A report typed at the prompt: it lasts while the leader is the shell
     /// `pid` or the reporting `caller`.
-    Shell { pid: Pid, caller: Pid },
-    Leader { pid: Pid },
+    Shell {
+        pid: Pid,
+        caller: Pid,
+    },
+    Leader {
+        pid: Pid,
+    },
 }
 
 /// A process told from a later one with the same pid by its start time.
@@ -57,7 +65,12 @@ impl Holder {
         Self::walk(caller, child, child_is_cmd, facts_of).or_else(|| leader().map(|pid| Holder::Leader { pid }))
     }
 
-    fn walk(caller: Option<Pid>, child: Option<Pid>, child_is_cmd: bool, facts_of: impl Fn(Pid) -> Facts) -> Option<Holder> {
+    fn walk(
+        caller: Option<Pid>,
+        child: Option<Pid>,
+        child_is_cmd: bool,
+        facts_of: impl Fn(Pid) -> Facts,
+    ) -> Option<Holder> {
         let (caller, child) = (caller?, child?);
         let (mut pid, mut below, mut members) = (caller, None, 1);
         while pid != child {
@@ -146,7 +159,10 @@ mod tests {
     fn table(parents: &[(Pid, Pid)]) -> impl Fn(Pid) -> Facts + use<> {
         let parents = parents.to_vec();
         move |pid| {
-            parents.iter().find(|(p, _)| *p == pid).map_or(Facts::Gone, |&(_, ppid)| Facts::Live { ppid, started: pid as u64 })
+            parents
+                .iter()
+                .find(|(p, _)| *p == pid)
+                .map_or(Facts::Gone, |&(_, ppid)| Facts::Live { ppid, started: pid as u64 })
         }
     }
 
@@ -167,7 +183,8 @@ mod tests {
 
     #[test]
     fn s9b_s36_a_caller_whose_parent_is_the_shell_is_held_by_the_shell() {
-        let shell = Holder::resolve(Some(CALLER), Some(CHILD), false, table(&[(CALLER, CHILD)]), || panic!("no leader read"));
+        let shell =
+            Holder::resolve(Some(CALLER), Some(CHILD), false, table(&[(CALLER, CHILD)]), || panic!("no leader read"));
         assert_eq!(shell, Some(Holder::Shell { pid: CHILD, caller: CALLER }));
     }
 

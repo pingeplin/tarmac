@@ -24,9 +24,8 @@ fn term_close_kills_term_and_emits_exit() {
     spawn_live_cat(&mut app, "tclose");
     app.send(&Msg::TermClose { term_id: "tclose".into() });
 
-    let exit = app.recv_until("exit for the closed term", |m| {
-        matches!(m, Msg::Exit { term_id, .. } if term_id == "tclose")
-    });
+    let exit =
+        app.recv_until("exit for the closed term", |m| matches!(m, Msg::Exit { term_id, .. } if term_id == "tclose"));
     assert!(matches!(exit, Msg::Exit { term_id, .. } if term_id == "tclose"));
 }
 

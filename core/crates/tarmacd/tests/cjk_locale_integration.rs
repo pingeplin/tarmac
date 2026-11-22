@@ -39,11 +39,7 @@ fn shell_locale_result(daemon: &TestDaemon, term_id: &str) -> String {
     // `${LC_CTYPE-unset}` distinguishes an injected value from an unset one.
     app.spawn_term(
         term_id,
-        &[
-            "/bin/sh",
-            "-c",
-            "printf 'RESULT charmap=%s ctype=%s\\n' \"$(locale charmap)\" \"${LC_CTYPE-unset}\"",
-        ],
+        &["/bin/sh", "-c", "printf 'RESULT charmap=%s ctype=%s\\n' \"$(locale charmap)\" \"${LC_CTYPE-unset}\""],
     );
 
     let deadline = Instant::now() + LONG;
@@ -87,10 +83,7 @@ fn existing_utf8_lang_is_respected_not_overridden() {
     let daemon = start_daemon(Some("en_US.UTF-8"));
     let result = shell_locale_result(&daemon, "cjk-utf8-lang");
     // The shell is already UTF-8 via the inherited LANG…
-    assert!(
-        result.contains("charmap=UTF-8"),
-        "an inherited UTF-8 LANG must keep the shell UTF-8; got: {result}"
-    );
+    assert!(result.contains("charmap=UTF-8"), "an inherited UTF-8 LANG must keep the shell UTF-8; got: {result}");
     // …so the daemon must NOT force LC_CTYPE (leave the user's locale choice).
     assert!(
         result.contains("ctype=unset"),
