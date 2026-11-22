@@ -11,7 +11,7 @@
 // "could not run".
 
 import { execFile, execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -73,7 +73,9 @@ async function each(items, limit, work) {
 
 /** Runs one language; returns the report it owes, if any, and the files it found unformatted. */
 async function run(language, root, write) {
-  const paths = execFileSync("git", ["ls-files", "-z", "--", language.glob], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
+  const listed = execFileSync("git", ["ls-files", "-z", "--", language.glob], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
+  // A tracked file that was deleted and not yet staged has no text to format.
+  const paths = listed.filter((path) => existsSync(join(root, path)));
   const results = await each(paths, availableParallelism(), async (path) => {
     const file = join(root, path);
     const before = readFileSync(file, "utf8");
@@ -85,7 +87,8 @@ async function run(language, root, write) {
   const refused = results.filter((r) => r.refused);
   if (refused.length > 0) {
     const why = refused.map((r) => `${r.path}: ${r.refused}`);
-    return { blocked: cannotRun(`cannot run ${language.tool}`, why, "correct each file above so that it parses") };
+    const again = `${language.command.join(" ")} --check ${refused[0].path}`;
+    return { blocked: cannotRun(`cannot run ${language.tool}`, why, `see the whole error with: ${again}`) };
   }
   const changed = results.filter((r) => r.text !== r.before);
   if (write) changed.forEach((r) => writeFileSync(r.file, r.text));

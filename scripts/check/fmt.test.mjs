@@ -156,6 +156,13 @@ test("Rust is read as edition 2024, the workspace's edition", () => {
   assert.deepEqual(runCheck(repo({ "core/src/main.rs": asyncBlock })), CLEAN);
 });
 
+test("a tracked file that was deleted and not yet staged is not a failure", () => {
+  const dir = repo({ "core/src/gone.rs": UGLY });
+  rmSync(join(dir, "core/src/gone.rs"));
+
+  assert.deepEqual(runCheck(dir), CLEAN);
+});
+
 test("outside a git repository the check cannot run", () => {
   const run = runCheck(scratch());
 
@@ -191,6 +198,7 @@ test("S20: a file that does not parse is a check that cannot run, not an unforma
   assert.equal(check.code, 2);
   assert.equal(check.err[0], "✗ fmt: cannot run rustfmt");
   assert.equal(check.err[1], "  why  core/src/bad.rs: error: this file contains an unclosed delimiter");
+  assert.equal(check.err[2], "  fix  see the whole error with: rustfmt --edition 2024 --check core/src/bad.rs");
   assert.ok(!check.err.some((line) => line.startsWith("  at ")));
   assert.equal(written.code, 2);
   assert.equal(readFileSync(join(dir, "core/src/ugly.rs"), "utf8"), UGLY);
