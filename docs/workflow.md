@@ -58,9 +58,10 @@ stays clean — this is the parallel-agent workflow Tarmac is built for.
 
 ## Commits
 
-Conventional Commits (whole history conforms): `type(scope): summary`, with the
-DCO `Signed-off-by:` that `CONTRIBUTING.md` requires (`git commit -s`). An agent
-also adds the `Co-Authored-By:` the history uses for attribution.
+Conventional Commits (whole history conforms): `type(scope): summary`. End the
+message with **two trailers**: the DCO `Signed-off-by:` that `CONTRIBUTING.md`
+requires (`git commit -s`), and the `Co-Authored-By:` the repo uses for
+attribution.
 
 Checks hold the form, so it is not reviewed by reading. The `commit-msg` hook
 (`make setup` installs it) refuses a subject of another form and a message with
@@ -69,8 +70,8 @@ unsigned commit on a PR (`make dco-check` locally). `pre-commit` runs the format
 check, the lints and the tree checks on what is staged, and `pre-push` runs
 `make test`. A hook can be skipped (`git commit --no-verify`, a clone with no
 `make setup`); CI cannot, but CI does not check the subject's form, which the
-squash merge sets. An agent in Claude Code gets the same checks sooner, after
-each edit and at the end of a turn. `CLAUDE.md` (*Build, run, test*) is the one
+squash merge sets. An agent in Claude Code gets most of them sooner, after
+each edit and at the end of a turn (not clippy, which needs the whole build). `CLAUDE.md` (*Build, run, test*) is the one
 description of what each hook runs.
 
 `make test` must pass first; see [`coding-style.md`](coding-style.md) for the TDD

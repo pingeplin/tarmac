@@ -113,8 +113,8 @@ editor/IDE may show stale SourceKit diagnostics — `make` is the source of trut
    a message that is not `type(scope): summary` with your sign-off, and refuse
    a push when `make test` fails. `git commit --no-verify` skips them. CI runs
    the same checks (all but the subject's form, which a maintainer sets at the
-   squash merge), so the hooks only tell you sooner; each failure names the
-   rule, the place and the command to run next. One CI job that no hook runs
+   squash merge), so the hooks only tell you sooner; a failed format, lint
+   or tree check names the rule, the place and the command to run next. One CI job that no hook runs
    is `mutants (rust, in diff)`: it changes the Rust lines of your pull
    request, one expression at a time, and fails when the tests still pass. Run
    it yourself with `make mutants` (it needs `cargo-mutants` 27.1.0).

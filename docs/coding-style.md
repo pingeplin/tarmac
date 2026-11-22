@@ -141,13 +141,17 @@ back from a rendered bitmap.
     only when the code beside it shows the bound.
   - Swift: a `//` comment that says why, then `// swift-format-ignore: <Rule>`,
     on the two lines before the statement or declaration and above its `///`
-    doc comment. The check refuses every other form and says which. It
+    doc comment (a `//` line between a doc comment and its declaration hides
+    the comment from the tool, and the check does not see that). The check refuses every other form and says which. It
     **cannot** tell when such a comment is stale: when you remove the code,
     remove the comment with it.
 
   Three Swift rules (force unwrap, `try!`, implicitly unwrapped optional) say
   nothing in a file that imports `XCTest` or `Testing`; a test fixture with no
-  such import is checked like any source.
+  such import is checked like any source. Three Rust rules have no bullet in
+  §3: a `SAFETY:` comment on every `unsafe` block, no `dbg!()` outside a test,
+  and no new integer `as` cast that can truncate, wrap or lose a sign without
+  a reason (a cast to a float is not checked).
 - **One responsibility per module.** Depend on the narrow contract — the `Msg`
   enum, a pure function signature — rather than reaching across a layer.
 - **A comment earns its place by explaining a non-obvious *why***: a constraint,
