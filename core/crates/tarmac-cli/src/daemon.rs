@@ -30,7 +30,10 @@ fn decoded(payload: &[u8]) -> Result<Msg, String> {
 /// The daemon's answer to a request: `Ok(Ok(()))` for `ack`, `Ok(Err(msg))`
 /// for `err`, skipping any other message. `Err` is a connection that failed,
 /// with a failed read worded by `read_failed`.
-pub(crate) fn answer(stream: &mut UnixStream, read_failed: impl Fn(io::Error) -> String) -> Result<Result<(), String>, String> {
+pub(crate) fn answer(
+    stream: &mut UnixStream,
+    read_failed: impl Fn(io::Error) -> String,
+) -> Result<Result<(), String>, String> {
     loop {
         match recv_or(stream, &read_failed)? {
             Msg::Ack => return Ok(Ok(())),
@@ -139,10 +142,9 @@ pub(crate) fn handshake(sock: &Path, until: Instant) -> Result<(UnixStream, Daem
     time_out_at(&stream, until).map_err(NoHandshake::failed)?;
     let reply = frame::read_sync(&mut stream).map_err(NoHandshake::failed)?;
     match decoded(&reply).map_err(NoHandshake::Reason)? {
-        Msg::HelloOk { daemon_version, daemon_pid, app_version, app_connected, .. } => Ok((
-            stream,
-            DaemonInfo { daemon_version, daemon_pid, app_version, app_connected },
-        )),
+        Msg::HelloOk { daemon_version, daemon_pid, app_version, app_connected, .. } => {
+            Ok((stream, DaemonInfo { daemon_version, daemon_pid, app_version, app_connected }))
+        }
         Msg::Err { msg } => Err(NoHandshake::Reason(format!("daemon rejected handshake: {msg}"))),
         other => Err(NoHandshake::Reason(format!("unexpected handshake reply: {other:?}"))),
     }

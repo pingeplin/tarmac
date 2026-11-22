@@ -110,8 +110,10 @@ impl Daemon {
         if handle.resume_flag() != Flag::Unclaimed {
             return;
         }
-        self.drop_and_push(term_id, |record| handle.resume_flag() == Flag::Unclaimed && self.drop_resume(record, Some(handle)))
-            .await;
+        self.drop_and_push(term_id, |record| {
+            handle.resume_flag() == Flag::Unclaimed && self.drop_resume(record, Some(handle))
+        })
+        .await;
     }
 
     /// The app's skip (spec 2611.0015, D4): the same drop as typed input, so

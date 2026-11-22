@@ -37,9 +37,11 @@ fn is_ours(handler: &Value) -> bool {
 }
 
 fn groups(root: &Value) -> impl Iterator<Item = (&String, &Value)> {
-    root.get("hooks").and_then(Value::as_object).into_iter().flatten().flat_map(|(event, groups)| {
-        groups.as_array().into_iter().flatten().map(move |group| (event, group))
-    })
+    root.get("hooks")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .flat_map(|(event, groups)| groups.as_array().into_iter().flatten().map(move |group| (event, group)))
 }
 
 pub(super) fn ours(root: &Value) -> impl Iterator<Item = &Value> {
@@ -53,9 +55,9 @@ pub(super) fn ours(root: &Value) -> impl Iterator<Item = &Value> {
 pub(super) fn is_current(root: &Value) -> bool {
     let current_group = json!({"hooks": [current_handler()]});
     ours(root).count() == EVENTS.len()
-        && EVENTS.iter().all(|event| {
-            groups(root).filter(|(e, group)| e == event && **group == current_group).count() == 1
-        })
+        && EVENTS
+            .iter()
+            .all(|event| groups(root).filter(|(e, group)| e == event && **group == current_group).count() == 1)
 }
 
 /// Removes every handler of ours, and prunes only what that emptied: a
@@ -102,7 +104,11 @@ mod tests {
     use crate::settings_file::render;
 
     fn ours_handlers() -> Vec<Value> {
-        vec![current_handler(), json!({"type": "command", "command": BARE_COMMAND}), json!({"type": "command", "command": " tarmac hooks run claude "})]
+        vec![
+            current_handler(),
+            json!({"type": "command", "command": BARE_COMMAND}),
+            json!({"type": "command", "command": " tarmac hooks run claude "}),
+        ]
     }
 
     fn foreign_handlers() -> Vec<Value> {
@@ -154,9 +160,14 @@ mod tests {
             assert_eq!(hooks[event], json!([{"hooks": [current_handler()]}]), "{event}");
         }
         let text = render(&root, None);
-        assert!(text.contains(r#""type": "command",
+        assert!(
+            text.contains(
+                r#""type": "command",
             "command": "tarmac hooks run claude || true",
-            "timeout": 5"#), "{text}");
+            "timeout": 5"#
+            ),
+            "{text}"
+        );
     }
 
     fn old_forms() -> Vec<(&'static str, Value)> {
@@ -174,7 +185,10 @@ mod tests {
         let mut g = installed();
         g["hooks"]["Stop"][0]["hooks"][0]["timeout"] = json!(30);
         vec![
-            ("a", json!({"hooks": {"Notification": [{"hooks": [bare.clone()]}], "Stop": [{"hooks": [bare.clone()]}], "UserPromptSubmit": [{"hooks": [bare.clone()]}], "SessionStart": [{"hooks": [bare]}]}})),
+            (
+                "a",
+                json!({"hooks": {"Notification": [{"hooks": [bare.clone()]}], "Stop": [{"hooks": [bare.clone()]}], "UserPromptSubmit": [{"hooks": [bare.clone()]}], "SessionStart": [{"hooks": [bare]}]}}),
+            ),
             ("b", b),
             ("c", c),
             ("d", d),
@@ -185,8 +199,14 @@ mod tests {
     }
 
     fn ours_count(root: &Value) -> usize {
-        root["hooks"].as_object().into_iter().flat_map(|h| h.values()).flat_map(|g| g.as_array().unwrap())
-            .flat_map(|g| g["hooks"].as_array().unwrap()).filter(|h| is_ours(h)).count()
+        root["hooks"]
+            .as_object()
+            .into_iter()
+            .flat_map(|h| h.values())
+            .flat_map(|g| g.as_array().unwrap())
+            .flat_map(|g| g["hooks"].as_array().unwrap())
+            .filter(|h| is_ours(h))
+            .count()
     }
 
     #[test]

@@ -138,7 +138,9 @@ fn watch(lines: &Receiver<String>, settle: Option<Duration>, deadline: Option<In
                 last = Some(line);
             }
             Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => return Outcome::Failed("the stat helper of wait --changed ended".into()),
+            Err(RecvTimeoutError::Disconnected) => {
+                return Outcome::Failed("the stat helper of wait --changed ended".into());
+            }
         }
     }
 }
@@ -243,8 +245,14 @@ mod tests {
 
     #[test]
     fn the_first_sample_is_the_base_and_a_different_one_ends_the_wait() {
-        assert_eq!(watch(&told(vec![a(), a(), b()]), None, within(2000)), Outcome::Done(Some(json!({ "deleted": false }))));
-        assert_eq!(watch(&told(vec![a(), Sample::Missing.line()]), None, within(2000)), Outcome::Done(Some(json!({ "deleted": true }))));
+        assert_eq!(
+            watch(&told(vec![a(), a(), b()]), None, within(2000)),
+            Outcome::Done(Some(json!({ "deleted": false })))
+        );
+        assert_eq!(
+            watch(&told(vec![a(), Sample::Missing.line()]), None, within(2000)),
+            Outcome::Done(Some(json!({ "deleted": true })))
+        );
     }
 
     #[test]

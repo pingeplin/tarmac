@@ -31,8 +31,5 @@ pub fn has_doc(v: &serde_json::Value, board: usize, path: &str) -> bool {
 
 // persist.rs writes `docs` in dock order, so a doc's index is its dock slot.
 pub fn dock_index(v: &serde_json::Value, board: usize, path: &str) -> Option<usize> {
-    v["boards"][board]["docs"]
-        .as_array()?
-        .iter()
-        .position(|e| e["path"] == serde_json::json!(path))
+    v["boards"][board]["docs"].as_array()?.iter().position(|e| e["path"] == serde_json::json!(path))
 }

@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::io::{Read, Write};
-use std::sync::{Arc, Weak};
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
@@ -160,7 +160,12 @@ const READ_REPORT: u8 = 1;
 const UNREAD_REPORT: u8 = 2;
 
 impl TermHandle {
-    fn new(input_tx: mpsc::Sender<Input>, master: Box<dyn MasterPty + Send>, pid: Option<proc::Pid>, spawned_with_cmd: bool) -> Arc<TermHandle> {
+    fn new(
+        input_tx: mpsc::Sender<Input>,
+        master: Box<dyn MasterPty + Send>,
+        pid: Option<proc::Pid>,
+        spawned_with_cmd: bool,
+    ) -> Arc<TermHandle> {
         Arc::new(TermHandle {
             input_tx,
             master: std::sync::Mutex::new(master),
@@ -223,7 +228,12 @@ impl TermHandle {
     /// A handle on a pty that no process holds: no pid, no foreground leader.
     #[cfg(test)]
     pub(crate) fn detached() -> Arc<TermHandle> {
-        TermHandle::new(mpsc::channel(1).0, native_pty_system().openpty(PtySize::default()).unwrap().master, None, false)
+        TermHandle::new(
+            mpsc::channel(1).0,
+            native_pty_system().openpty(PtySize::default()).unwrap().master,
+            None,
+            false,
+        )
     }
 
     pub fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
@@ -334,8 +344,7 @@ pub(crate) async fn spawn_holding(daemon: Arc<Daemon>, plan: SpawnPlan, hold_dea
             vec![shell, "-il".into()]
         }
     };
-    let cwd = cwd
-        .unwrap_or_else(|| std::env::var("HOME").unwrap_or_else(|_| "/".into()));
+    let cwd = cwd.unwrap_or_else(|| std::env::var("HOME").unwrap_or_else(|_| "/".into()));
 
     let pty = native_pty_system()
         .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
@@ -354,23 +363,14 @@ pub(crate) async fn spawn_holding(daemon: Arc<Daemon>, plan: SpawnPlan, hold_dea
         builder.env("LC_CTYPE", "en_US.UTF-8");
     }
 
-    let child = pty
-        .slave
-        .spawn_command(builder)
-        .map_err(|e| format!("spawn failed: {e}"))?;
+    let child = pty.slave.spawn_command(builder).map_err(|e| format!("spawn failed: {e}"))?;
     // Before the wait thread below consumes `child`; see TermHandle::pid.
     let child_pid = child.process_id().map(|p| p as libc::pid_t);
     // Drop the slave or the master reader never sees EOF.
     drop(pty.slave);
 
-    let mut reader = pty
-        .master
-        .try_clone_reader()
-        .map_err(|e| format!("pty reader unavailable: {e}"))?;
-    let writer = pty
-        .master
-        .take_writer()
-        .map_err(|e| format!("pty writer unavailable: {e}"))?;
+    let mut reader = pty.master.try_clone_reader().map_err(|e| format!("pty reader unavailable: {e}"))?;
+    let writer = pty.master.take_writer().map_err(|e| format!("pty writer unavailable: {e}"))?;
 
     let (input_tx, input_rx) = mpsc::channel::<Input>(256);
     let handle = TermHandle::new(input_tx, pty.master, child_pid, plan.cmd.is_some());
@@ -438,13 +438,7 @@ pub(crate) async fn spawn_holding(daemon: Arc<Daemon>, plan: SpawnPlan, hold_dea
 // Scanning for BEL here, not in the blocking reader thread, keeps the reader
 // free of a daemon handle. Every chunk lands in the scrollback ring even while
 // no app is connected.
-async fn forward_chunk(
-    daemon: &Daemon,
-    term_id: &str,
-    handle: &TermHandle,
-    bells: &mut Bells,
-    chunk: Vec<u8>,
-) {
+async fn forward_chunk(daemon: &Daemon, term_id: &str, handle: &TermHandle, bells: &mut Bells, chunk: Vec<u8>) {
     let bell = bells.rings(&chunk, Instant::now());
     // The guard drops at the `;`, before any .await.
     handle.scrollback.lock().expect("scrollback lock").push(&chunk);
@@ -523,9 +517,7 @@ pub(crate) async fn proc_loop(daemon: Arc<Daemon>, term_id: String, handle: Arc<
             && last_name.as_deref() != Some(name.as_str())
         {
             last_name = Some(name.clone());
-            daemon
-                .push(Msg::TermProc { term_id: term_id.clone(), name, pid: Some(pid as i64) })
-                .await;
+            daemon.push(Msg::TermProc { term_id: term_id.clone(), name, pid: Some(pid as i64) }).await;
         }
         if last_pid != Some(pid) {
             last_pid = Some(pid);
@@ -579,7 +571,9 @@ mod tests {
     }
 
     /// A shell that never leaves canonical mode, reading one line into `out`.
-    fn canonical_child(out: &std::path::Path) -> (Box<dyn MasterPty + Send>, Box<dyn portable_pty::Child + Send + Sync>) {
+    fn canonical_child(
+        out: &std::path::Path,
+    ) -> (Box<dyn MasterPty + Send>, Box<dyn portable_pty::Child + Send + Sync>) {
         let pair = native_pty_system().openpty(PtySize::default()).unwrap();
         let mut cmd = CommandBuilder::new("/bin/sh");
         cmd.args(["-c", &format!("head -n 1 > '{}'", out.display())]);
@@ -712,10 +706,13 @@ mod tests {
         pump.await.unwrap();
 
         let frames: Vec<Msg> = std::iter::from_fn(|| app_rx.try_recv().ok()).take(3).collect();
-        assert_eq!(frames, vec![
-            Msg::Output { term_id: "t1".into(), bytes: b"last ".to_vec() },
-            Msg::Output { term_id: "t1".into(), bytes: b"words".to_vec() },
-            Msg::Exit { term_id: "t1".into(), code: Some(0), board_id: None },
-        ]);
+        assert_eq!(
+            frames,
+            vec![
+                Msg::Output { term_id: "t1".into(), bytes: b"last ".to_vec() },
+                Msg::Output { term_id: "t1".into(), bytes: b"words".to_vec() },
+                Msg::Exit { term_id: "t1".into(), code: Some(0), board_id: None },
+            ]
+        );
     }
 }

@@ -10,8 +10,8 @@ use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use tarmac_protocol::{self as proto, frame};
 use proto::dev::{AGE_MS_MAX, BUSY_MS_MAX, DevRequest, HOLD_MS_MAX, REPEATS_MAX, decode_reply, encode_request};
+use tarmac_protocol::{self as proto, frame};
 
 use crate::{current_channel, env_override, home_or_root};
 
@@ -79,7 +79,9 @@ pub fn parse_verb(args: &[String]) -> Result<DevRequest, String> {
         "resize" => {
             let handle = match rest.get(2..) {
                 Some([]) => None,
-                Some([flag, name]) if flag == "--handle" && RESIZE_HANDLES.contains(&name.as_str()) => Some(name.clone()),
+                Some([flag, name]) if flag == "--handle" && RESIZE_HANDLES.contains(&name.as_str()) => {
+                    Some(name.clone())
+                }
                 _ => return usage("tarmac dev resize: expected <card> <w>x<h> [--handle <handle>]"),
             };
             let (w, h) = parse_size(&rest[1])?;
@@ -306,9 +308,15 @@ mod tests {
     /// is sent as it is: the app owns the names.
     #[test]
     fn s34_click_parses_a_card_or_the_restore_card_and_any_control_name() {
-        parses_to(&["click", "t-1", "resume"], DevRequest::Click { card: Some("t-1".into()), control: "resume".into() });
+        parses_to(
+            &["click", "t-1", "resume"],
+            DevRequest::Click { card: Some("t-1".into()), control: "resume".into() },
+        );
         parses_to(&["click", "restore_card", "skip_all"], DevRequest::Click { card: None, control: "skip_all".into() });
-        parses_to(&["click", "t-1", "nonsense"], DevRequest::Click { card: Some("t-1".into()), control: "nonsense".into() });
+        parses_to(
+            &["click", "t-1", "nonsense"],
+            DevRequest::Click { card: Some("t-1".into()), control: "nonsense".into() },
+        );
         for bad in [vec!["click"], vec!["click", "t-1"], vec!["click", "t-1", "resume", "extra"]] {
             let err = parse(&bad).expect_err(&format!("expected a usage error for {bad:?}"));
             assert!(err.contains("tarmac dev"), "{err}");
@@ -426,10 +434,7 @@ mod tests {
     /// lives on `DevRequest` because both ends of the socket need it.
     #[test]
     fn the_deadline_reads_the_budget_off_the_request() {
-        assert_eq!(
-            DevRequest::Snapshot { until: None, timeout_ms: Some(10_000) }.timeout_ms(),
-            Some(10_000),
-        );
+        assert_eq!(DevRequest::Snapshot { until: None, timeout_ms: Some(10_000) }.timeout_ms(), Some(10_000),);
         assert_eq!(DevRequest::Zoom { z: 1.0 }.timeout_ms(), None);
     }
 
@@ -441,7 +446,11 @@ mod tests {
     #[test]
     fn press_parses_repeat() {
         let held = |repeats| DevRequest::Press {
-            combo: "enter".into(), hold_ms: Some(1000), age_ms: None, busy_ms: None, repeats,
+            combo: "enter".into(),
+            hold_ms: Some(1000),
+            age_ms: None,
+            busy_ms: None,
+            repeats,
         };
         parses_to(&["press", "enter", "--hold", "1000", "--repeat", "20"], held(Some(20)));
         parses_to(&["press", "enter", "--repeat", "1", "--hold", "1000"], held(Some(1)));

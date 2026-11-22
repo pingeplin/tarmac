@@ -155,7 +155,16 @@ mod tests {
     }
 
     fn term_report(term_id: &str) -> Msg {
-        Msg::TermReport { term_id: term_id.into(), kind: None, text: None, at_ms: None, proc: None, read: false, board_id: None, cwd: None }
+        Msg::TermReport {
+            term_id: term_id.into(),
+            kind: None,
+            text: None,
+            at_ms: None,
+            proc: None,
+            read: false,
+            board_id: None,
+            cwd: None,
+        }
     }
 
     fn not_events() -> Vec<Msg> {
@@ -291,7 +300,8 @@ mod tests {
     }
 
     async fn next_frame(client: &mut DuplexStream) -> std::io::Result<Msg> {
-        let payload = tokio::time::timeout(Duration::from_secs(1), frame::read_async(client)).await.expect("a frame in 1 s")?;
+        let payload =
+            tokio::time::timeout(Duration::from_secs(1), frame::read_async(client)).await.expect("a frame in 1 s")?;
         Ok(tarmac_protocol::decode(&payload).unwrap())
     }
 
@@ -355,6 +365,9 @@ mod tests {
 
         let task = serve_on_task(rx, server);
 
-        tokio::time::timeout(LAGGED_WRITE + Duration::from_millis(500), task).await.expect("serve ends after the limit").unwrap();
+        tokio::time::timeout(LAGGED_WRITE + Duration::from_millis(500), task)
+            .await
+            .expect("serve ends after the limit")
+            .unwrap();
     }
 }

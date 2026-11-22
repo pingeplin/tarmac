@@ -201,7 +201,12 @@ pub fn wait_for_socket(sock: &Path) {
 
 /// Probes until the active board's restore satisfies `done`, to `deadline`;
 /// the newest connection and its restore.
-pub fn probe_until(daemon: &TestDaemon, what: &str, deadline: Instant, done: impl Fn(&Restore) -> bool) -> (Conn, Restore) {
+pub fn probe_until(
+    daemon: &TestDaemon,
+    what: &str,
+    deadline: Instant,
+    done: impl Fn(&Restore) -> bool,
+) -> (Conn, Restore) {
     loop {
         let (app, restore) = daemon.probe();
         if done(&restore) {

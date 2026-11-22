@@ -18,8 +18,7 @@ mod changed;
 use changed::changed;
 pub(crate) use changed::{STAT_HELPER, stat_helper};
 
-const USAGE: &str =
-    "usage: tarmac wait --exit ID | --bell ID | --report blocked|done --term ID | --changed PATH [--settle MS] [--timeout MS]";
+const USAGE: &str = "usage: tarmac wait --exit ID | --bell ID | --report blocked|done --term ID | --changed PATH [--settle MS] [--timeout MS]";
 const TIMED_OUT: i32 = 124;
 
 #[derive(Debug, PartialEq)]
@@ -105,7 +104,11 @@ fn from_daemon(mode: &Mode, kinds: &[&str], term_id: &str, deadline: Option<Inst
 /// wait for a bell or a report that can no longer come.
 fn verdict(mode: &Mode, id: &str, msg: &Msg) -> Option<Outcome> {
     match (mode, msg) {
-        (_, Msg::Exit { term_id, .. } | Msg::Bell { term_id, .. } | Msg::TermReport { term_id, .. }) if term_id != id => None,
+        (_, Msg::Exit { term_id, .. } | Msg::Bell { term_id, .. } | Msg::TermReport { term_id, .. })
+            if term_id != id =>
+        {
+            None
+        }
         (Mode::Exit(_), Msg::Exit { code: Some(code), .. }) => Some(Outcome::Done(Some(json!({ "code": code })))),
         (Mode::Exit(_), Msg::Exit { code: None, .. }) => Some(Outcome::Done(Some(json!({ "signal": true })))),
         (_, Msg::Exit { .. }) => Some(Outcome::Failed(format!("terminal {id} exited"))),
@@ -140,7 +143,9 @@ fn parse(args: &[String]) -> Option<(Mode, Option<Duration>)> {
     let mode = match (exit, bell, report, changed) {
         (Some(id), None, None, None) => Mode::Exit(id),
         (None, Some(id), None, None) => Mode::Bell(id),
-        (None, None, Some(kind), None) if ReportKind::named(&kind).is_some() => Mode::Report { kind, term_id: term.clone()? },
+        (None, None, Some(kind), None) if ReportKind::named(&kind).is_some() => {
+            Mode::Report { kind, term_id: term.clone()? }
+        }
         (None, None, None, Some(path)) => Mode::Changed { path, settle },
         _ => return None,
     };

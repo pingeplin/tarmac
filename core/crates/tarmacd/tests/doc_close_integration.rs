@@ -36,10 +36,7 @@ fn doc_close_removes_from_registry_and_persists() {
     daemon.restart();
     let mut app2 = daemon.connect_app();
     let docs = app2.recv_restore().docs;
-    assert!(
-        docs.iter().all(|d| d.path != a),
-        "closed doc must not reappear in Restore after daemon restart"
-    );
+    assert!(docs.iter().all(|d| d.path != a), "closed doc must not reappear in Restore after daemon restart");
 }
 
 // When a doc is the only entry in its parent dir, DocClose unwatches the dir
@@ -162,10 +159,7 @@ fn doc_close_unknown_path_is_noop() {
     // subsequent reads (the daemon no longer sends to the old app connection).
     let mut app2 = daemon.connect_app();
     let docs = app2.recv_restore().docs;
-    assert!(
-        docs.iter().any(|d| d.path == a),
-        "unrelated doc must survive an unknown-path DocClose"
-    );
+    assert!(docs.iter().any(|d| d.path == a), "unrelated doc must survive an unknown-path DocClose");
 
     // Its dir must still be watched: touching it emits a FileEvent on app2.
     settle();
@@ -198,14 +192,8 @@ fn doc_close_idempotent_on_repeat() {
     // daemon's active connection so use app2 for all reads after this point.
     let mut app2 = daemon.connect_app();
     let docs = app2.recv_restore().docs;
-    assert!(
-        docs.iter().any(|d| d.path == b),
-        "unrelated doc b must survive a double DocClose for a"
-    );
-    assert!(
-        docs.iter().all(|d| d.path != a),
-        "closed doc a must remain absent after a second DocClose"
-    );
+    assert!(docs.iter().any(|d| d.path == b), "unrelated doc b must survive a double DocClose for a");
+    assert!(docs.iter().all(|d| d.path != a), "closed doc a must remain absent after a second DocClose");
 
     settle();
     touch(&b);

@@ -8,8 +8,8 @@ mod common;
 use std::time::{Duration, Instant};
 
 use common::{
-    ACK, Conn, FrameLog, SAVE_WINDOW, Spawn, TestDaemon, assert_ack, canon_dir, is_term_resume, probe_until, signal_and_wait,
-    term_records,
+    ACK, Conn, FrameLog, SAVE_WINDOW, Spawn, TestDaemon, assert_ack, canon_dir, is_term_resume, probe_until,
+    signal_and_wait, term_records,
 };
 use serde_json::{Value, json};
 use tarmac_protocol::Msg;
@@ -59,7 +59,8 @@ fn s1_s2_an_agent_sets_the_command_and_its_exit_drops_it() {
     let entry = term_records(&daemon.state_json(), 0)["T"].clone();
     assert!(entry.as_object().unwrap().keys().all(|k| k == "last_cwd" || k == "resume"), "{entry}");
 
-    let (_app, restore) = probe_until(&daemon, "no resume", sent + Duration::from_secs(6), |r| r.resume_cmd("T").is_none());
+    let (_app, restore) =
+        probe_until(&daemon, "no resume", sent + Duration::from_secs(6), |r| r.resume_cmd("T").is_none());
     assert!(restore.last_cwd("T").is_some(), "{:?}", restore.term_records);
     assert_eq!(restore.live_terms, ["T"]);
     wait_saved(&daemon, "T", Value::Null);
@@ -209,14 +210,20 @@ fn s17_a_repeat_of_the_same_command_does_not_save() {
     let mut app = daemon.shell_at_prompt("T", Spawn::default(), &mut log);
     let (first, again) = (daemon.nc_resume("first", "T", "echo HI"), daemon.nc_resume("again", "T", "echo HI"));
     let start = log.len();
-    app.type_line("T", &format!("/bin/zsh -f -c '{first}; echo SE\"\"NT; sleep 1; {again}; echo AG\"\"AIN; sleep 30' &"));
+    app.type_line(
+        "T",
+        &format!("/bin/zsh -f -c '{first}; echo SE\"\"NT; sleep 1; {again}; echo AG\"\"AIN; sleep 30' &"),
+    );
 
     let sent = app.log_until_output(&mut log, "T", start, b"SENT");
     wait_saved(&daemon, "T", json!({"cmd": "echo HI"}));
     std::thread::sleep(SAVE_WINDOW);
     let kept = daemon.state_inode();
     let read_after = log.0[sent].at.elapsed();
-    assert!(read_after < Duration::from_secs(1), "the inode was read {read_after:?} after SENT, maybe after the repeat");
+    assert!(
+        read_after < Duration::from_secs(1),
+        "the inode was read {read_after:?} after SENT, maybe after the repeat"
+    );
     let at = app.log_until_output(&mut log, "T", start, b"AGAIN");
 
     let mut out = Vec::new();
@@ -260,7 +267,10 @@ fn s28_the_daemon_refuses_an_unknown_terminal_then_a_bad_command() {
     app.recv_output_containing("T", "UP");
 
     let refused = |cmd: &str| Conn::cli_resume(&daemon.sock, "T", Some(cmd));
-    assert_eq!(Conn::cli_resume(&daemon.sock, "nobody", Some("echo HI")), Msg::Err { msg: "unknown terminal: nobody".into() });
+    assert_eq!(
+        Conn::cli_resume(&daemon.sock, "nobody", Some("echo HI")),
+        Msg::Err { msg: "unknown terminal: nobody".into() }
+    );
     assert_eq!(
         Conn::cli_resume(&daemon.sock, "nobody", Some("echo a\necho b")),
         Msg::Err { msg: "unknown terminal: nobody".into() }
@@ -382,7 +392,11 @@ fn seeded_successor(log: &mut FrameLog) -> (TestDaemon, String, Conn) {
     let daemon = TestDaemon::start_seeded_with(&seeded, |cmd| {
         cmd.env("SHELL", "/bin/sh").env("HOME", &home);
     });
-    let app = daemon.shell_at_prompt("T2", Spawn { cwd: Some(a.clone()), succeeds: Some("T".into()), ..Default::default() }, log);
+    let app = daemon.shell_at_prompt(
+        "T2",
+        Spawn { cwd: Some(a.clone()), succeeds: Some("T".into()), ..Default::default() },
+        log,
+    );
     (daemon, a, app)
 }
 

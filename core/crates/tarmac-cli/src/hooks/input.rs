@@ -93,7 +93,8 @@ impl<'de> Deserialize<'de> for Lenient {
 /// `SessionStart` the command that resumes the session (spec 2611.0011).
 /// `Err` is a `SessionStart` whose `session_id` is refused.
 fn claude_message(term_id: &str, input: &ClaudeInput) -> Result<Option<Msg>, String> {
-    let report = |kind: &str, text: Option<String>| Ok(Some(Msg::Report { term_id: term_id.into(), kind: kind.into(), text }));
+    let report =
+        |kind: &str, text: Option<String>| Ok(Some(Msg::Report { term_id: term_id.into(), kind: kind.into(), text }));
     let text = |field: &Lenient| field.0.as_deref().and_then(report_text);
     match input.hook_event_name.0.as_deref() {
         Some("Notification") if input.notification_type.0.as_deref() == Some("permission_prompt") => {
@@ -198,7 +199,10 @@ mod tests {
         assert_eq!(message_of(fixture("user-prompt-submit")), Some(msg("clear", None)));
         assert_eq!(
             message_of(fixture("session-start")),
-            Some(Msg::Resume { term_id: "t9".into(), cmd: Some("claude --resume 00000000-0000-0000-0000-000000000000".into()) })
+            Some(Msg::Resume {
+                term_id: "t9".into(),
+                cmd: Some("claude --resume 00000000-0000-0000-0000-000000000000".into())
+            })
         );
     }
 
@@ -248,8 +252,19 @@ mod tests {
     fn s22_any_other_session_id_gives_nothing() {
         let too_long = json!(format!("a{}", "b".repeat(128)));
         for id in [
-            json!("-rf"), json!("../x"), json!("a b"), json!("a;b"), json!("$(x)"), json!(""), too_long, json!(7), Value::Null,
-            json!("_ab"), json!("aé"), json!("a٣"), json!("é1"),
+            json!("-rf"),
+            json!("../x"),
+            json!("a b"),
+            json!("a;b"),
+            json!("$(x)"),
+            json!(""),
+            too_long,
+            json!(7),
+            Value::Null,
+            json!("_ab"),
+            json!("aé"),
+            json!("a٣"),
+            json!("é1"),
         ] {
             assert_eq!(refusal_of(session_start(id.clone())), "session_id refused", "{id}");
         }

@@ -9,7 +9,13 @@ use super::Daemon;
 impl Daemon {
     /// The answer to a cli `report` (spec 2611.0009): `Err` is the `err` text.
     /// `peer` is the client's pid, read at accept.
-    pub async fn report(&self, peer: Option<Pid>, term_id: &str, kind: &str, text: Option<String>) -> Result<(), String> {
+    pub async fn report(
+        &self,
+        peer: Option<Pid>,
+        term_id: &str,
+        kind: &str,
+        text: Option<String>,
+    ) -> Result<(), String> {
         let handle = self.term(term_id).await.ok_or_else(|| format!("unknown terminal: {term_id}"))?;
         if kind == REPORT_CLEAR {
             self.change_report(term_id, &handle, |reports| reports.clear(term_id)).await;
@@ -18,9 +24,8 @@ impl Daemon {
         let kind = ReportKind::named(kind).ok_or_else(|| format!("unknown report kind: {kind}"))?;
         // Any socket client can send a `report`, so the daemon caps it too.
         let text = text.map(|t| tarmac_protocol::cap_report_text(&t)).filter(|t| !t.is_empty());
-        let holder = handle
-            .resolve_holder(peer)
-            .ok_or_else(|| format!("no process to tie the report to in {term_id}"))?;
+        let holder =
+            handle.resolve_holder(peer).ok_or_else(|| format!("no process to tie the report to in {term_id}"))?;
         let proc_name = proc::process_name(holder.pid());
         let now_ms = crate::boards::epoch_ms(std::time::SystemTime::now());
         let place = self.place(term_id).await;
@@ -66,7 +71,12 @@ impl Daemon {
 
     /// One change of the store, the handle's flag and its push, all under the
     /// `reports` lock, so one terminal's frames keep their order.
-    async fn change_report(&self, term_id: &str, handle: &TermHandle, change: impl FnOnce(&mut Reports) -> Option<Msg>) {
+    async fn change_report(
+        &self,
+        term_id: &str,
+        handle: &TermHandle,
+        change: impl FnOnce(&mut Reports) -> Option<Msg>,
+    ) {
         let mut reports = self.reports.lock().await;
         let msg = change(&mut reports);
         handle.set_report(reports.has(term_id), reports.unread(term_id));

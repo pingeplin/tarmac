@@ -110,10 +110,7 @@ fn exactly_one_request_frame_is_sent() {
     assert_eq!(out.code(), Some(0));
     let frames = fake.0.frames();
     assert_eq!(frames.len(), 1, "expected exactly one frame, got {}", frames.len());
-    assert_eq!(
-        dev::decode_request(&frames[0]).unwrap(),
-        dev::DevRequest::Focus { card: Some("t-1".into()) },
-    );
+    assert_eq!(dev::decode_request(&frames[0]).unwrap(), dev::DevRequest::Focus { card: Some("t-1".into()) },);
 }
 
 /// S64 — an over-long socket path is refused before anything is dialled.

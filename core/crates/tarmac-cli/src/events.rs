@@ -184,7 +184,11 @@ pub(crate) enum Stop {
 /// Connects, sends `subscribe` and reads to `ack`: the stream and the
 /// snapshot frames before it. Each wait ends at the earlier of 5 s and
 /// `deadline`; running out is `Late` when `deadline` is that limit.
-pub(crate) fn subscribe(kinds: Option<Vec<String>>, term_id: Option<String>, deadline: Option<Instant>) -> Result<(UnixStream, Vec<Msg>), Stop> {
+pub(crate) fn subscribe(
+    kinds: Option<Vec<String>>,
+    term_id: Option<String>,
+    deadline: Option<Instant>,
+) -> Result<(UnixStream, Vec<Msg>), Stop> {
     let five = Instant::now() + crate::daemon::DAEMON_WAIT;
     let until = deadline.map_or(five, |d| d.min(five));
     let late = deadline.is_some_and(|d| d <= five);
@@ -198,7 +202,8 @@ pub(crate) fn subscribe(kinds: Option<Vec<String>>, term_id: Option<String>, dea
         NoHandshake::TimedOut if late => Stop::Late,
         e => Stop::Fail(e.worded(&no_answer)),
     })?;
-    let payload = proto::encode(&Msg::Subscribe { kinds, term_id }).map_err(|e| Stop::Fail(format!("encode failed: {e}")))?;
+    let payload =
+        proto::encode(&Msg::Subscribe { kinds, term_id }).map_err(|e| Stop::Fail(format!("encode failed: {e}")))?;
     crate::daemon::time_out_at(&stream, until).and_then(|()| frame::write_sync(&mut stream, &payload)).map_err(stop)?;
     let mut snapshot = Vec::new();
     loop {
@@ -266,15 +271,30 @@ mod tests {
     #[test]
     fn each_event_frame_has_its_line_with_keys_in_order() {
         let cases = [
-            (Msg::Exit { term_id: "t1".into(), code: Some(3), board_id: None }, r#"{"event":"exit","term":"t1","code":3,"received_ms":9}"#),
-            (Msg::Exit { term_id: "t1".into(), code: None, board_id: Some("b1".into()) }, r#"{"event":"exit","term":"t1","board":"b1","signal":true,"received_ms":9}"#),
-            (Msg::Bell { term_id: "t1".into(), board_id: Some("b1".into()) }, r#"{"event":"bell","term":"t1","board":"b1","received_ms":9}"#),
-            (Msg::FileEvent { path: "/a.md".into(), mtime_ms: 5 }, r#"{"event":"changed","path":"/a.md","mtime_ms":5,"received_ms":9}"#),
+            (
+                Msg::Exit { term_id: "t1".into(), code: Some(3), board_id: None },
+                r#"{"event":"exit","term":"t1","code":3,"received_ms":9}"#,
+            ),
+            (
+                Msg::Exit { term_id: "t1".into(), code: None, board_id: Some("b1".into()) },
+                r#"{"event":"exit","term":"t1","board":"b1","signal":true,"received_ms":9}"#,
+            ),
+            (
+                Msg::Bell { term_id: "t1".into(), board_id: Some("b1".into()) },
+                r#"{"event":"bell","term":"t1","board":"b1","received_ms":9}"#,
+            ),
+            (
+                Msg::FileEvent { path: "/a.md".into(), mtime_ms: 5 },
+                r#"{"event":"changed","path":"/a.md","mtime_ms":5,"received_ms":9}"#,
+            ),
             (
                 report(Some("done"), Some("ok"), Some("claude"), Some("b1")),
                 r#"{"event":"report","term":"t1","board":"b1","kind":"done","text":"ok","proc":"claude","at_ms":7,"read":true,"received_ms":9}"#,
             ),
-            (report(Some("blocked"), None, None, None), r#"{"event":"report","term":"t1","kind":"blocked","at_ms":7,"read":true,"received_ms":9}"#),
+            (
+                report(Some("blocked"), None, None, None),
+                r#"{"event":"report","term":"t1","kind":"blocked","at_ms":7,"read":true,"received_ms":9}"#,
+            ),
             (report(None, None, None, None), r#"{"event":"report","term":"t1","received_ms":9}"#),
         ];
         for (msg, want) in cases {
@@ -284,7 +304,10 @@ mod tests {
 
     #[test]
     fn a_report_with_no_kind_names_the_board_its_frame_carries() {
-        assert_eq!(text(&report(None, None, None, Some("b1")), false), r#"{"event":"report","term":"t1","board":"b1","received_ms":9}"#);
+        assert_eq!(
+            text(&report(None, None, None, Some("b1")), false),
+            r#"{"event":"report","term":"t1","board":"b1","received_ms":9}"#
+        );
     }
 
     #[test]
@@ -301,15 +324,31 @@ mod tests {
 
     #[test]
     fn the_flags_are_parsed_and_kinds_keep_their_order() {
-        let want = |kinds: Option<Vec<EventKind>>, term_id: Option<&str>| Some(Want { kinds, term_id: term_id.map(str::to_string) });
+        let want = |kinds: Option<Vec<EventKind>>, term_id: Option<&str>| {
+            Some(Want { kinds, term_id: term_id.map(str::to_string) })
+        };
         assert_eq!(parse(&args(&[])), want(None, None));
-        assert_eq!(parse(&args(&["--kind", "report,exit", "--term", "t1"])), want(Some(vec![EventKind::Report, EventKind::Exit]), Some("t1")));
+        assert_eq!(
+            parse(&args(&["--kind", "report,exit", "--term", "t1"])),
+            want(Some(vec![EventKind::Report, EventKind::Exit]), Some("t1"))
+        );
         assert_eq!(parse(&args(&["--term", "t1"])), want(None, Some("t1")));
     }
 
     #[test]
     fn a_bad_flag_is_a_usage_error() {
-        for bad in [&["--kind", "later"][..], &["--kind", ""], &["--kind", "bell,"], &["--term", "t1", "--kind", "changed"], &["x"], &["--term"], &["--kind"], &["--term", "a", "--term", "b"], &["--kind", "bell", "--kind", "exit"], &["--term", "t1", "--kind", "bell,changed"]] {
+        for bad in [
+            &["--kind", "later"][..],
+            &["--kind", ""],
+            &["--kind", "bell,"],
+            &["--term", "t1", "--kind", "changed"],
+            &["x"],
+            &["--term"],
+            &["--kind"],
+            &["--term", "a", "--term", "b"],
+            &["--kind", "bell", "--kind", "exit"],
+            &["--term", "t1", "--kind", "bell,changed"],
+        ] {
             assert_eq!(parse(&args(bad)), None, "{bad:?}");
         }
     }

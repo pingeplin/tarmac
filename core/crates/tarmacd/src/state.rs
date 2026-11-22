@@ -408,20 +408,11 @@ impl Daemon {
     /// The connection takes the app's place. The data registrations of the
     /// one it replaces are dropped while the place is held, so that none of
     /// its own is: the app names each file again when it connects (2611.0005).
-    pub async fn install_app(
-        &self,
-        tx: mpsc::Sender<Msg>,
-        version: Option<String>,
-    ) -> (u64, CancellationToken) {
+    pub async fn install_app(&self, tx: mpsc::Sender<Msg>, version: Option<String>) -> (u64, CancellationToken) {
         let cancel = CancellationToken::new();
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
         let mut slot = self.app.lock().await;
-        let old = slot.replace(AppSlot {
-            generation,
-            tx,
-            cancel: cancel.clone(),
-            version,
-        });
+        let old = slot.replace(AppSlot { generation, tx, cancel: cancel.clone(), version });
         if let Some(old) = old {
             tracing::info!("replacing previous app connection");
             old.cancel.cancel();
@@ -490,10 +481,15 @@ impl Daemon {
 
     /// Runs `change` with `boards` held, on the board `term_id` is filed
     /// under and its record there; `term_boards` is released first.
-    async fn with_record<T>(&self, term_id: &str, change: impl FnOnce(Option<&BoardId>, Option<&mut TermRecord>) -> T) -> T {
+    async fn with_record<T>(
+        &self,
+        term_id: &str,
+        change: impl FnOnce(Option<&BoardId>, Option<&mut TermRecord>) -> T,
+    ) -> T {
         let board = self.term_boards.lock().await.get(term_id).cloned();
         let mut boards = self.boards.lock().await;
-        let record = board.as_ref().and_then(|b| boards.known_registry_mut(b)).and_then(|reg| reg.term_records.get_mut(term_id));
+        let record =
+            board.as_ref().and_then(|b| boards.known_registry_mut(b)).and_then(|reg| reg.term_records.get_mut(term_id));
         change(board.as_ref(), record)
     }
 

@@ -51,7 +51,11 @@ fn live_term(daemon: &TestDaemon, app: &mut Conn, term_id: &str, board_id: Optio
 
 /// What the app does for a placed card: the spawn, the held command, the answer.
 fn place(app: &mut Conn, req_id: u64, term_id: &str, cmd: &str) {
-    app.spawn_term_with(term_id, &[], Spawn { cwd: Some("/tmp".into()), board_id: Some("board-0".into()), ..Spawn::login_shell() });
+    app.spawn_term_with(
+        term_id,
+        &[],
+        Spawn { cwd: Some("/tmp".into()), board_id: Some("board-0".into()), ..Spawn::login_shell() },
+    );
     app.send(&Msg::Input { term_id: term_id.into(), bytes: format!("{cmd}\r").into_bytes(), typed: false, hold: true });
     app.send(&Msg::TermNewOk { req_id: Some(req_id), term_id: term_id.into() });
 }
@@ -74,13 +78,16 @@ fn s1_the_app_gets_the_request_with_its_number_and_the_callers_board() {
     let _cli = ask(&daemon.sock, "echo hi", "/tmp", Some("t1"));
 
     let (req_id, msg) = forwarded(&mut app);
-    assert_eq!(msg, Msg::TermNew {
-        req_id: Some(req_id),
-        cmd: "echo hi".into(),
-        cwd: "/tmp".into(),
-        term_id: Some("t1".into()),
-        board_id: Some("board-0".into()),
-    });
+    assert_eq!(
+        msg,
+        Msg::TermNew {
+            req_id: Some(req_id),
+            cmd: "echo hi".into(),
+            cwd: "/tmp".into(),
+            term_id: Some("t1".into()),
+            board_id: Some("board-0".into()),
+        }
+    );
 }
 
 // S2
@@ -205,7 +212,9 @@ fn s19_the_daemon_refuses_a_command_the_check_refuses_and_forwards_nothing() {
     let daemon = TestDaemon::start_sh();
     let mut app = daemon.connect_app_drained();
 
-    for (cmd, cause) in [("echo a\necho b", "a control character"), ("   ", "empty"), (&*"x".repeat(4097), "over 4096 characters")] {
+    for (cmd, cause) in
+        [("echo a\necho b", "a control character"), ("   ", "empty"), (&*"x".repeat(4097), "over 4096 characters")]
+    {
         let mut cli = ask(&daemon.sock, cmd, "/tmp", None);
         assert_eq!(answer(&mut cli), err(&format!("term new command refused: {cause}")));
     }

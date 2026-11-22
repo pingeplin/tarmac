@@ -21,7 +21,10 @@ fn cwd(path: &str) -> Option<TermRecord> {
 
 async fn until_recorded(daemon: &Daemon, term_id: &str, dir: &Path) {
     let want = cwd(&dir.to_string_lossy());
-    eventually_async(&format!("the record of {term_id}"), || async { record(daemon, "board-0", term_id).await == want }).await;
+    eventually_async(&format!("the record of {term_id}"), || async {
+        record(daemon, "board-0", term_id).await == want
+    })
+    .await;
 }
 
 // 2611.0007 S24

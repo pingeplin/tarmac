@@ -27,5 +27,6 @@ pub fn hooks_cmd(dir: &Path) -> Command {
 }
 
 pub fn fixture(name: &str) -> Vec<u8> {
-    std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hooks").join(format!("{name}.json"))).unwrap()
+    std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hooks").join(format!("{name}.json")))
+        .unwrap()
 }

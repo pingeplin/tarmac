@@ -18,7 +18,8 @@ async fn s28_an_app_that_never_answers_is_no_answer_at_the_bound_and_a_late_answ
     let mut r = rig("term-new-wait").await;
     let daemon = r.daemon.clone();
     let cwd = r.dir.to_string_lossy().into_owned();
-    let asked = tokio::spawn(async move { daemon.term_new("echo hi".into(), cwd, None, Duration::from_millis(200)).await });
+    let asked =
+        tokio::spawn(async move { daemon.term_new("echo hi".into(), cwd, None, Duration::from_millis(200)).await });
     let req_id = forwarded(&mut r.app).await;
 
     let answer = within(asked).await;
@@ -67,7 +68,10 @@ async fn s33_a_dropped_held_input_gives_the_app_one_err_notice() {
 
     handle.input_tx.send(held(1000)).await.unwrap();
 
-    assert_eq!(notices(&mut r.app, Duration::from_secs(1)).await, vec!["input held for T dropped: the shell did not take keys".to_string()]);
+    assert_eq!(
+        notices(&mut r.app, Duration::from_secs(1)).await,
+        vec!["input held for T dropped: the shell did not take keys".to_string()]
+    );
     handle.kill();
     r.end().await;
 }
@@ -126,7 +130,8 @@ async fn a_slow_folder_read_leaves_the_app_only_the_rest_of_the_bound() {
     let daemon = r.daemon.clone();
     let cwd = r.dir.to_string_lossy().into_owned();
     let started = std::time::Instant::now();
-    let asked = tokio::spawn(async move { daemon.term_new("echo hi".into(), cwd, None, Duration::from_millis(800)).await });
+    let asked =
+        tokio::spawn(async move { daemon.term_new("echo hi".into(), cwd, None, Duration::from_millis(800)).await });
     forwarded(&mut r.app).await;
 
     let answer = within(asked).await;

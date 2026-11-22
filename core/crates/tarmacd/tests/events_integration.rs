@@ -7,7 +7,8 @@ use std::time::{Duration, Instant};
 
 use common::{
     Conn, FORK_NAME, FrameLog, LONG, Spawn, TestDaemon, canon_dir, cli_open, cli_terms, edit, is_bell_for,
-    is_exec_proc_for, is_exit_for, is_file_event_for, is_term_proc_for, none_within, settle, subscriber, temp_dir, write_doc,
+    is_exec_proc_for, is_exit_for, is_file_event_for, is_term_proc_for, none_within, settle, subscriber, temp_dir,
+    write_doc,
 };
 use tarmac_protocol::{Msg, frame};
 
@@ -105,7 +106,10 @@ fn s4_a_report_is_the_snapshot_then_its_changes_come_live() {
     let (_, none) = subscriber(&daemon.sock, Some(&["report"]), Some("U"));
     assert_eq!(Conn::cli_report(&daemon.sock, "T", "clear", None), Msg::Ack);
 
-    assert_eq!(snapshot.iter().map(term_report_kind).collect::<Vec<_>>(), [("T".into(), Some("blocked".into()), Some("ok?".into()))]);
+    assert_eq!(
+        snapshot.iter().map(term_report_kind).collect::<Vec<_>>(),
+        [("T".into(), Some("blocked".into()), Some("ok?".into()))]
+    );
     assert_eq!(term_report_kind(&next(&mut sub, "the clear of T")), ("T".into(), None, None));
     assert_eq!(none.iter().map(term_report_kind).collect::<Vec<_>>(), [("U".into(), None, None)]);
 }
@@ -126,9 +130,13 @@ fn s5_a_doc_change_comes_and_no_frame_that_is_not_an_event() {
     let mtime = edit(&doc);
 
     let app_mtime = app.recv_file_event_since(&doc, mtime);
-    let got = sub.recv_until("the file_event of the doc", |m| matches!(m, Msg::FileEvent { path, mtime_ms } if *path == doc && *mtime_ms >= mtime));
+    let got = sub.recv_until(
+        "the file_event of the doc",
+        |m| matches!(m, Msg::FileEvent { path, mtime_ms } if *path == doc && *mtime_ms >= mtime),
+    );
     assert_eq!(got, Msg::FileEvent { path: doc.clone(), mtime_ms: app_mtime });
-    let not_an_event = |m: &Msg| matches!(m, Msg::Output { .. } | Msg::TermProc { .. } | Msg::DocOpened(_) | Msg::BoardList { .. });
+    let not_an_event =
+        |m: &Msg| matches!(m, Msg::Output { .. } | Msg::TermProc { .. } | Msg::DocOpened(_) | Msg::BoardList { .. });
     assert!(none_within(&mut sub, Duration::from_secs(2), not_an_event));
 }
 
@@ -185,7 +193,8 @@ fn s8_terms_lists_the_live_terminals_in_board_order() {
 
     let rows = cli_terms(&daemon.sock);
 
-    let got: Vec<_> = rows.iter().map(|r| (r.term_id.as_str(), r.board_id.as_str(), r.cwd.clone(), r.proc.clone())).collect();
+    let got: Vec<_> =
+        rows.iter().map(|r| (r.term_id.as_str(), r.board_id.as_str(), r.cwd.clone(), r.proc.clone())).collect();
     assert_eq!(
         got,
         [
@@ -262,10 +271,9 @@ fn s26_a_terminal_filter_drops_doc_changes() {
 fn s29_an_unknown_terminal_or_no_known_kind_is_refused_and_closed() {
     let daemon = TestDaemon::start();
 
-    for (kinds, term_id, want) in [
-        (None, Some("nope"), "unknown terminal: nope"),
-        (Some(vec!["later".to_string()]), None, "no known event kind"),
-    ] {
+    for (kinds, term_id, want) in
+        [(None, Some("nope"), "unknown terminal: nope"), (Some(vec!["later".to_string()]), None, "no known event kind")]
+    {
         let mut cli = Conn::hello(&daemon.sock, "cli");
         cli.send(&Msg::Subscribe { kinds, term_id: term_id.map(str::to_string) });
 

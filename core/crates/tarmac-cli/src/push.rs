@@ -244,10 +244,7 @@ mod tests {
     // S6
     #[test]
     fn blank_lines_are_given_as_blank() {
-        assert_eq!(
-            read_all(b"a\n\n \t\nb\n", 8),
-            vec![value("a"), Line::Blank, Line::Blank, value("b")]
-        );
+        assert_eq!(read_all(b"a\n\n \t\nb\n", 8), vec![value("a"), Line::Blank, Line::Blank, value("b")]);
         assert_eq!(read_all(b"\r\n \r\n", 8), vec![Line::Blank, Line::Blank]);
         assert_eq!(read_all(b"          \n", 8), vec![Line::Blank], "blank over the limit");
         assert_eq!(read_all(b"        x\n", 8), vec![Line::OverLimit], "a value past the limit");
@@ -437,8 +434,9 @@ mod tests {
             "tarmac: line 1: no answer from the daemon in 5 s (an older daemon, or the app is not reading)\n"
         );
         drop(cli);
-        let sent: Vec<Msg> =
-            std::iter::from_fn(|| proto::frame::read_sync(&mut daemon).ok()).map(|p| proto::decode(&p).unwrap()).collect();
+        let sent: Vec<Msg> = std::iter::from_fn(|| proto::frame::read_sync(&mut daemon).ok())
+            .map(|p| proto::decode(&p).unwrap())
+            .collect();
         assert_eq!(sent, vec![Msg::Push { path: "/p".into(), value: "1".into() }]);
     }
 }

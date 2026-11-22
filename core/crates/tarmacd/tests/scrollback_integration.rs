@@ -20,9 +20,7 @@ fn quiesce(app: &mut Conn, term_id: &str) {
 
 fn request_scrollback(app: &mut Conn, term_id: &str) -> Vec<u8> {
     app.send(&Msg::ScrollbackRequest { term_id: term_id.into() });
-    let msg = app.recv_until("scrollback", |m| {
-        matches!(m, Msg::Scrollback { term_id: t, .. } if t == term_id)
-    });
+    let msg = app.recv_until("scrollback", |m| matches!(m, Msg::Scrollback { term_id: t, .. } if t == term_id));
     let Msg::Scrollback { bytes, .. } = msg else { unreachable!() };
     bytes
 }
@@ -38,11 +36,7 @@ fn scrollback_request_replies_once_with_the_ring() {
     app.echo_marker("t1", "MARKER-ONE");
 
     let bytes = request_scrollback(&mut app, "t1");
-    assert!(
-        contains(&bytes, b"MARKER-ONE"),
-        "the reply must carry the term's ring, got {} bytes",
-        bytes.len()
-    );
+    assert!(contains(&bytes, b"MARKER-ONE"), "the reply must carry the term's ring, got {} bytes", bytes.len());
     assert!(
         none_within(&mut app, QUIET, |m| matches!(m, Msg::Scrollback { term_id, .. } if term_id == "t1")),
         "one request must produce exactly one scrollback frame"

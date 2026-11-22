@@ -109,15 +109,12 @@ pub(crate) fn parse_flags(args: &[String]) -> Result<Flags, String> {
                 targets = if v == "all" {
                     Target::ALL.to_vec()
                 } else {
-                    vec![Target::parse(v).ok_or_else(|| {
-                        format!("unknown target '{v}' (claude-code, codex, all)")
-                    })?]
+                    vec![Target::parse(v).ok_or_else(|| format!("unknown target '{v}' (claude-code, codex, all)"))?]
                 };
             }
             "--scope" => {
                 let v = it.next().ok_or("--scope needs a value")?;
-                scope = Scope::parse(v)
-                    .ok_or_else(|| format!("unknown scope '{v}' (user, project)"))?;
+                scope = Scope::parse(v).ok_or_else(|| format!("unknown scope '{v}' (user, project)"))?;
             }
             other => return Err(format!("unexpected argument '{other}'")),
         }

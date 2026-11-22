@@ -5,9 +5,7 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::io::Read;
 
 fn main() {
-    let pty = native_pty_system()
-        .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
-        .unwrap();
+    let pty = native_pty_system().openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 }).unwrap();
     let mut cmd = CommandBuilder::new("/bin/echo");
     cmd.args(["pty-smoke-ok"]);
     cmd.env("TERM", "xterm-256color");

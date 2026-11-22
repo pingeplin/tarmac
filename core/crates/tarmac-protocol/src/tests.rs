@@ -2,11 +2,7 @@ use super::*;
 use std::collections::BTreeMap;
 
 fn unhex(s: &str) -> Vec<u8> {
-    let digits: Vec<u8> = s
-        .chars()
-        .filter(|c| c.is_ascii_hexdigit())
-        .map(|c| c.to_digit(16).unwrap() as u8)
-        .collect();
+    let digits: Vec<u8> = s.chars().filter(|c| c.is_ascii_hexdigit()).map(|c| c.to_digit(16).unwrap() as u8).collect();
     assert!(digits.len() % 2 == 0);
     digits.chunks(2).map(|p| (p[0] << 4) | p[1]).collect()
 }
@@ -263,11 +259,8 @@ fn conformance_vector_14_data_file() {
                69 64 a7 62 6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 \
                61 73 68 2e 68 74 6d 6c a4 66 69 6c 65 ad 2f 61 2f 73 74 61 \
                74 73 2e 6a 73 6f 6e";
-    let msg = Msg::DataFile {
-        board_id: "board-0".into(),
-        path: "/a/dash.html".into(),
-        file: Some("/a/stats.json".into()),
-    };
+    let msg =
+        Msg::DataFile { board_id: "board-0".into(), path: "/a/dash.html".into(), file: Some("/a/stats.json".into()) };
     assert_vector(hex, msg.clone());
     assert_eq!(encode(&msg).unwrap(), unhex(hex));
 }
@@ -320,7 +313,8 @@ fn conformance_vector_18_restore_term_records() {
     let hex = "84 a1 74 a7 72 65 73 74 6f 72 65 a4 64 6f 63 73 90 a5 74 69 6c 65 73 90 \
                ac 74 65 72 6d 5f 72 65 63 6f 72 64 73 81 a2 74 31 \
                81 a8 6c 61 73 74 5f 63 77 64 a2 2f 77";
-    let msg = restore_with_records(BTreeMap::from([("t1".into(), TermRecord { last_cwd: Some("/w".into()), resume: None })]));
+    let msg =
+        restore_with_records(BTreeMap::from([("t1".into(), TermRecord { last_cwd: Some("/w".into()), resume: None })]));
     assert_vector(hex, msg.clone());
     assert_eq!(encode(&msg).unwrap(), unhex(hex));
 }
@@ -347,7 +341,16 @@ fn report(kind: &str, text: Option<&str>) -> Msg {
 }
 
 fn term_report_none() -> Msg {
-    Msg::TermReport { term_id: "t1".into(), kind: None, text: None, at_ms: None, proc: None, read: false, board_id: None, cwd: None }
+    Msg::TermReport {
+        term_id: "t1".into(),
+        kind: None,
+        text: None,
+        at_ms: None,
+        proc: None,
+        read: false,
+        board_id: None,
+        cwd: None,
+    }
 }
 
 #[test]
@@ -442,7 +445,10 @@ fn conformance_vector_30_exit_with_its_board() {
 
 #[test]
 fn a_bell_and_an_exit_with_no_board_encode_as_before() {
-    assert_frame("82 a1 74 a4 62 65 6c 6c a7 74 65 72 6d 5f 69 64 a2 74 31", Msg::Bell { term_id: "t1".into(), board_id: None });
+    assert_frame(
+        "82 a1 74 a4 62 65 6c 6c a7 74 65 72 6d 5f 69 64 a2 74 31",
+        Msg::Bell { term_id: "t1".into(), board_id: None },
+    );
     assert_frame(
         "83 a1 74 a4 65 78 69 74 a7 74 65 72 6d 5f 69 64 a2 74 31 a4 63 6f 64 65 c0",
         Msg::Exit { term_id: "t1".into(), code: None, board_id: None },
@@ -451,11 +457,19 @@ fn a_bell_and_an_exit_with_no_board_encode_as_before() {
 
 // Spec 2611.0012: the facts for scripts.
 fn subscribe(kinds: Option<&[&str]>, term_id: Option<&str>) -> Msg {
-    Msg::Subscribe { kinds: kinds.map(|k| k.iter().map(|s| s.to_string()).collect()), term_id: term_id.map(str::to_string) }
+    Msg::Subscribe {
+        kinds: kinds.map(|k| k.iter().map(|s| s.to_string()).collect()),
+        term_id: term_id.map(str::to_string),
+    }
 }
 
 fn term_info(cwd: Option<&str>, proc: Option<&str>) -> TermInfo {
-    TermInfo { term_id: "t1".into(), board_id: "board-0".into(), cwd: cwd.map(str::to_string), proc: proc.map(str::to_string) }
+    TermInfo {
+        term_id: "t1".into(),
+        board_id: "board-0".into(),
+        cwd: cwd.map(str::to_string),
+        proc: proc.map(str::to_string),
+    }
 }
 
 #[test]
@@ -740,7 +754,10 @@ fn a_report_kind_is_blocked_or_done() {
 
 #[test]
 fn a_nil_resume_and_a_nil_cmd_are_not_on_the_wire() {
-    assert_eq!(rmp_serde::to_vec_named(&record(Some("/w"), None)).unwrap(), unhex("81 a8 6c 61 73 74 5f 63 77 64 a2 2f 77"));
+    assert_eq!(
+        rmp_serde::to_vec_named(&record(Some("/w"), None)).unwrap(),
+        unhex("81 a8 6c 61 73 74 5f 63 77 64 a2 2f 77")
+    );
     assert!(!has(&encode(&resume(None)).unwrap(), b"cmd"));
 }
 
@@ -751,7 +768,12 @@ fn resume_cmd_cases() -> Vec<(String, Result<(), String>)> {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/resume_cmd_cases.json");
     let table: serde_json::Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     let case = |c: &serde_json::Value| {
-        let cmd: String = c["parts"].as_array().unwrap().iter().map(|p| p[0].as_str().unwrap().repeat(p[1].as_u64().unwrap() as usize)).collect();
+        let cmd: String = c["parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p[0].as_str().unwrap().repeat(p[1].as_u64().unwrap() as usize))
+            .collect();
         (cmd, c["cause"].as_str().map_or(Ok(()), |cause| Err(cause.to_owned())))
     };
     table["cases"].as_array().unwrap().iter().map(case).collect()
@@ -880,7 +902,14 @@ fn m0_shaped_restore_decodes_with_defaults() {
     );
     assert_eq!(
         decode(&bytes).unwrap(),
-        Msg::Restore { docs: vec![m0_entry("/a.md", "cli", None)], tiles: vec![], board: None, board_id: None, live_terms: vec![], term_records: BTreeMap::new() }
+        Msg::Restore {
+            docs: vec![m0_entry("/a.md", "cli", None)],
+            tiles: vec![],
+            board: None,
+            board_id: None,
+            live_terms: vec![],
+            term_records: BTreeMap::new()
+        }
     );
 }
 
@@ -888,10 +917,7 @@ fn m0_shaped_restore_decodes_with_defaults() {
 fn m1_shaped_layout_decodes_with_nil_board_and_tile_geometry() {
     // No `board` key and geometry-less tiles must decode to all-None geometry
     // and board None.
-    assert_eq!(
-        decode(&unhex(VECTOR_6)).unwrap(),
-        layout(&["/a.md"], vec![term_tile(), doc_tile("/a.md")])
-    );
+    assert_eq!(decode(&unhex(VECTOR_6)).unwrap(), layout(&["/a.md"], vec![term_tile(), doc_tile("/a.md")]));
 }
 
 #[test]
@@ -900,14 +926,7 @@ fn v4_board_keys_decode_from_wire() {
     //  w:3.0, h:4.0, z:5}], board:{zoom:0.5, cx:10.0, cy:20.0}}
     let msg = Msg::Layout {
         dock: vec![],
-        tiles: vec![Tile {
-            x: Some(1.0),
-            y: Some(2.0),
-            w: Some(3.0),
-            h: Some(4.0),
-            z: Some(5),
-            ..doc_tile("/a.md")
-        }],
+        tiles: vec![Tile { x: Some(1.0), y: Some(2.0), w: Some(3.0), h: Some(4.0), z: Some(5), ..doc_tile("/a.md") }],
         board: Some(BoardViewport { zoom: 0.5, cx: 10.0, cy: 20.0 }),
         board_id: None,
     };
@@ -956,9 +975,7 @@ fn phase5b_term_tile_term_id_roundtrip() {
 // and encodes to the same bytes as before the key existed.
 #[test]
 fn phase5b_keyless_term_tile_decodes_to_none() {
-    let Msg::Layout { tiles, .. } = roundtrip(&layout(&[], vec![term_tile()])) else {
-        panic!("expected layout")
-    };
+    let Msg::Layout { tiles, .. } = roundtrip(&layout(&[], vec![term_tile()])) else { panic!("expected layout") };
     assert_eq!(tiles[0].term_id, None);
     // A bare term tile serializes to {kind:"term"}: `skip_serializing_if`
     // omits every None.
@@ -1080,10 +1097,19 @@ fn p5_restore_live_terms_roundtrips() {
     // An empty live_terms omits the key; a non-empty list is a real key, so
     // the encodings differ.
     let empty = Msg::Restore {
-        docs: vec![], tiles: vec![], board: None, board_id: None, live_terms: vec![], term_records: BTreeMap::new(),
+        docs: vec![],
+        tiles: vec![],
+        board: None,
+        board_id: None,
+        live_terms: vec![],
+        term_records: BTreeMap::new(),
     };
     let one = Msg::Restore {
-        docs: vec![], tiles: vec![], board: None, board_id: None, live_terms: vec!["t1".into()],
+        docs: vec![],
+        tiles: vec![],
+        board: None,
+        board_id: None,
+        live_terms: vec!["t1".into()],
         term_records: BTreeMap::new(),
     };
     let empty_bytes = encode(&empty).unwrap();
@@ -1132,10 +1158,7 @@ fn m3_keyless_spawn_and_open_decode_board_id_none() {
 
     // {t:"open", path:"/a.md"} — no term_id / board_id keys.
     let open = unhex("82 a1 74 a4 6f 70 65 6e a4 70 61 74 68 a5 2f 61 2e 6d 64");
-    assert_eq!(
-        decode(&open).unwrap(),
-        Msg::Open { path: "/a.md".into(), term_id: None, board_id: None }
-    );
+    assert_eq!(decode(&open).unwrap(), Msg::Open { path: "/a.md".into(), term_id: None, board_id: None });
 }
 
 // inherit_cwd_from round-trips and, unlike cwd/cmd, is on the wire only when
@@ -1145,16 +1168,10 @@ fn inherit_cwd_from_roundtrips_and_omits_when_none() {
     let with_hint = spawn_term("t1", None, Some("prime"));
     assert_eq!(roundtrip(&with_hint), with_hint);
     let encoded = encode(&with_hint).unwrap();
-    assert!(
-        has(&encoded, b"inherit_cwd_from"),
-        "inherit_cwd_from key missing from encoded Some: {encoded:02x?}"
-    );
+    assert!(has(&encoded, b"inherit_cwd_from"), "inherit_cwd_from key missing from encoded Some: {encoded:02x?}");
 
     let encoded_none = encode(&spawn_term("t1", None, None)).unwrap();
-    assert!(
-        !has(&encoded_none, b"inherit_cwd_from"),
-        "inherit_cwd_from key present despite None: {encoded_none:02x?}"
-    );
+    assert!(!has(&encoded_none, b"inherit_cwd_from"), "inherit_cwd_from key present despite None: {encoded_none:02x?}");
 }
 
 // Key-less shapes still decode to None: a tile with no loose/shelf, an entry
@@ -1163,10 +1180,7 @@ fn inherit_cwd_from_roundtrips_and_omits_when_none() {
 fn phase3_keyless_shapes_decode_to_none() {
     // {t:"open", path:"/a.md"} — an open with no term_id key.
     let open_bytes = unhex("82 a1 74 a4 6f 70 65 6e a4 70 61 74 68 a5 2f 61 2e 6d 64");
-    assert_eq!(
-        decode(&open_bytes).unwrap(),
-        Msg::Open { path: "/a.md".into(), term_id: None, board_id: None }
-    );
+    assert_eq!(decode(&open_bytes).unwrap(), Msg::Open { path: "/a.md".into(), term_id: None, board_id: None });
 
     // {t:"doc_opened", path:"/a.md", via:"cli"} — no term_id key.
     let opened_bytes = unhex(
@@ -1247,15 +1261,13 @@ fn wide_integer_encodings_are_accepted() {
         "84 a1 74 a6 72 65 73 69 7a 65 a7 74 65 72 6d 5f 69 64 a2 74 31 \
          a4 63 6f 6c 73 ce 00 00 00 78 a4 72 6f 77 73 28",
     );
-    assert_eq!(
-        decode(&bytes).unwrap(),
-        Msg::Resize { term_id: "t1".into(), cols: 120, rows: 40 }
-    );
+    assert_eq!(decode(&bytes).unwrap(), Msg::Resize { term_id: "t1".into(), cols: 120, rows: 40 });
 }
 
 #[test]
 fn byte_fields_encode_with_bin_family() {
-    let encoded = encode(&Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec(), typed: false, hold: false }).unwrap();
+    let encoded =
+        encode(&Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec(), typed: false, hold: false }).unwrap();
     let needle = [0xc4u8, 0x03, 0x6c, 0x73, 0x0a]; // bin8, len 3, "ls\n"
     assert!(has(&encoded, &needle), "bytes not bin-encoded: {encoded:02x?}");
 }
@@ -1277,14 +1289,7 @@ fn all_message_types_roundtrip() {
         Msg::Layout {
             dock: vec!["/b.md".into()],
             tiles: vec![
-                Tile {
-                    x: Some(92.0),
-                    y: Some(108.0),
-                    w: Some(470.0),
-                    h: Some(330.0),
-                    z: Some(0),
-                    ..term_tile()
-                },
+                Tile { x: Some(92.0), y: Some(108.0), w: Some(470.0), h: Some(330.0), z: Some(0), ..term_tile() },
                 Tile {
                     x: Some(648.0),
                     y: Some(140.0),
@@ -1407,17 +1412,12 @@ fn m2_term_proc_and_bell_roundtrip() {
          a7 74 65 72 6d 5f 69 64 a2 74 31 \
          a4 6e 61 6d 65 a3 76 69 6d",
     );
-    assert_eq!(
-        decode(&bytes).unwrap(),
-        Msg::TermProc { term_id: "t1".into(), name: "vim".into(), pid: None }
-    );
+    assert_eq!(decode(&bytes).unwrap(), Msg::TermProc { term_id: "t1".into(), name: "vim".into(), pid: None });
 
     let bell = Msg::Bell { term_id: "t1".into(), board_id: None };
     assert_eq!(roundtrip(&bell), bell);
     // {t:"bell", term_id:"t1"} from the wire.
-    let bell_bytes = unhex(
-        "82 a1 74 a4 62 65 6c 6c a7 74 65 72 6d 5f 69 64 a2 74 31",
-    );
+    let bell_bytes = unhex("82 a1 74 a4 62 65 6c 6c a7 74 65 72 6d 5f 69 64 a2 74 31");
     assert_eq!(decode(&bell_bytes).unwrap(), Msg::Bell { term_id: "t1".into(), board_id: None });
 }
 
@@ -1441,9 +1441,7 @@ fn hello_ok_daemon_version_additive() {
     assert!(!has(&bytes, b"daemon_version"), "None must omit the daemon_version key on the wire");
     assert!(!has(&bytes, b"daemon_pid"), "None must omit the daemon_pid key on the wire");
     assert_eq!(roundtrip(&none_keyed), none_keyed);
-    let Msg::HelloOk { daemon_version, daemon_pid, .. } = decode(&bytes).unwrap() else {
-        panic!("expected hello_ok")
-    };
+    let Msg::HelloOk { daemon_version, daemon_pid, .. } = decode(&bytes).unwrap() else { panic!("expected hello_ok") };
     assert_eq!(daemon_version, None);
     assert_eq!(daemon_pid, None);
     let with_vals = hello_ok(Some("0.1.0"), Some(4242), None, None);
@@ -1479,9 +1477,7 @@ fn hello_ok_app_keys_additive() {
     let bytes = encode(&hello_ok(Some("0.1.0"), Some(1), None, None)).unwrap();
     assert!(!has(&bytes, b"app_version"), "None must omit the app_version key on the wire");
     assert!(!has(&bytes, b"app_connected"), "None must omit the app_connected key on the wire");
-    let Msg::HelloOk { app_version, app_connected, .. } = decode(&bytes).unwrap() else {
-        panic!("expected hello_ok")
-    };
+    let Msg::HelloOk { app_version, app_connected, .. } = decode(&bytes).unwrap() else { panic!("expected hello_ok") };
     assert_eq!(app_version, None);
     assert_eq!(app_connected, None);
 

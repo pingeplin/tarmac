@@ -25,11 +25,7 @@ mod wait;
 /// The one build-config to channel mapping: a debug build is `dev`, a release
 /// build `release`.
 fn current_channel() -> proto::Channel {
-    if cfg!(debug_assertions) {
-        proto::Channel::Dev
-    } else {
-        proto::Channel::Release
-    }
+    if cfg!(debug_assertions) { proto::Channel::Dev } else { proto::Channel::Release }
 }
 
 /// An env override, where an empty value means unset — the convention

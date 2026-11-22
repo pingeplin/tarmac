@@ -53,8 +53,13 @@ impl TermNews {
 
     /// Ends each request pushed to the connection `generation`.
     pub fn app_gone(&self, generation: u64) {
-        let gone: Vec<Waiting> =
-            self.waiting.lock().expect("term news lock").extract_if(|_, w| w.generation == generation).map(|(_, w)| w).collect();
+        let gone: Vec<Waiting> = self
+            .waiting
+            .lock()
+            .expect("term news lock")
+            .extract_if(|_, w| w.generation == generation)
+            .map(|(_, w)| w)
+            .collect();
         for w in gone {
             let _ = w.answer.send(Err(APP_WENT_AWAY.into()));
         }

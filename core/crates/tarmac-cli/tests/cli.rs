@@ -76,7 +76,11 @@ fn help_documents_push() {
 // Spec 2611.0009: the verb, its three forms, and its exit status.
 #[test]
 fn help_documents_report() {
-    let out = help_containing(&["tarmac report blocked [\"<text>\"]", "tarmac report done [\"<text>\"]", "tarmac report clear"]);
+    let out = help_containing(&[
+        "tarmac report blocked [\"<text>\"]",
+        "tarmac report done [\"<text>\"]",
+        "tarmac report clear",
+    ]);
     assert!(out.stdout.contains("TARMAC_TERM_ID"), "{}", out.stdout);
     assert!(out.stdout.contains("1  the daemon refused an open, a push or a report"), "{}", out.stdout);
 }
@@ -197,9 +201,7 @@ fn no_daemon_is_a_clear_one_line_error() {
     let file = dir.join("doc.md");
     std::fs::write(&file, "# hi\n").unwrap();
 
-    let out = Report::of(
-        tarmac_at(dir.join("absent.sock")).args(["open", file.to_str().unwrap()]),
-    );
+    let out = Report::of(tarmac_at(dir.join("absent.sock")).args(["open", file.to_str().unwrap()]));
     assert_eq!(out.code(), Some(1));
     assert!(out.one_stderr_line().contains("no tarmac daemon running"));
 }
@@ -232,11 +234,7 @@ fn skill_prints_the_guide_with_no_frontmatter() {
     let out = Report::of(&mut skill_in(&home));
     assert!(out.status.success());
     let text = &out.stdout;
-    assert!(
-        text.starts_with("# Tarmac for coding agents\n"),
-        "got: {:?}",
-        &text[..40.min(text.len())]
-    );
+    assert!(text.starts_with("# Tarmac for coding agents\n"), "got: {:?}", &text[..40.min(text.len())]);
     assert!(text.contains("tarmac open <path>"));
     assert!(text.contains("tarmac-zoom"));
 }
@@ -245,8 +243,7 @@ fn skill_prints_the_guide_with_no_frontmatter() {
 fn skill_never_talks_to_the_daemon() {
     let home = scratch();
     for args in [vec![], vec!["install"]] {
-        let out =
-            Report::of(skill_in(&home).env("TARMAC_SOCKET", home.join("absent.sock")).args(&args));
+        let out = Report::of(skill_in(&home).env("TARMAC_SOCKET", home.join("absent.sock")).args(&args));
         assert_eq!(out.code(), Some(0), "skill {args:?} must not need a daemon");
     }
 }
@@ -261,11 +258,7 @@ fn install_writes_the_shim_to_every_target() {
     let codex = codex_skill(&home);
     for path in [&claude, &codex] {
         assert!(path.exists(), "{} was not written", path.display());
-        assert!(
-            out.stdout.contains(&path.display().to_string()),
-            "install must report {}",
-            path.display()
-        );
+        assert!(out.stdout.contains(&path.display().to_string()), "install must report {}", path.display());
         let written = std::fs::read_to_string(path).unwrap();
         assert!(written.starts_with("---\nname: tarmac\ndescription: "), "{} has no frontmatter", path.display());
         // The shim points at the guide and carries none of it: a rule copied
@@ -288,12 +281,12 @@ fn install_target_flag_narrows_to_one_agent() {
 fn install_claude_config_dir_displaces_the_home_default() {
     let home = scratch();
     let cfg = home.join("xdg-claude");
-    let out = Report::of(
-        tarmac()
-            .env("HOME", &home)
-            .env("CLAUDE_CONFIG_DIR", &cfg)
-            .args(["skill", "install", "--target", "claude-code"]),
-    );
+    let out = Report::of(tarmac().env("HOME", &home).env("CLAUDE_CONFIG_DIR", &cfg).args([
+        "skill",
+        "install",
+        "--target",
+        "claude-code",
+    ]));
     assert!(out.status.success());
     assert!(cfg.join("skills/tarmac/SKILL.md").exists());
     assert!(!home.join(".claude").exists());
@@ -341,10 +334,7 @@ fn one_unwritable_target_fails_without_denying_the_other() {
     let out = install(&home);
     assert_eq!(out.code(), Some(1));
     assert!(out.stderr.contains(".claude"), "the failure must name the path: {}", out.stderr);
-    assert!(
-        codex_skill(&home).exists(),
-        "codex must still be installed when claude-code fails"
-    );
+    assert!(codex_skill(&home).exists(), "codex must still be installed when claude-code fails");
 }
 
 #[test]

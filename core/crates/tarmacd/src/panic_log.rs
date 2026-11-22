@@ -51,10 +51,7 @@ mod tests {
 
     #[test]
     fn a_record_survives_an_unnamed_thread_no_location_and_an_opaque_payload() {
-        assert_eq!(
-            record(None, None, &7_i32),
-            "thread '<unnamed>' panicked at <unknown>: Box<dyn Any>"
-        );
+        assert_eq!(record(None, None, &7_i32), "thread '<unnamed>' panicked at <unknown>: Box<dyn Any>");
     }
 
     #[derive(Clone, Default)]

@@ -30,9 +30,7 @@ pub(crate) fn skill_path(target: Target, scope: Scope, env: &Env) -> PathBuf {
 }
 
 fn write_skill(path: &Path, doc: &str) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
+    let parent = path.parent().ok_or_else(|| format!("{} has no parent directory", path.display()))?;
     fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
     fs::write(path, doc).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
@@ -86,11 +84,7 @@ mod tests {
     use super::*;
 
     fn env() -> Env {
-        Env {
-            home: PathBuf::from("/home/u"),
-            claude_config_dir: None,
-            cwd: PathBuf::from("/work/repo"),
-        }
+        Env { home: PathBuf::from("/home/u"), claude_config_dir: None, cwd: PathBuf::from("/work/repo") }
     }
 
     #[track_caller]
@@ -159,9 +153,7 @@ mod tests {
 
     #[test]
     fn the_guide_says_which_files_get_which_mode() {
-        for phrase in
-            ["standards mode", "quirks mode", "document.scrollingElement", "body.scrollTop", "<head>"]
-        {
+        for phrase in ["standards mode", "quirks mode", "document.scrollingElement", "body.scrollTop", "<head>"] {
             assert!(GUIDE.contains(phrase), "the guide never says `{phrase}`");
         }
     }
@@ -177,9 +169,7 @@ mod tests {
                 assert!(target.starts_with("http"), "link resolves nowhere off-checkout: {target}");
             }
             // Keep in sync with TOP in scripts/docs-check.mjs.
-            for repo_path in
-                ["core/", "app/", "docs/", "scripts/", "packaging/", ".github/", ".blueprint/"]
-            {
+            for repo_path in ["core/", "app/", "docs/", "scripts/", "packaging/", ".github/", ".blueprint/"] {
                 assert!(!doc.contains(repo_path), "leaks a repo path: {repo_path}");
             }
         }

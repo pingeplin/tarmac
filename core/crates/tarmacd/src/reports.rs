@@ -128,7 +128,15 @@ mod tests {
     const C: Pid = 500;
     const AGENT: Holder = Holder::Agent { pid: 200, started: 11 };
 
-    fn report_frame(term: &str, kind: &str, text: Option<&str>, at_ms: u64, proc: Option<&str>, read: bool, place: Place) -> Msg {
+    fn report_frame(
+        term: &str,
+        kind: &str,
+        text: Option<&str>,
+        at_ms: u64,
+        proc: Option<&str>,
+        read: bool,
+        place: Place,
+    ) -> Msg {
         Msg::TermReport {
             term_id: term.into(),
             kind: Some(kind.into()),
@@ -142,11 +150,28 @@ mod tests {
     }
 
     fn none_frame(term: &str) -> Msg {
-        Msg::TermReport { term_id: term.into(), kind: None, text: None, at_ms: None, proc: None, read: false, board_id: None, cwd: None }
+        Msg::TermReport {
+            term_id: term.into(),
+            kind: None,
+            text: None,
+            at_ms: None,
+            proc: None,
+            read: false,
+            board_id: None,
+            cwd: None,
+        }
     }
 
     fn blocked(reports: &mut Reports, now_ms: u64) -> Msg {
-        reports.report(T, ReportKind::Blocked, Some("ok?".into()), now_ms, AGENT, Some("claude".into()), Place::default())
+        reports.report(
+            T,
+            ReportKind::Blocked,
+            Some("ok?".into()),
+            now_ms,
+            AGENT,
+            Some("claude".into()),
+            Place::default(),
+        )
     }
 
     fn on_board(board: &str, cwd: &str) -> Place {
@@ -156,7 +181,10 @@ mod tests {
     #[test]
     fn s11a_a_first_report_is_pushed_unread() {
         let mut reports = Reports::default();
-        assert_eq!(blocked(&mut reports, 1000), report_frame(T, "blocked", Some("ok?"), 1000, Some("claude"), false, Place::default()));
+        assert_eq!(
+            blocked(&mut reports, 1000),
+            report_frame(T, "blocked", Some("ok?"), 1000, Some("claude"), false, Place::default())
+        );
         assert!(reports.has(T) && reports.unread(T));
     }
 
@@ -167,7 +195,15 @@ mod tests {
         reports.mark_read(T);
         let shell = Holder::Shell { pid: S, caller: C };
 
-        let again = reports.report(T, ReportKind::Blocked, Some("ok?".into()), 2000, shell, Some("bash".into()), Place::default());
+        let again = reports.report(
+            T,
+            ReportKind::Blocked,
+            Some("ok?".into()),
+            2000,
+            shell,
+            Some("bash".into()),
+            Place::default(),
+        );
 
         assert_eq!(again, report_frame(T, "blocked", Some("ok?"), 2000, Some("bash"), false, Place::default()));
         assert_eq!(reports.by_term[T].holder, shell);
@@ -197,7 +233,10 @@ mod tests {
     fn s11e_mark_read_pushes_once() {
         let mut reports = Reports::default();
         blocked(&mut reports, 1000);
-        assert_eq!(reports.mark_read(T), Some(report_frame(T, "blocked", Some("ok?"), 1000, Some("claude"), true, Place::default())));
+        assert_eq!(
+            reports.mark_read(T),
+            Some(report_frame(T, "blocked", Some("ok?"), 1000, Some("claude"), true, Place::default()))
+        );
         assert!(!reports.unread(T) && reports.has(T));
         assert_eq!(reports.mark_read(T), None);
     }
@@ -239,7 +278,10 @@ mod tests {
         blocked(&mut reports, 1000);
         assert_eq!(
             reports.snapshot(&[T.into(), "u1".into()]),
-            vec![report_frame(T, "blocked", Some("ok?"), 1000, Some("claude"), false, Place::default()), none_frame("u1")]
+            vec![
+                report_frame(T, "blocked", Some("ok?"), 1000, Some("claude"), false, Place::default()),
+                none_frame("u1")
+            ]
         );
     }
 
@@ -257,7 +299,10 @@ mod tests {
         let mut reports = Reports::default();
         let pushed = reports.report(T, ReportKind::Done, None, 1000, AGENT, None, on_board("board-1", "/w"));
         assert_eq!(pushed, report_frame(T, "done", None, 1000, None, false, on_board("board-1", "/w")));
-        assert_eq!(reports.mark_read(T), Some(report_frame(T, "done", None, 1000, None, true, on_board("board-1", "/w"))));
+        assert_eq!(
+            reports.mark_read(T),
+            Some(report_frame(T, "done", None, 1000, None, true, on_board("board-1", "/w")))
+        );
         assert_eq!(reports.clear(T), Some(none_frame(T)), "a removal has no place");
     }
 

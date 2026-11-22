@@ -48,7 +48,9 @@ fn s4_the_request_names_the_callers_folder_and_terminal_and_the_new_id_is_one_js
     let daemon = answering("t9");
     let api = dir("api");
 
-    let out = Report::of(tarmac_at(&daemon.double.sock).env("TARMAC_TERM_ID", "t1").current_dir(&api).args(["term", "new", "claude"]));
+    let out = Report::of(
+        tarmac_at(&daemon.double.sock).env("TARMAC_TERM_ID", "t1").current_dir(&api).args(["term", "new", "claude"]),
+    );
 
     assert_eq!((out.code(), out.stdout.as_str(), out.stderr.as_str()), (Some(0), "{\"term\":\"t9\"}\n", ""));
     assert_eq!(sent(&daemon), term_new("claude", &api, Some("t1")));
@@ -112,7 +114,11 @@ fn s19_a_refused_command_exits_2_with_its_cause_and_does_not_connect() {
 
         let out = run_in(&daemon.double.sock, &dir(""), &[cmd]);
 
-        assert_eq!((out.code(), out.stderr), (Some(2), format!("tarmac: term new command refused: {cause}\n")), "{cmd:?}");
+        assert_eq!(
+            (out.code(), out.stderr),
+            (Some(2), format!("tarmac: term new command refused: {cause}\n")),
+            "{cmd:?}"
+        );
         assert!(untouched(&daemon.double), "{cmd:?}");
     }
 }
@@ -131,7 +137,15 @@ fn s19_a_command_of_exactly_4096_chars_is_sent() {
 // S21
 #[test]
 fn s21_a_usage_error_exits_2_and_does_not_connect() {
-    for args in [&["term"][..], &["term", "new"], &["term", "new", "a", "b"], &["term", "new", "--frob", "a"], &["term", "new", "--cwd"], &["term", "new", "--cwd", "", "a"], &["term", "old", "a"]] {
+    for args in [
+        &["term"][..],
+        &["term", "new"],
+        &["term", "new", "a", "b"],
+        &["term", "new", "--frob", "a"],
+        &["term", "new", "--cwd"],
+        &["term", "new", "--cwd", "", "a"],
+        &["term", "old", "a"],
+    ] {
         let daemon = answering("t9");
 
         let out = Report::of(tarmac_at(&daemon.double.sock).args(args));
@@ -172,7 +186,11 @@ fn s29_with_no_readable_folder_and_no_absolute_cwd_the_cli_exits_1_and_does_not_
 
         let out = in_a_removed_folder(&daemon.double.sock, args);
 
-        assert_eq!((out.code(), out.stderr.as_str()), (Some(1), "tarmac: cannot read the current directory\n"), "{args}");
+        assert_eq!(
+            (out.code(), out.stderr.as_str()),
+            (Some(1), "tarmac: cannot read the current directory\n"),
+            "{args}"
+        );
         assert!(untouched(&daemon.double), "{args}");
     }
 }

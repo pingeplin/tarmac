@@ -32,7 +32,9 @@ pub fn run(args: &[String]) -> i32 {
 /// The command and the `--cwd` given; `Err` is the usage line or the
 /// command's refusal.
 fn parse(args: &[String]) -> Result<(&str, Option<&str>), String> {
-    let Some(("new", rest)) = args.split_first().map(|(verb, rest)| (verb.as_str(), rest)) else { return Err(USAGE.into()) };
+    let Some(("new", rest)) = args.split_first().map(|(verb, rest)| (verb.as_str(), rest)) else {
+        return Err(USAGE.into());
+    };
     let (cmd, cwd) = match rest {
         [cmd] if !cmd.starts_with("--") => (cmd, None),
         [flag, dir, cmd] if flag == "--cwd" && !dir.is_empty() && !cmd.starts_with("--") => (cmd, Some(dir.as_str())),
@@ -46,7 +48,8 @@ fn parse(args: &[String]) -> Result<(&str, Option<&str>), String> {
 /// call on it: a volume that does not answer cannot hold the cli. The daemon
 /// checks it.
 fn folder(cwd: Option<&str>) -> Result<String, String> {
-    let path = std::path::absolute(Path::new(cwd.unwrap_or("."))).map_err(|_| "cannot read the current directory".to_string())?;
+    let path = std::path::absolute(Path::new(cwd.unwrap_or(".")))
+        .map_err(|_| "cannot read the current directory".to_string())?;
     Ok(path.to_string_lossy().into_owned())
 }
 
