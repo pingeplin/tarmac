@@ -1,0 +1,18 @@
+# Git hooks. Each one calls the one definition of a check, so a rule lives in
+# scripts/check/ and never here. `make setup` installs them, once per clone.
+# CI runs the same checks: a hook can be skipped, CI cannot.
+
+pre-commit:
+  commands:
+    staged:
+      run: node scripts/check/staged.mjs
+
+commit-msg:
+  commands:
+    message:
+      run: node scripts/check/commit-msg.mjs {1}
+
+pre-push:
+  commands:
+    test:
+      run: make test

@@ -39,11 +39,14 @@ GATE_ENV := $(if $(filter 1,$(SHELL_GATE)),TARMAC_QA_SHELL="$${TARMAC_QA_SHELL:-
 	TARMAC_QA_SHELL_GATE="$(SHELL_GATE_FILE)" \
 	SHELL="$(ROOT)/scripts/qa/gate-shell.sh")
 
-# Once per clone: settings git keeps outside the tree, so a checkout cannot
-# carry them. Worktrees share the clone's configuration. `git blame` then skips
-# the commits in .git-blame-ignore-revs (the formatter baselines).
+# Once per clone: what git keeps outside the tree, so a checkout cannot carry
+# it. Worktrees share the clone's configuration and its hooks. `git blame` then
+# skips the commits in .git-blame-ignore-revs (the formatter baselines), and
+# the git hooks of lefthook.yml run on a commit and a push.
 setup:
 	git -C $(ROOT) config blame.ignoreRevsFile .git-blame-ignore-revs
+	@command -v lefthook >/dev/null || { echo "make setup: lefthook is not installed (brew install lefthook); the git hooks are not installed" >&2; exit 1; }
+	cd $(ROOT) && lefthook install
 
 core:
 	cd $(ROOT)/core && cargo build

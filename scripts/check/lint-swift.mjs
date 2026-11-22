@@ -86,16 +86,15 @@ function directiveFindings({ path, text }, known) {
   });
 }
 
-export function lintSwift(root) {
+export function lintSwift(root, files = sources(LANGUAGES.swift, root)) {
   const language = LANGUAGES.swift;
-  const files = sources(language, root);
   if (files.length === 0) return CLEAN;
   const version = toolVersion(language);
   const { known, on, blocked: badConfig } = configuredRules(root, language, files);
   const reason = unusable(language, version) ?? badConfig ?? missingRules(language, on, version.found);
   if (reason) return cannotRun(reason.summary, reason.why, reason.fix);
 
-  const run = spawnSync("swift", ["format", "lint", "--parallel", ...files.map(({ path }) => path)], { cwd: root, encoding: "utf8", maxBuffer: 64 << 20 });
+  const run = spawnSync("swift", ["format", "lint", "--parallel", "--", ...files.map(({ path }) => path)], { cwd: root, encoding: "utf8", maxBuffer: 64 << 20 });
   const said = [...run.stderr.matchAll(/^(.+?):(\d+):(\d+): (warning|error): (?:\[(\w+)\] )?(.*)$/gm)].map(
     ([, file, line, column, level, rule, message]) => ({ at: `${relative(root, resolve(root, file))}:${line}:${column}`, level, rule, message }),
   );

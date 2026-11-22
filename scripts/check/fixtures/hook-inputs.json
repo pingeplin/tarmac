@@ -1,0 +1,60 @@
+{
+  "PostToolUse.Write": {
+    "session_id": "00000000-0000-0000-0000-000000000000",
+    "transcript_path": "/transcripts/session.jsonl",
+    "cwd": "/repo",
+    "prompt_id": "00000000-0000-0000-0000-000000000001",
+    "permission_mode": "acceptEdits",
+    "effort": {
+      "level": "medium"
+    },
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Write",
+    "tool_input": {
+      "file_path": "/repo/a.swift",
+      "content": "let  x=1\n"
+    },
+    "tool_response": {
+      "type": "create",
+      "filePath": "/repo/a.swift",
+      "content": "let  x=1\n",
+      "structuredPatch": [],
+      "originalFile": null,
+      "userModified": false
+    },
+    "tool_use_id": "toolu_000000000000000000000000",
+    "duration_ms": 9
+  },
+  "PreToolUse.Bash": {
+    "session_id": "00000000-0000-0000-0000-000000000000",
+    "transcript_path": "/transcripts/session.jsonl",
+    "cwd": "/repo",
+    "prompt_id": "00000000-0000-0000-0000-000000000001",
+    "permission_mode": "acceptEdits",
+    "effort": {
+      "level": "medium"
+    },
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "echo hello",
+      "description": "Print hello"
+    },
+    "tool_use_id": "toolu_000000000000000000000000"
+  },
+  "Stop": {
+    "session_id": "00000000-0000-0000-0000-000000000000",
+    "transcript_path": "/transcripts/session.jsonl",
+    "cwd": "/repo",
+    "prompt_id": "00000000-0000-0000-0000-000000000001",
+    "permission_mode": "acceptEdits",
+    "effort": {
+      "level": "medium"
+    },
+    "hook_event_name": "Stop",
+    "stop_hook_active": false,
+    "last_assistant_message": "Done.",
+    "background_tasks": [],
+    "session_crons": []
+  }
+}

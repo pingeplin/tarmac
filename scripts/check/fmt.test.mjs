@@ -350,3 +350,75 @@ test("a Swift script with a #! line is left alone: swift-format 6.4 corrupts its
   assert.deepEqual(runs, [CLEAN, CLEAN]);
   assert.equal(readFileSync(join(dir, "tools/run.swift"), "utf8"), script);
 });
+
+// ------------------------------------------------------------ named files
+
+const named = (dir, mode, paths, cwd = dir) => {
+  const run = spawnSync(process.execPath, [SCRIPT, mode, "--paths", ...paths], { cwd, encoding: "utf8" });
+  return { code: run.status, err: run.stderr.split("\n") };
+};
+
+test("named files: a new, untracked file is formatted, and no other file is touched", () => {
+  const dir = repo({ "core/src/tracked.rs": UGLY });
+  write(dir, "core/src/fresh.rs", UGLY);
+  write(dir, "app/Fresh.swift", UGLY_SWIFT);
+
+  const run = named(dir, "--write", ["core/src/fresh.rs", "app/Fresh.swift"]);
+
+  assert.deepEqual(run, CLEAN);
+  assert.notEqual(readFileSync(join(dir, "core/src/fresh.rs"), "utf8"), UGLY);
+  assert.equal(readFileSync(join(dir, "app/Fresh.swift"), "utf8"), "let x = 1\n");
+  assert.equal(readFileSync(join(dir, "core/src/tracked.rs"), "utf8"), UGLY);
+});
+
+test("named files: a check reports the named files only", () => {
+  const dir = repo({ "core/src/a.rs": UGLY, "core/src/b.rs": UGLY });
+
+  const run = named(dir, "--check", ["core/src/b.rs"]);
+
+  assert.equal(run.code, 1);
+  assert.deepEqual(run.err.slice(0, 2), ["✗ fmt: 1 file is not formatted", "  at   core/src/b.rs"]);
+});
+
+test("named files: the repository is found from the file, not from where the script runs", () => {
+  const dir = repo();
+  write(dir, "core/src/fresh.rs", UGLY);
+  const elsewhere = scratch();
+
+  const run = named(dir, "--write", [join(dir, "core/src/fresh.rs")], elsewhere);
+
+  assert.deepEqual(run, CLEAN);
+  assert.notEqual(readFileSync(join(dir, "core/src/fresh.rs"), "utf8"), UGLY);
+});
+
+test("named files: an ignored file, a file outside any repository, a missing one and one of no language are left alone", () => {
+  const dir = repo({ ".gitignore": "target/\n", "notes.md": "#  x\n" });
+  write(dir, "target/gen.rs", UGLY);
+  const outside = scratch();
+  write(outside, "loose.rs", UGLY);
+
+  const run = named(dir, "--write", ["target/gen.rs", join(outside, "loose.rs"), "core/src/gone.rs", "notes.md"]);
+
+  assert.deepEqual(run, CLEAN);
+  assert.equal(readFileSync(join(dir, "target/gen.rs"), "utf8"), UGLY);
+  assert.equal(readFileSync(join(outside, "loose.rs"), "utf8"), UGLY);
+});
+
+test("named files: a Swift script with a #! line is left alone here too", () => {
+  const script = "#!/usr/bin/env swift\nlet  x=1\n";
+  const dir = repo();
+  write(dir, "tools/run.swift", script);
+
+  assert.deepEqual(named(dir, "--write", ["tools/run.swift"]), CLEAN);
+  assert.equal(readFileSync(join(dir, "tools/run.swift"), "utf8"), script);
+});
+
+test("named files: a file that does not parse cannot be formatted, and is named", () => {
+  const dir = repo();
+  write(dir, "core/src/bad.rs", "fn x( {\n");
+
+  const run = named(dir, "--write", ["core/src/bad.rs"]);
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(run.err.slice(0, 2), ["✗ fmt: cannot run rustfmt", "  why  core/src/bad.rs: error: this file contains an unclosed delimiter"]);
+});

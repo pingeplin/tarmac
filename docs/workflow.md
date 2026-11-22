@@ -61,6 +61,22 @@ Conventional Commits (whole history conforms). End the message with **two
 trailers**: the DCO `Signed-off-by:` that `CONTRIBUTING.md` requires
 (`git commit -s`, enforced on PRs by `.github/workflows/dco.yml` — check locally
 with `make dco-check`), and the `Co-Authored-By:` the repo uses for attribution.
+The `commit-msg` hook (`make setup` installs it) refuses a subject that is not
+`type(scope): summary` with one of the types in use, and a message with no
+sign-off of the author or committer; `pre-commit` runs the format check, the
+lints and the tree checks on what is staged, and `pre-push` runs `make test`.
+A hook can be skipped (`git commit --no-verify`, a clone with no `make setup`).
+CI cannot: it runs the same checks, all but the subject's form, which the
+squash merge sets.
+
+An agent in Claude Code gets the same checks sooner, from `.claude/settings.json`:
+after each edit of a Rust or Swift file (format in place, Swift lint,
+`arch-check`; Rust is not linted there, because clippy needs the whole build), and
+at the end of a turn (format check and Swift lint on the changed files,
+`arch-check`, `docs-check`; no clippy, because a red test starts with a
+`todo!()`). A set of findings blocks the end of a turn once; the same set again is
+reported only. A third hook refuses a Bash command that kills a Tarmac process by
+name. `CLAUDE.md` has the details.
 `make test` must pass first; see [`coding-style.md`](coding-style.md) for the TDD
 workflow it gates.
 

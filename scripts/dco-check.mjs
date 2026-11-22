@@ -21,6 +21,8 @@
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 
+import { signedBy, signers } from "./check/signoff.mjs";
+
 const ROOT = resolve(import.meta.dirname, "..");
 // stderr ignored: git's own "fatal: bad revision" would print before our own
 // message and bury it. The catch below says the useful thing.
@@ -43,13 +45,6 @@ if (range.length === 0) {
   process.exit(0);
 }
 
-// One trailer per line. Anchored hard at column zero on purpose: `^\s*` would
-// also match a trailer quoted inside an indented code block, so a commit that
-// merely *documents* the sign-off format would pass as signed — which is exactly
-// what a commit touching CONTRIBUTING.md looks like. `[^<\n]*` (not `.+`) keeps
-// the capture on the FIRST bracket pair, so a second address cannot displace the
-// real signer.
-const SIGNOFF = /^Signed-off-by:[^<\n]*<([^>]+)>\s*$/gim;
 const ANY_SIGNOFF = /^Signed-off-by:/im;
 
 const failures = [];
@@ -60,10 +55,9 @@ for (const sha of range) {
     "show", "-s", "--format=%ae%x00%ce%x00%an%x00%B", sha,
   ).split("\0");
 
-  const signed = [...(body ?? "").matchAll(SIGNOFF)].map((m) => m[1].trim().toLowerCase());
-  const identities = [author, committer].map((e) => e.trim().toLowerCase()).filter(Boolean);
+  const signed = signers(body ?? "");
 
-  if (!signed.some((e) => identities.includes(e))) {
+  if (!signedBy(signed, [author, committer])) {
     const subject = git("show", "-s", "--format=%s", sha).trim();
     const expected = `    expected: Signed-off-by: ${name} <${author}>`;
     let why;

@@ -106,8 +106,19 @@ editor/IDE may show stale SourceKit diagnostics — `make` is the source of trut
 ## Submitting changes
 
 1. Fork the repository and create a topic branch from `main`. Run `make setup`
-   once in a new clone: it makes `git blame` skip the commits that only
-   reformatted the tree (`.git-blame-ignore-revs`).
+   once in a new clone (it needs [lefthook](https://lefthook.dev):
+   `brew install lefthook`). It installs the git hooks of `lefthook.yml`, which
+   run the format check, the lints and the commit-message rule on a commit and
+   `make test` on a push, and it makes `git blame` skip the commits that only
+   reformatted the tree (`.git-blame-ignore-revs`). A commit is refused on a
+   format, lint, `arch-check` or `docs-check` finding in what is staged, or on
+   a message that is not `type(scope): summary` with your sign-off; a push is
+   refused when `make test` fails. `git commit --no-verify` skips them. CI runs
+   the same checks (all but the subject's form, which a maintainer sets at the
+   squash merge), so the hooks only tell you sooner. If you work with Claude
+   Code, `.claude/settings.json` runs the format and lint checks after each
+   edit and at the end of a turn, and refuses a command that kills a Tarmac
+   process by name (see `CLAUDE.md`); these hooks do not run clippy.
 2. Make your change, keeping it focused. Format it with `make fmt` (rustfmt and
    swift-format); do not lay code out by hand.
 3. **Work test-first.** Tarmac requires TDD: write the failing test, watch it
