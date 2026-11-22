@@ -1,0 +1,66 @@
+# TEMPORARY, for #492. This file must never reach main.
+name: swift mutation spike
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  spike:
+    name: swift mutation spike
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/cache@v4
+        with:
+          path: app/Vendor
+          key: ghostty-vt-${{ hashFiles('scripts/fetch-ghostty-vt.sh') }}
+
+      - name: stage libghostty-vt
+        run: scripts/fetch-ghostty-vt.sh
+
+      - name: get the tool (pinned by checksum)
+        run: |
+          curl -sSL -o "$RUNNER_TEMP/smt.tar.gz" https://github.com/ericodx/swift-mutation-testing/releases/download/v1.7.1/swift-mutation-testing-v1.7.1-macos.tar.gz
+          echo "5799deec1cfc2f99a40e0cefde6285a5671f780b1de65439ed4eec2585f493e7  $RUNNER_TEMP/smt.tar.gz" | shasum -a 256 -c -
+          mkdir "$RUNNER_TEMP/smt" && tar xzf "$RUNNER_TEMP/smt.tar.gz" -C "$RUNNER_TEMP/smt"
+          "$RUNNER_TEMP/smt/swift-mutation-testing" --version
+          "$RUNNER_TEMP/smt/swift-mutation-testing" --help
+          swift --version
+
+      - name: run
+        run: |
+          set +e
+          start=$(date +%s)
+          "$RUNNER_TEMP/smt/swift-mutation-testing" "$PWD/app" \
+            --sources-path "$PWD/app/Sources/TarmacKit/ChannelPaths.swift" \
+            --testing-framework xctest \
+            --operator-tier experimental \
+            --concurrency 1 \
+            --timeout 600 \
+            --build-timeout 1500 \
+            --output "$RUNNER_TEMP/report.json" \
+            --markdown-output "$RUNNER_TEMP/report.md"
+          code=$?
+          echo "exit code: $code; seconds: $(( $(date +%s) - start ))"
+          [ -f "$RUNNER_TEMP/report.md" ] && cat "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spike-report
+          path: |
+            ${{ runner.temp }}/report.json
+            ${{ runner.temp }}/report.md
+          if-no-files-found: ignore
