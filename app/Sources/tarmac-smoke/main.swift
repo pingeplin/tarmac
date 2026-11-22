@@ -72,7 +72,11 @@ final class Smoke {
         }
         client.start()
 
-        let gotHelloOK = waitFor(5) { if case .helloOK = $0 { return true } else { return nil } } ?? false
+        let gotHelloOK =
+            waitFor(5) {
+                guard case .helloOK = $0 else { return nil }
+                return true
+            } ?? false
         check("connected, hello_ok received (\(client.socketPath))", gotHelloOK)
         guard gotHelloOK else {
             print("RESULT: FAIL (1 failure)")
@@ -124,7 +128,8 @@ final class Smoke {
 
         client.open(path: canonical)
         let openedVia: String? = waitFor(5) {
-            if case .docOpened(let doc) = $0, doc.path == canonical { return doc.via } else { return nil }
+            guard case .docOpened(let doc) = $0, doc.path == canonical else { return nil }
+            return doc.via
         }
         check("doc_opened received", openedVia != nil, "no doc_opened for \(canonical) within 5 s")
         if let openedVia {
@@ -143,7 +148,8 @@ final class Smoke {
             check("append to doc", false, "\(error)")
         }
         let mtime: UInt64? = waitFor(5) {
-            if case .fileEvent(let path, let mtimeMs) = $0, path == canonical { return mtimeMs } else { return nil }
+            guard case .fileEvent(let path, let mtimeMs) = $0, path == canonical else { return nil }
+            return mtimeMs
         }
         check("file_event received", mtime != nil, "no file_event for \(canonical) within 5 s")
         if let mtime {
