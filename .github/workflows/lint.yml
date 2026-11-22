@@ -98,6 +98,29 @@ jobs:
       - name: make lint
         run: make lint ONLY=swift
 
+  lint-swiftc:
+    name: lint (swiftc)
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/cache@v4
+        with:
+          path: app/Vendor
+          key: ghostty-vt-${{ hashFiles('scripts/fetch-ghostty-vt.sh') }}
+
+      # The known-warnings list must fit this compiler too, so the log shows
+      # which one it is.
+      - name: compiler version
+        run: swift --version
+
+      - name: make lint
+        run: make lint ONLY=swiftc
+
   check-scripts:
     name: check scripts (node --test)
     # macOS: the tests run both formatters, and swift-format's version matters.

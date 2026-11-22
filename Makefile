@@ -83,10 +83,12 @@ fmt-check:
 
 # The lint check (scripts/check/lint.mjs), where a warning is a failure: clippy
 # over the workspace with the lint table of core/Cargo.toml, and the lint rules
-# of swift-format (.swift-format) over the tracked Swift files. ONLY=rust or
-# ONLY=swift limits a run. Not part of `test`: clippy compiles the workspace a
+# of swift-format (.swift-format) over the tracked Swift files, and the Swift
+# compiler's warnings from a build of the package into an empty directory
+# (swiftc; it needs the staged libghostty-vt). ONLY=rust, ONLY=swift or
+# ONLY=swiftc limits a run. Not part of `test`: it compiles both workspaces a
 # second way. CI runs it (lint.yml).
-lint:
+lint: $(if $(filter rust swift,$(ONLY)),,ghostty-vt)
 	cd $(ROOT) && node scripts/check/lint.mjs $(ONLY)
 
 # The unit tests of the check scripts themselves. They make small git

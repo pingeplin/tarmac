@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
+
+import { unmatched } from "./lint.mjs";
 
 const SCRIPT = join(import.meta.dirname, "lint.mjs");
 const TOOLCHAIN = readFileSync(join(import.meta.dirname, "../../rust-toolchain.toml"), "utf8");
@@ -320,7 +322,7 @@ test("S9: a name that is not a language is refused with the names that are", () 
   const run = lint(swiftRepo({ "app/A.swift": "let x = 1\n" }), process.env, "cobol");
 
   assert.equal(run.code, 2);
-  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cobol is not a language this check knows", "  why  it knows: rust, swift"]);
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cobol is not a language this check knows", "  why  it knows: rust, swift, swiftc"]);
 });
 
 test("Swift S17: a file that does not parse cannot be linted, and is named", () => {
@@ -426,4 +428,140 @@ test("Swift: when the tool fails without a finding, the check has not run", () =
 
   assert.equal(run.code, 2);
   assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swift-format", "  why  <unknown>: error: Unable to read configuration"]);
+});
+
+// ---------------------------------------------------------------- swiftc
+
+const W = (file, line, message) => ({ at: `${file}:${line}:9`, file, message });
+const K = (file, message) => ({ file, message, issue: "#1", reason: "r" });
+
+test("swiftc S3/S4: a known warning matches on file and message, whatever its line", () => {
+  const known = [K("app/Sources/P/a.swift", "variable 'x' was never used")];
+
+  assert.deepEqual(unmatched([W("app/Sources/P/a.swift", 2, "variable 'x' was never used")], known), { fresh: [], gone: [] });
+  assert.deepEqual(unmatched([W("app/Sources/P/a.swift", 40, "variable 'x' was never used")], known), { fresh: [], gone: [] });
+});
+
+test("swiftc: a warning with another message, or in another file, is new, and the entry is gone", () => {
+  const known = [K("app/Sources/P/a.swift", "variable 'x' was never used")];
+  const other = W("app/Sources/P/a.swift", 2, "variable 'y' was never used");
+  const elsewhere = W("app/Sources/P/b.swift", 2, "variable 'x' was never used");
+
+  assert.deepEqual(unmatched([other], known), { fresh: [other], gone: [1] });
+  assert.deepEqual(unmatched([elsewhere], known), { fresh: [elsewhere], gone: [1] });
+});
+
+test("swiftc S5/S17: an entry that no warning matched is named by its position in the list", () => {
+  const known = [K("app/Sources/P/a.swift", "m"), K("app/Sources/P/gone.swift", "m")];
+
+  assert.deepEqual(unmatched([W("app/Sources/P/a.swift", 2, "m")], known), { fresh: [], gone: [2] });
+});
+
+test("swiftc: one entry matches one warning, so a second identical warning is new", () => {
+  const twice = [W("app/Sources/P/a.swift", 2, "m"), W("app/Sources/P/a.swift", 9, "m")];
+
+  assert.deepEqual(unmatched(twice, [K("app/Sources/P/a.swift", "m")]), { fresh: [twice[1]], gone: [] });
+  assert.deepEqual(unmatched(twice, [K("app/Sources/P/a.swift", "m"), K("app/Sources/P/a.swift", "m")]), { fresh: [], gone: [] });
+});
+
+const PACKAGE = '// swift-tools-version: 6.0\nimport PackageDescription\nlet package = Package(name: "P", targets: [.target(name: "P")])\n';
+const UNUSED = "func f() {\n    let x = 1\n}\n";
+const LIST = "scripts/check/swiftc-known-warnings.json";
+
+/** A git repository with a one-target package under `app/` and a known-warnings list. */
+const packageRepo = (source, known = "[]\n") => repo({ "core/Cargo.toml": null, "app/Package.swift": PACKAGE, "app/Sources/P/a.swift": source, [LIST]: known });
+
+const lintSwiftc = (dir, env) => lint(dir, env, "swiftc");
+
+test("swiftc S1/S18: a package with no warning passes, says nothing, and leaves no build directory", () => {
+  const tmp = scratch();
+  const dir = packageRepo("func f() {}\n");
+  const before = execFileSync("git", ["status", "--porcelain", "--ignored"], { cwd: dir, encoding: "utf8" });
+
+  const run = lintSwiftc(dir, { ...process.env, TMPDIR: tmp });
+
+  assert.deepEqual({ code: run.code, err: run.err, out: run.out }, { ...CLEAN, out: "" });
+  assert.deepEqual(readdirSync(tmp).filter((name) => name.startsWith("tarmac-swiftc-") && !name.endsWith(".lock")), []);
+  assert.equal(execFileSync("git", ["status", "--porcelain", "--ignored"], { cwd: dir, encoding: "utf8" }), before);
+});
+
+test("swiftc S2/S6: a warning is a finding, on the first run and on the next one", () => {
+  const dir = packageRepo(UNUSED);
+
+  const runs = [lintSwiftc(dir), lintSwiftc(dir)];
+
+  for (const run of runs) {
+    assert.equal(run.code, 1);
+    assert.ok(run.err.some((line) => line.includes("warning: initialization of immutable value 'x' was never used")), run.err.join("\n"));
+    assert.deepEqual(report(run), [
+      "✗ lint: 1 finding from swiftc",
+      "  at   app/Sources/P/a.swift:2:9 swiftc-warning",
+      `  fix  correct each warning above; remove a known warning from ${LIST} when its code is fixed`,
+      "  then make lint ONLY=swiftc",
+      "",
+    ]);
+  }
+});
+
+test("swiftc S3: the same warning with an entry in the list passes", () => {
+  const message = "initialization of immutable value 'x' was never used; consider replacing with assignment to '_' or removing it";
+  const known = JSON.stringify([{ file: "app/Sources/P/a.swift", message, issue: "#1", reason: "a fixture" }]);
+
+  assert.equal(lintSwiftc(packageRepo(UNUSED, known)).code, 0);
+});
+
+test("swiftc S5: a list entry with no warning is a finding at its place in the list", () => {
+  const known = JSON.stringify([{ file: "app/Sources/P/a.swift", message: "m", issue: "#1", reason: "a fixture" }]);
+
+  const run = lintSwiftc(packageRepo("func f() {}\n", known));
+
+  assert.equal(run.code, 1);
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: 1 finding from swiftc", `  at   ${LIST}:1 known-warning-is-gone`]);
+});
+
+test("swiftc S7: a package that does not compile cannot be linted", () => {
+  const tmp = scratch();
+
+  const run = lintSwiftc(packageRepo("func f() {\n    let n: Int = missing\n    _ = n\n}\n"), { ...process.env, TMPDIR: tmp });
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run), [
+    "✗ lint: cannot run swiftc",
+    "  why  app/Sources/P/a.swift:2:18 error: cannot find 'missing' in scope",
+    "  fix  make the package build: cd app && swift build",
+    "  then make lint ONLY=swiftc",
+    "",
+  ]);
+  assert.deepEqual(readdirSync(tmp).filter((name) => name.startsWith("tarmac-swiftc-") && !name.endsWith(".lock")), []);
+});
+
+for (const [name, text] of [
+  ["not JSON", "[ not json"],
+  ["not a list", "{}"],
+  ["an entry with no reason", '[{"file": "a", "message": "m", "issue": "#1"}]'],
+  ["an entry with an empty reason", '[{"file": "a", "message": "m", "issue": "#1", "reason": ""}]'],
+]) {
+  test(`swiftc S16: a list that is ${name} cannot run the check`, () => {
+    const run = lintSwiftc(packageRepo("func f() {}\n", text));
+
+    assert.equal(run.code, 2);
+    assert.equal(report(run)[0], "✗ lint: cannot run swiftc");
+    assert.ok(report(run)[1].startsWith(`  why  ${LIST}`), report(run)[1]);
+  });
+}
+
+test("swiftc S16: a missing list cannot run the check", () => {
+  const dir = repo({ "core/Cargo.toml": null, "app/Package.swift": PACKAGE, "app/Sources/P/a.swift": "func f() {}\n" });
+
+  assert.deepEqual(report(lintSwiftc(dir)).slice(0, 2), ["✗ lint: cannot run swiftc", `  why  ${LIST} is missing`]);
+});
+
+test("swiftc S15: with no swift on the PATH the check cannot run", () => {
+  const bin = scratch();
+  symlinkSync(execFileSync("which", ["git"], { encoding: "utf8" }).trim(), join(bin, "git"));
+
+  const run = lintSwiftc(packageRepo(UNUSED), { ...process.env, PATH: bin });
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swiftc", "  why  swift is not on the PATH"]);
 });
