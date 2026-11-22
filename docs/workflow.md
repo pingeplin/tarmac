@@ -64,8 +64,10 @@ with `make dco-check`), and the `Co-Authored-By:` the repo uses for attribution.
 The `commit-msg` hook (`make setup` installs it) refuses a subject that is not
 `type(scope): summary` with one of the types in use, and a message with no
 sign-off of the author or committer; `pre-commit` runs the format check, the
-lints and the tree checks on what is staged, and `pre-push` runs `make test`. A hook can be skipped (`git commit --no-verify`,
-a clone with no `make setup`); CI runs the same checks and cannot.
+lints and the tree checks on what is staged, and `pre-push` runs `make test`.
+A hook can be skipped (`git commit --no-verify`, a clone with no `make setup`).
+CI cannot: it runs the same checks, all but the subject's form, which the
+squash merge sets.
 
 An agent in Claude Code gets the same checks sooner, from `.claude/settings.json`:
 after each edit of a Rust or Swift file (format in place, Swift lint,

@@ -114,7 +114,8 @@ editor/IDE may show stale SourceKit diagnostics — `make` is the source of trut
    format, lint, `arch-check` or `docs-check` finding in what is staged, or on
    a message that is not `type(scope): summary` with your sign-off; a push is
    refused when `make test` fails. `git commit --no-verify` skips them. CI runs
-   the same checks, so the hooks only tell you sooner. If you work with Claude
+   the same checks (all but the subject's form, which a maintainer sets at the
+   squash merge), so the hooks only tell you sooner. If you work with Claude
    Code, `.claude/settings.json` runs the format and lint checks after each
    edit and at the end of a turn, and refuses a command that kills a Tarmac
    process by name (see `CLAUDE.md`); these hooks do not run clippy.

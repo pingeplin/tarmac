@@ -228,6 +228,16 @@ test("a file named through a symlink to its directory is the same file", () => {
   assert.match(run.err, /^ {2}at {3}app\/New\.swift:2:13 NeverForceUnwrap$/m);
 });
 
+test("a file whose name starts with a dash is linted, and hides no other file's finding", () => {
+  const dir = repo();
+  write(dir, { "-dash.swift": "let x = 1\n", "app/a b.swift": UNWRAP });
+
+  const run = hook("stop", stopIn(dir));
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(run.err.match(/^ {2}at .*$/gm), ["  at   app/a b.swift:2:13 NeverForceUnwrap"]);
+});
+
 test("S22: stop_hook_active does not let other findings through", () => {
   const dir = repo();
   write(dir, { "app/New.swift": UNWRAP });
@@ -347,9 +357,24 @@ for (const command of [
   "pkill -f 't[a]rmac'",
   'pkill "tarmacd"',
   "pkill tar\\macd",
+  'cd "$(git rev-parse --show-toplevel)" && pkill -f TarmacApp',
+  'echo "$(date)"; pkill tarmacd',
+  'echo "`date`"; killall tarmacd',
+  'git commit -m "$(cat msg)" && pkill tarmacd',
+  'echo "a $(echo "b $(pkill tarmacd)") c"',
+  "(cd x; pkill tarmacd)",
+  "sudo sh -c 'pkill tarmacd'",
+  "nohup bash -c 'killall TarmacApp' &",
+  "kill $(pgrep tarmacd)",
+  "kill -9 `pgrep -f tarmac-app`",
+  "pgrep -f tarmac-app | xargs kill",
+  "cat <<EOF\nx\nEOF\npkill tarmacd",
+  "ls # a comment\npkill tarmacd",
+  "cat <<-EOF\n\tx\n\tEOF\npkill tarmacd",
+  'pkill -f "Tarmac$(echo App)"',
   "echo a\npkill tarmacd",
 ]) {
-  test(`S11/S26: \`${command.replace("\n", "\\n")}\` is refused`, () => {
+  test(`S11/S26: \`${command.replaceAll("\n", "\\n")}\` is refused`, () => {
     const run = hook("bash", bashOf(command));
 
     assert.equal(run.code, 2);
@@ -376,9 +401,18 @@ for (const command of [
   "sudo -u tarmac ls",
   "bash -c 'echo pkill tarmacd'",
   "pkill -f nginx; ls tarmac",
+  'echo "$(date) pkill tarmacd is forbidden"',
+  "gh pr create --body \"$(cat <<'EOF'\nIt refuses `pkill tarmacd` and\npkill -f tarmac-app\nEOF\n)\"",
+  "cat > x.md <<'EOF'\nnever `pkill -f tarmac-app`\nEOF",
+  "cat <<-EOF\n\tpkill tarmacd\n\tEOF\nls",
+  "pkill -f node # not tarmac",
+  "ls # ; pkill tarmacd",
+  "kill 1234; pgrep nginx",
+  "pgrep -fl tarmacd; kill -0 $$ 2>/dev/null",
+  "echo a#b; ls",
   SENT["PreToolUse.Bash"].tool_input.command,
 ]) {
-  test(`S11/S26: \`${command}\` passes`, () => {
+  test(`S11/S26: \`${command.replaceAll("\n", "\\n")}\` passes`, () => {
     assert.deepEqual(hook("bash", bashOf(command)), QUIET);
   });
 }

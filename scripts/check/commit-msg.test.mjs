@@ -37,8 +37,9 @@ for (const subject of ["fix the thing", "Fix(board): x", "fix(board) x", "fix: "
   });
 }
 
-test("S12: a merge needs no sign-off; every other message does", () => {
-  assert.equal(judge("Merge branch 'main' into x\n", [ME]), "");
+test("S12: a merge needs no sign-off; every other message does, whatever its subject", () => {
+  assert.equal(judge("Merge branch 'main' into x\n", [ME], true), "");
+  assert.equal(firstLine(judge("Merge branch 'main' into x\n", [ME])), "✗ commit-msg: the message has no Signed-off-by line");
   assert.equal(firstLine(judge("fix: y\n\nA body.\n", [ME])), "✗ commit-msg: the message has no Signed-off-by line");
   assert.equal(firstLine(judge('Revert "fix: y"\n', [ME])), "✗ commit-msg: the message has no Signed-off-by line");
 });
@@ -78,10 +79,15 @@ test("the script reads the message file and the identity git would commit with",
 
   const good = run(signed("fix: y"));
   const bad = run("fix the thing\n");
+  const unsigned = run("Merge branch 'main' into x\n");
+  writeFileSync(join(dir, ".git/MERGE_HEAD"), "0000000000000000000000000000000000000000\n");
+  const merge = run("Merge branch 'main' into x\n");
 
   assert.deepEqual([good.status, good.stderr], [0, ""]);
   assert.equal(bad.status, 1);
   assert.equal(bad.stderr.split("\n")[1], "  at   fix the thing");
+  assert.equal(unsigned.status, 1);
+  assert.deepEqual([merge.status, merge.stderr], [0, ""]);
 });
 
 test("S20: the types in CLAUDE.md are the types the script accepts", () => {
