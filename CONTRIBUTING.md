@@ -106,7 +106,8 @@ editor/IDE may show stale SourceKit diagnostics — `make` is the source of trut
 ## Submitting changes
 
 1. Fork the repository and create a topic branch from `main`.
-2. Make your change, keeping it focused and matching the surrounding code style.
+2. Make your change, keeping it focused. Format Rust with `make fmt`; in Swift,
+   match the surrounding code style.
 3. **Work test-first.** Tarmac requires TDD: write the failing test, watch it
    fail on the unmodified tree, then make it pass. The house style, the placement
    table (which layer a given test belongs in), the rule for the AppKit shell —

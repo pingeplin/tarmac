@@ -146,13 +146,14 @@ Full design: **[`docs/architecture.md`](docs/architecture.md)**. Wire contract:
 
 Requires macOS 26+, a Rust toolchain with edition 2024, and a Swift 6.2+
 toolchain (Xcode). Node.js is needed only for the repo's own checks
-(`make docs-check`, `make dco-check`) and the QA scripts. Everything goes
+(`make docs-check`, `make fmt-check`, `make dco-check`) and the QA scripts. Everything goes
 through the `Makefile`:
 
 ```sh
 make core    # cargo build the daemon, CLI, and protocol crate
 make app     # stage the pinned libghostty-vt, then swift build the native app
-make test    # docs-check + cargo test (core) + swift test (app)
+make test    # docs-check + check-script tests + cargo test (core) + swift test (app)
+make fmt     # format the Rust workspace (make fmt-check only reports)
 make run     # build and launch the dev app against this worktree's own daemon
 ```
 
@@ -202,7 +203,7 @@ always the one of the installed CLI.
 | `core/` | Rust cargo workspace (edition 2024): `tarmac-protocol` (wire types + codec + conformance vectors), `tarmacd` (the daemon), `tarmac-cli` (the `tarmac` CLI). |
 | `app/` | SwiftPM package (Swift 6, macOS 26+): `TarmacKit` (the Swift wire codec, the daemon client and every pure decision — where the tests are), `TarmacTerm` (the terminal card, on libghostty-vt), `TarmacApp` (the AppKit shell). |
 | `docs/` | Engineering docs — see the [docs map](#docs) below. |
-| `scripts/` | `fetch-ghostty-vt.sh` (stage the pinned XCFramework), `bundle.sh` (unsigned `.app`), `dmg.sh` (sign + notarized `.dmg`), `release.sh` (the whole release: `dmg.sh`, then the bump PR, the GitHub release and the Homebrew tap), `docs-check.mjs`, and the QA driver's scenario suites in `scripts/qa/`. |
+| `scripts/` | `fetch-ghostty-vt.sh` (stage the pinned XCFramework), `bundle.sh` (unsigned `.app`), `dmg.sh` (sign + notarized `.dmg`), `release.sh` (the whole release: `dmg.sh`, then the bump PR, the GitHub release and the Homebrew tap), `docs-check.mjs`, the check scripts and their tests in `scripts/check/` (`fmt.mjs`, the formatter check, and `report.mjs`, which words every failed check), and the QA driver's scenario suites in `scripts/qa/`. |
 | `qa/` | Hand-run QA records and the probe pages they use. Those dated before 2026-10 were run against the Tauri app. |
 | `packaging/` | The bundle's `Info.plist`, icon, and the Homebrew cask. |
 | `Makefile` | The build / test / run entrypoint. |

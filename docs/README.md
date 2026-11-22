@@ -34,11 +34,14 @@ file the PR deleted. Prose that is merely out of date is out of scope — that
 still needs a human or an agent reading the diff.
 
 The code is enforced by a second workflow, `.github/workflows/test.yml`: the
-`core` cargo suite and the app's `swift test`, both on macOS. A third,
+`core` cargo suite and the app's `swift test`, both on macOS.
+`.github/workflows/lint.yml` runs the formatter check (`make fmt-check`) and the
+tests of the check scripts; its jobs fail a pull request's run, and they block a
+merge only once the ruleset lists them. A fourth,
 `.github/workflows/dco.yml`, runs `scripts/dco-check.mjs` over the commits a pull
 request adds, requiring the DCO sign-off `CONTRIBUTING.md` asks for.
 
-All three are **gates**, not just reports: the `Protect main` ruleset requires
+`docs-check`, `test` and `dco` are **gates**, not just reports: the `Protect main` ruleset requires
 `docs-check`, `dco-check`, `core (cargo test)` and `app (swift test)` to pass, and requires the
 branch to be up to date with `main` before merging. `main` also refuses force-pushes and deletion, keeps a
 linear history, and takes changes only through a pull request. There are no
