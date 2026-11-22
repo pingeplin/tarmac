@@ -442,3 +442,12 @@ test("S21: make mutants hands its variables to the script as arguments", () => {
   assert.equal(said("BASE=origin/x"), "--base origin/x");
   assert.equal(said("ALL=1", "SHARD=3/8", "JOBS=4", "REPORT=1"), "--base origin/main --all --shard 3/8 --jobs 4 --report");
 });
+
+test("S29: the result files of an earlier run are not read as this run's", () => {
+  const dir = changed();
+  write(dir, { "core/mutants.out/caught.txt": "old one\nold two\n", "core/mutants.out/missed.txt": "old survivor\n" });
+  const run = mutants(dir, tool({ exit: 0 }));
+
+  assert.equal(run.code, 0);
+  assert.equal(run.err.split("\n").at(-2), "mutants: 0 changes to the code tried, each one seen by a test");
+});

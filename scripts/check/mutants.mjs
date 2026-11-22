@@ -128,6 +128,8 @@ function run(options, root, caller) {
     if (problem) return blocked(problem);
     const scope = diff ? ["--in-diff", join(temporary, "in.diff")] : options.shard ? ["--shard", options.shard] : [];
     if (diff) writeFileSync(scope[1], diff.text);
+    // The tool writes no result when it finds no mutant, and an earlier run's files would be read as this one's.
+    rmSync(join(core, "mutants.out"), { recursive: true, force: true });
     // The tool's progress is for the person who waits; stdout stays empty like the other checks'.
     const tool = spawnSync("cargo", ["mutants", "--workspace", "--no-shuffle", "--jobs", options.jobs, ...scope, "--output", core], { cwd: core, env, stdio: ["ignore", 2, 2] });
     return verdict(tool.status, join(core, "mutants.out"));
