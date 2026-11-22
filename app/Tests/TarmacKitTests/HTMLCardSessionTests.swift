@@ -207,12 +207,18 @@ final class HTMLCardSessionTests: XCTestCase {
     }
 
     private func registrations(_ effects: [Effect]) -> [String?] {
-        effects.compactMap { if case .dataFile(let file) = $0 { return .some(file) } else { return nil } }
+        effects.compactMap {
+            guard case .dataFile(let file) = $0 else { return nil }
+            return .some(file)
+        }
     }
 
     /// The reads the effects start.
     private func reads(_ effects: [Effect]) -> [HTMLCardSession.DataRead] {
-        effects.compactMap { if case .read(let read) = $0 { return read } else { return nil } }
+        effects.compactMap {
+            guard case .read(let read) = $0 else { return nil }
+            return read
+        }
     }
 
     private func reload(_ session: inout HTMLCardSession, naming name: String?) -> [Effect] {
@@ -572,7 +578,8 @@ final class HTMLCardSessionTests: XCTestCase {
         var given: [Int: [Effect]] = [:]
         for (index, each) in effects.enumerated()
         where each.contains(where: {
-            if case .pendingOverLimit = $0 { return true } else { return false }
+            guard case .pendingOverLimit = $0 else { return false }
+            return true
         }) {
             given[index + 1] = each
         }

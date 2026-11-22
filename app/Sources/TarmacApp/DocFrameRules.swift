@@ -8,6 +8,8 @@ import WebKit
 /// it is known there will be none.
 @MainActor
 final class DocFrameRules {
+    // predates the lint; decided in #476
+    // swift-format-ignore: NeverUseImplicitlyUnwrappedOptionals
     private(set) static var shared: DocFrameRules!
 
     static func install(socketPath: String) {
@@ -57,6 +59,6 @@ final class DocFrameRules {
         state = .settled(rules)
         let ready = waiting
         waiting = []
-        ready.forEach { $0(rules) }
+        for answer in ready { answer(rules) }
     }
 }

@@ -23,15 +23,17 @@ function repo(files) {
   const dir = scratch();
   const all = { "rust-toolchain.toml": TOOLCHAIN, "core/Cargo.toml": MANIFEST, ...files };
   for (const [path, text] of Object.entries(all)) {
+    if (text === null) continue;
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
   execFileSync("git", ["init", "-q"], { cwd: dir });
+  execFileSync("git", ["add", "-A"], { cwd: dir });
   return dir;
 }
 
-function lint(dir, env = process.env) {
-  const run = spawnSync(process.execPath, [SCRIPT], { cwd: dir, encoding: "utf8", env });
+function lint(dir, env = process.env, only = "rust") {
+  const run = spawnSync(process.execPath, [SCRIPT, ...(only ? [only] : [])], { cwd: dir, encoding: "utf8", env });
   return { code: run.status, out: run.stdout, err: run.stderr.split("\n") };
 }
 
@@ -194,4 +196,234 @@ test("the script still runs when it is started through a symlinked path", () => 
   const run = spawnSync(process.execPath, [join(link, "lint.mjs")], { cwd: dir, encoding: "utf8" });
 
   assert.equal(run.status, 1);
+});
+
+// ---------------------------------------------------------------- Swift
+
+const SWIFT_RULES = '{"version": 1, "indentation": {"spaces": 4}, "rules": {"NeverForceUnwrap": true}}\n';
+const UNWRAP = "func f(_ x: Int?) -> Int {\n    let y = x!\n    return y\n}\n";
+const FIX = "  fix  correct each one above; `make fmt` clears a layout finding; to keep one, put the reason in a comment and `// swift-format-ignore: <Rule>` on the next line";
+
+/** A git repository with a Swift configuration, every listed file tracked. */
+function swiftRepo(files) {
+  return repo({ ".swift-format": SWIFT_RULES, "core/Cargo.toml": null, ...files });
+}
+
+const lintSwift = (dir, env) => lint(dir, env, "swift");
+
+test("Swift S1: tracked files with no finding pass and say nothing", () => {
+  const run = lintSwift(swiftRepo({ "app/A.swift": "let x = 1\n" }));
+
+  assert.deepEqual({ code: run.code, err: run.err, out: run.out }, { ...CLEAN, out: "" });
+});
+
+test("Swift S2: a finding is shown as the tool wrote it, then named with the next command", () => {
+  const run = lintSwift(swiftRepo({ "app/A.swift": UNWRAP }));
+
+  assert.equal(run.code, 1);
+  assert.ok(run.err.some((line) => line.endsWith("warning: [NeverForceUnwrap] do not force unwrap 'x'")), run.err.join("\n"));
+  assert.deepEqual(report(run), ["✗ lint: 1 finding from swift-format", "  at   app/A.swift:2:13 NeverForceUnwrap", FIX, "  then make lint", ""]);
+});
+
+test("Swift S3: a directive with a reason on the line before it keeps the finding", () => {
+  const kept = "func f(_ x: Int?) -> Int {\n    // The caller checked it.\n    // swift-format-ignore: NeverForceUnwrap\n    let y = x!\n    return y\n}\n";
+
+  assert.deepEqual(lintSwift(swiftRepo({ "app/A.swift": kept })).code, 0);
+});
+
+const directive = (lines) => `func f(_ x: Int?) -> Int {\n${lines}\n    let y = x!\n    return y\n}\n`;
+for (const [name, source, at] of [
+  ["ignore-without-rule", directive("    // Why.\n    // swift-format-ignore"), "3:5"],
+  ["ignore-file", "// Why.\n// swift-format-ignore-file\nlet x = 1\n", "2:1"],
+  ["ignore-file", "// Why.\n// swift-format-ignore-file: NeverForceUnwrap\nlet x = 1\n", "2:1"],
+  ["ignore-unknown-rule", "func f() {\n    // Why.\n    // swift-format-ignore: NoSuchRule\n    let y = 1\n    _ = y\n}\n", "3:5"],
+  ["ignore-unknown-rule", directive("    // Why.\n    // swift-format-ignore: NeverForceUnwrap, NoSuchRule"), "3:5"],
+  ["ignore-without-reason", directive("    // swift-format-ignore: NeverForceUnwrap"), "2:5"],
+  ["ignore-without-reason", directive("    //\n    // swift-format-ignore: NeverForceUnwrap"), "3:5"],
+]) {
+  test(`Swift S4: ${name} at ${at} is the one finding`, () => {
+    const run = lintSwift(swiftRepo({ "app/A.swift": source }));
+
+    assert.equal(run.code, 1);
+    assert.deepEqual(report(run).slice(0, 2), ["✗ lint: 1 finding from swift-format", `  at   app/A.swift:${at} ${name}`]);
+  });
+}
+
+test("Swift S4: a directive whose previous line is another directive has no reason", () => {
+  const two = "func f(_ x: Int?) -> Int {\n    // Why.\n    // swift-format-ignore: NeverForceUnwrap\n    // swift-format-ignore: NeverForceUnwrap\n    let y = x!\n    return y\n}\n";
+
+  const run = lintSwift(swiftRepo({ "app/A.swift": two }));
+
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: 1 finding from swift-format", "  at   app/A.swift:4:5 ignore-without-reason"]);
+});
+
+test("Swift S5: an untracked file and a #! script are not linted", () => {
+  const dir = swiftRepo({ "tools/run.swift": `#!/usr/bin/env swift\n// swift-format-ignore\n${UNWRAP}` });
+  writeFileSync(join(dir, "Stray.swift"), `// swift-format-ignore\n${UNWRAP}`);
+
+  assert.equal(lintSwift(dir).code, 0);
+});
+
+test("Swift S6: with no language named, each language writes its own block, clippy's first", () => {
+  const dir = swiftRepo({ "core/Cargo.toml": MANIFEST, "core/src/main.rs": "fn main() {\n    todo!()\n}\n", "app/A.swift": UNWRAP });
+
+  const run = lint(dir, process.env, null);
+
+  assert.equal(run.code, 1);
+  assert.deepEqual(run.err.filter((line) => line.startsWith("✗ ")), ["✗ lint: 1 finding from clippy", "✗ lint: 1 finding from swift-format"]);
+});
+
+test("Swift S7: a layout finding is a finding, named as the tool names it", () => {
+  const run = lintSwift(swiftRepo({ "app/A.swift": "let  x = 1\n" }));
+
+  assert.equal(run.code, 1);
+  assert.deepEqual(report(run).slice(0, 3), ["✗ lint: 1 finding from swift-format", "  at   app/A.swift:1:4 Spacing", FIX]);
+});
+
+/** A PATH with git and a `swift` that answers `--version` as told and is the real one otherwise. */
+function swiftReporting(answer) {
+  const bin = scratch();
+  symlinkSync(execFileSync("which", ["git"], { encoding: "utf8" }).trim(), join(bin, "git"));
+  const real = execFileSync("which", ["swift"], { encoding: "utf8" }).trim();
+  writeFileSync(join(bin, "swift"), `#!/bin/sh\n[ "$2" = "--version" ] && { ${answer}; exit; }\nexec ${real} "$@"\n`, { mode: 0o755 });
+  return { ...process.env, PATH: bin };
+}
+
+test("Swift S8: another minor version of swift-format cannot run the check", () => {
+  const run = lintSwift(swiftRepo({ "app/A.swift": UNWRAP }), swiftReporting("echo 5.9.2"));
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swift-format", "  why  swift-format 5.9.2 is on the PATH; this tree is formatted with 6.3 or 6.4"]);
+});
+
+test("Swift S8: with no swift on the PATH the check cannot run", () => {
+  const bin = scratch();
+  symlinkSync(execFileSync("which", ["git"], { encoding: "utf8" }).trim(), join(bin, "git"));
+
+  const run = lintSwift(swiftRepo({ "app/A.swift": UNWRAP }), { ...process.env, PATH: bin });
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swift-format", "  why  swift is not on the PATH"]);
+});
+
+test("Swift S9: a rule the running swift-format does not have cannot be silently off", () => {
+  const config = '{"version": 1, "rules": {"NeverForceUnwrap": true, "ARuleOfTheFuture": true}}\n';
+
+  const run = lintSwift(swiftRepo({ ".swift-format": config, "app/A.swift": "let x = 1\n" }));
+
+  assert.equal(run.code, 2);
+  assert.equal(report(run)[0], "✗ lint: cannot run swift-format");
+  assert.match(report(run)[1], /^ {2}why {2}ARuleOfTheFuture is not a rule of swift-format \d+\.\d+/);
+});
+
+test("S9: a name that is not a language is refused with the names that are", () => {
+  const run = lint(swiftRepo({ "app/A.swift": "let x = 1\n" }), process.env, "cobol");
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cobol is not a language this check knows", "  why  it knows: rust, swift"]);
+});
+
+test("Swift S17: a file that does not parse cannot be linted, and is named", () => {
+  const run = lintSwift(swiftRepo({ "app/A.swift": "let x = (\n" }));
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swift-format", "  why  app/A.swift:1:10 error: expected value and ')' to end tuple"]);
+});
+
+test("Swift S18: a Rust finding and a swift-format that cannot run: both blocks, and the exit code says cannot run", () => {
+  const dir = swiftRepo({ "core/Cargo.toml": MANIFEST, "core/src/main.rs": "fn main() {\n    todo!()\n}\n", "app/A.swift": UNWRAP });
+  const old = swiftReporting("echo 5.9.2");
+
+  const run = lint(dir, { ...old, PATH: `${old.PATH}:${process.env.PATH}` }, null);
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(run.err.filter((line) => line.startsWith("✗ ")), ["✗ lint: 1 finding from clippy", "✗ lint: cannot run swift-format"]);
+});
+
+test("Swift S19: naming one language runs only that one", () => {
+  const dir = swiftRepo({ "core/Cargo.toml": MANIFEST, "core/src/main.rs": "fn main() {\n    todo!()\n}\n", "app/A.swift": UNWRAP });
+
+  assert.deepEqual(lintSwift(dir).err.filter((line) => line.startsWith("✗ ")), ["✗ lint: 1 finding from swift-format"]);
+  assert.deepEqual(lint(dir).err.filter((line) => line.startsWith("✗ ")), ["✗ lint: 1 finding from clippy"]);
+});
+
+test("Swift S20: a directive as a trailing comment has no effect, and is named so", () => {
+  const trailing = "func f(_ x: Int?) -> Int {\n    let y = x!  // swift-format-ignore: NeverForceUnwrap\n    return y\n}\n";
+
+  const run = lintSwift(swiftRepo({ "app/A.swift": trailing }));
+
+  assert.deepEqual(report(run).slice(0, 3), [
+    "✗ lint: 2 findings from swift-format",
+    "  at   app/A.swift:2:13 NeverForceUnwrap",
+    "       app/A.swift:2:17 ignore-has-no-effect",
+  ]);
+});
+
+test("Swift: a directive may name two rules", () => {
+  const config = '{"version": 1, "indentation": {"spaces": 4}, "rules": {"NeverForceUnwrap": true, "NeverUseForceTry": true}}\n';
+  const kept = "func f(_ x: Int?) -> Int {\n    // The caller checked it.\n    // swift-format-ignore: NeverForceUnwrap, NeverUseForceTry\n    let y = x!\n    return y\n}\n";
+
+  assert.equal(lintSwift(swiftRepo({ ".swift-format": config, "app/A.swift": kept })).code, 0);
+});
+
+test("Swift: a doc comment line is not a reason", () => {
+  const source = "func f(_ x: Int?) -> Int {\n    /// Not a reason.\n    // swift-format-ignore: NeverForceUnwrap\n    let y = x!\n    return y\n}\n";
+
+  const run = lintSwift(swiftRepo({ "app/A.swift": source }));
+
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: 1 finding from swift-format", "  at   app/A.swift:3:5 ignore-without-reason"]);
+});
+
+test("with no language named, a repository with no Rust file lints only its Swift", () => {
+  const run = lint(swiftRepo({ "app/A.swift": UNWRAP }), process.env, null);
+
+  assert.equal(run.code, 1);
+  assert.deepEqual(run.err.filter((line) => line.startsWith("✗ ")), ["✗ lint: 1 finding from swift-format"]);
+});
+
+test("Swift: a configuration that is not JSON cannot run the check", () => {
+  const run = lintSwift(swiftRepo({ ".swift-format": "{ not json\n", "app/A.swift": "let x = 1\n" }));
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swift-format", "  why  .swift-format is not valid JSON"]);
+});
+
+test("Swift: a second configuration below the root cannot run the check, because it could turn rules off", () => {
+  const run = lintSwift(swiftRepo({ "app/.swift-format": '{"version": 1, "rules": {"NeverForceUnwrap": false}}\n', "app/A.swift": UNWRAP }));
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swift-format", "  why  app/.swift-format: only the configuration at the repository root is read"]);
+});
+
+test("Swift: an untracked configuration above a tracked Swift file is refused too: the tool would obey it", () => {
+  const dir = swiftRepo({ "app/A.swift": UNWRAP });
+  writeFileSync(join(dir, "app/.swift-format"), '{"version": 1, "rules": {"NeverForceUnwrap": false}}\n');
+
+  const run = lintSwift(dir);
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run).slice(0, 3), [
+    "✗ lint: cannot run swift-format",
+    "  why  app/.swift-format: only the configuration at the repository root is read",
+    "  fix  remove it, and put its settings in .swift-format at the repository root",
+  ]);
+});
+
+test("Swift: a configuration whose rules are not a table cannot run the check", () => {
+  const run = lintSwift(swiftRepo({ ".swift-format": '{"version": 1, "rules": ["NeverForceUnwrap"]}\n', "app/A.swift": "let x = 1\n" }));
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swift-format", "  why  .swift-format: rules is not a table of rule names"]);
+});
+
+test("Swift: when the tool fails without a finding, the check has not run", () => {
+  const bin = scratch();
+  const real = execFileSync("which", ["swift"], { encoding: "utf8" }).trim();
+  const script = `#!/bin/sh\n[ "$2" = "lint" ] && { echo '<unknown>: error: Unable to read configuration' >&2; exit 1; }\nexec ${real} "$@"\n`;
+  writeFileSync(join(bin, "swift"), script, { mode: 0o755 });
+
+  const run = lintSwift(swiftRepo({ "app/A.swift": "let x = 1\n" }), { ...process.env, PATH: `${bin}:${process.env.PATH}` });
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swift-format", "  why  <unknown>: error: Unable to read configuration"]);
 });

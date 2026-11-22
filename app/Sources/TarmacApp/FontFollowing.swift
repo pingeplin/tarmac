@@ -14,7 +14,7 @@ extension NSView {
     /// that measures its subviews finds them already changed. A culled card
     /// is hidden but still in the tree, so it is told too.
     func tellTree(_ tell: (NSView) -> Void) {
-        subviews.forEach { $0.tellTree(tell) }
+        for subview in subviews { subview.tellTree(tell) }
         tell(self)
     }
 

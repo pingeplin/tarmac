@@ -16,7 +16,11 @@ import TarmacTerm
 final class Demo: NSObject, NSApplicationDelegate {
     let client = DaemonClient()
     let termID = BootTerminal.mint()
+    // predates the lint; decided in #476
+    // swift-format-ignore: NeverUseImplicitlyUnwrappedOptionals
     var window: NSWindow!
+    // predates the lint; decided in #476
+    // swift-format-ignore: NeverUseImplicitlyUnwrappedOptionals
     var terminal: TerminalView!
     let environment = ProcessInfo.processInfo.environment
 
@@ -28,6 +32,8 @@ final class Demo: NSObject, NSApplicationDelegate {
             styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false
         )
         window.title = "tarmac-term-demo"
+        // predates the lint; decided in #476
+        // swift-format-ignore: NeverUseForceTry
         terminal = try! TerminalView(frame: NSRect(origin: .zero, size: window.contentLayoutRect.size))
         terminal.autoresizingMask = [.width, .height]
         window.contentView?.addSubview(terminal)

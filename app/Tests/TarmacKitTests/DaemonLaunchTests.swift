@@ -67,10 +67,12 @@ final class DaemonLaunchTests: XCTestCase {
     func testInjectCLIPathGrid() {
         let cases: [(base: String, cliDir: String, expected: String)] = [
             ("/usr/bin:/bin", "/opt/homebrew/bin", "/opt/homebrew/bin:/usr/bin:/bin"),  // S3: prepend
-            ("/usr/bin:/opt/homebrew/bin", "/opt/homebrew/bin", "/usr/bin:/opt/homebrew/bin"),  // S6: already present → unchanged
+            // S6: already present → unchanged
+            ("/usr/bin:/opt/homebrew/bin", "/opt/homebrew/bin", "/usr/bin:/opt/homebrew/bin"),
             ("", "/opt/homebrew/bin", "/opt/homebrew/bin"),  // S7: empty base
             ("/usr/bin:", "/x", "/x:/usr/bin:"),  // S8: trailing empty segment preserved
-            ("/opt/homebrew/binfoo", "/opt/homebrew/bin", "/opt/homebrew/bin:/opt/homebrew/binfoo"),  // S9: substring is not a segment
+            // S9: substring is not a segment
+            ("/opt/homebrew/binfoo", "/opt/homebrew/bin", "/opt/homebrew/bin:/opt/homebrew/binfoo"),
             ("/usr/bin:/bin", "", "/usr/bin:/bin"),  // S12: empty cliDir → unchanged
         ]
         for c in cases {

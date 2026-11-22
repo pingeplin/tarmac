@@ -24,7 +24,7 @@ final class OffscreenHints {
     /// A pill is measured once, for the font it was built with: after a font
     /// change the next `show` builds every pill again.
     func forget() {
-        pills.values.forEach { $0.removeFromSuperview() }
+        for pill in pills.values { pill.removeFromSuperview() }
         pills = [:]
     }
 

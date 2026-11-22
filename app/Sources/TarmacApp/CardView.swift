@@ -180,12 +180,12 @@ final class CardView: NSView, ThemeFollowing {
         appliedChromeScale = chromeScale
         func walk(_ layer: CALayer, _ contentsScale: CGFloat) {
             layer.contentsScale = contentsScale
-            layer.sublayers?.forEach { walk($0, contentsScale) }
+            for sublayer in layer.sublayers ?? [] { walk(sublayer, contentsScale) }
         }
         func walkViews(_ view: NSView, _ inherited: CGFloat) {
             let contentsScale = view === bodyHost ? bodyScale : inherited
             if let layer = view.layer { walk(layer, contentsScale) }
-            view.subviews.forEach { walkViews($0, contentsScale) }
+            for subview in view.subviews { walkViews(subview, contentsScale) }
         }
         walkViews(self, chromeScale)
         // The terminal draws only when asked; its raster must not wait for the

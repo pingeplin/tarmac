@@ -10,45 +10,17 @@
 // A check must not exit 1 for a reason that `--write` cannot fix: that case is
 // "could not run".
 
-import { execFile, execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 
 import { repoRoot, startedAs } from "./git.mjs";
+import { LANGUAGES, notOnPath, sources, unusable } from "./languages.mjs";
 import { cannotRunFor, failure } from "./report.mjs";
 
 const RULE = "fmt";
 const CHECK = "make fmt-check";
-
-// Each language: the files it owns, and the command that reads one file on
-// stdin and writes the formatted text to stdout. The command runs in the
-// file's directory, which is where the formatter looks for its configuration.
-const LANGUAGES = {
-  rust: {
-    tool: "rustfmt",
-    glob: "*.rs",
-    // A bare rustfmt takes edition 2015; the workspace is edition 2024 (core/Cargo.toml).
-    command: ["rustfmt", "--edition", "2024"],
-    explain: (path) => `rustfmt --edition 2024 --check ${path}`,
-    install: "rustup component add rustfmt",
-  },
-  swift: {
-    tool: "swift-format",
-    glob: "*.swift",
-    command: ["swift", "format", "format", "-"],
-    explain: (path) => `swift format lint ${path}`,
-    install: "install Xcode, or a Swift toolchain from https://swift.org/install",
-    // Rust's formatter version is pinned by rust-toolchain.toml. Swift has no
-    // such file, and a minor version can lay code out differently, so only the
-    // versions seen to give this tree the same bytes are let through: 6.4.4
-    // formatted it, and 6.3.0 (the CI image's) accepts every file of it.
-    version: { command: ["swift", "format", "--version"], expect: ["6.3", "6.4"], fix: "use a Swift 6.3 or 6.4 toolchain, then run it again" },
-    // swift-format 6.4 joins the comment lines under a `#!` line onto that
-    // line, and joins one more on every run, so a script is not formatted.
-    leaves: (text) => text.startsWith("#!"),
-  },
-};
 
 export const notFormatted = (paths) =>
   failure({
@@ -65,7 +37,7 @@ const cannotRun = cannotRunFor(RULE, CHECK);
 function formatted([command, ...args], cwd, text) {
   return new Promise((done) => {
     const child = execFile(command, args, { cwd, encoding: "utf8", maxBuffer: 64 << 20 }, (error, stdout, stderr) => {
-      if (!error) done({ text: stdout });
+      if (!error) done({ formatted: stdout });
       else if (error.code === "ENOENT") done({ missing: true });
       else done({ refused: firstError(stderr) ?? `exit ${error.code ?? error.signal}` });
     });
@@ -91,44 +63,25 @@ async function each(items, limit, work) {
   return results;
 }
 
-const notOnPath = (language) => ({
-  blocked: cannotRun(`cannot run ${language.tool}`, [`${language.command[0]} is not on the PATH`], language.install),
-});
-
-/** The reason the language's formatter must not run here, if there is one. */
-function unusable(language) {
-  if (!language.version) return null;
-  const { command, expect, fix } = language.version;
-  const asked = spawnSync(command[0], command.slice(1), { encoding: "utf8" });
-  if (asked.error?.code === "ENOENT") return notOnPath(language);
-  const found = asked.status === 0 ? asked.stdout.split("\n")[0].trim() : null;
-  if (expect.some((minor) => found === minor || found?.startsWith(`${minor}.`))) return null;
-  const have = found ? `${language.tool} ${found} is on the PATH` : `${command.join(" ")} did not answer`;
-  return { blocked: cannotRun(`cannot run ${language.tool}`, [`${have}; this tree is formatted with ${expect.join(" or ")}`], fix) };
-}
-
 /** Runs one language; returns the report it owes, if any, and the files it found unformatted. */
 async function run(language, root, write) {
-  const listed = execFileSync("git", ["ls-files", "-z", "--", language.glob], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
-  // A tracked path that is no longer a file (deleted or replaced, not yet staged) has no text to format.
-  const paths = listed.filter((path) => statSync(join(root, path), { throwIfNoEntry: false })?.isFile());
-  if (paths.length === 0) return {};
+  const files = sources(language, root);
+  if (files.length === 0) return {};
+  const blocked = (parts) => ({ blocked: cannotRun(parts.summary, parts.why, parts.fix) });
   const reason = unusable(language);
-  if (reason) return reason;
-  const results = await each(paths, availableParallelism(), async (path) => {
-    const file = join(root, path);
-    const before = readFileSync(file, "utf8");
-    if (language.leaves?.(before)) return { path, file, before, text: before };
-    return { path, file, before, ...(await formatted(language.command, dirname(file), before)) };
-  });
-  if (results.some((r) => r.missing)) return notOnPath(language);
+  if (reason) return blocked(reason);
+  const results = await each(files, availableParallelism(), async (source) => ({
+    ...source,
+    ...(await formatted(language.command, dirname(source.file), source.text)),
+  }));
+  if (results.some((r) => r.missing)) return blocked(notOnPath(language));
   const refused = results.filter((r) => r.refused);
   if (refused.length > 0) {
     const why = refused.map((r) => `${r.path}: ${r.refused}`);
     return { blocked: cannotRun(`cannot run ${language.tool}`, why, `see the whole error with: ${language.explain(refused[0].path)}`) };
   }
-  const changed = results.filter((r) => r.text !== r.before);
-  if (write) changed.forEach((r) => writeFileSync(r.file, r.text));
+  const changed = results.filter((r) => r.formatted !== r.text);
+  if (write) changed.forEach((r) => writeFileSync(r.file, r.formatted));
   return { unformatted: write ? [] : changed.map((r) => r.path) };
 }
 

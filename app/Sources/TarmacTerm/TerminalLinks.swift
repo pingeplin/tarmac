@@ -39,7 +39,11 @@ private struct TextLine {
 /// Plain-text URL detection over rendered rows.
 enum TerminalLinks {
     private static let scheme = "(https?|HTTPS?)://"
+    // predates the lint; decided in #476
+    // swift-format-ignore: NeverUseForceTry
     private static let startsWithScheme = try! NSRegularExpression(pattern: "^" + scheme)
+    // predates the lint; decided in #476
+    // swift-format-ignore: NeverUseForceTry
     /// xterm.js's web-links pattern, so the native card links exactly what the
     /// xterm card did: http(s) only, trailing punctuation left out.
     private static let pattern = try! NSRegularExpression(

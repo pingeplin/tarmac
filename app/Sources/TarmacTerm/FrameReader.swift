@@ -25,8 +25,14 @@ final class FrameReader {
         try check(ghostty_render_state_row_iterator_new(nil, &iterator), "row_iterator_new")
         var rowCells: GhosttyRenderStateRowCells?
         try check(ghostty_render_state_row_cells_new(nil, &rowCells), "row_cells_new")
+        // predates the lint; decided in #476
+        // swift-format-ignore: NeverForceUnwrap
         self.state = state!
+        // predates the lint; decided in #476
+        // swift-format-ignore: NeverForceUnwrap
         self.iterator = iterator!
+        // predates the lint; decided in #476
+        // swift-format-ignore: NeverForceUnwrap
         self.rowCells = rowCells!
     }
 

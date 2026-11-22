@@ -49,6 +49,7 @@ public enum ZoomMode: String, Equatable, Sendable {
     ///   - inForce: the mode already adopted for THIS load, or nil when no genuine
     ///     ready has been honored yet.
     ///   - meta: this ready's `<meta name="tarmac-zoom">` content (nil = no tag).
+    /// - Returns: the mode to adopt, the console line to log, and whether to magnify.
     public static func ready(inForce: ZoomMode?, meta: String?) -> ReadyActions {
         let declaredMode = declared(metaContent: meta)
         let effective = inForce ?? declaredMode

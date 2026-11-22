@@ -157,7 +157,9 @@ public enum DevSnapshot {
 
     /// The overlays that hold first responder while they are up.
     public enum Overlay: String, Equatable, Sendable {
-        case switcher, restoreCard = "restore_card", inbox
+        case switcher
+        case restoreCard = "restore_card"
+        case inbox
     }
 
     /// Who holds keyboard focus — a different fact from the selected card;
