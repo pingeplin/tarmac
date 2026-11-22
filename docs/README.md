@@ -37,8 +37,10 @@ The code is enforced by a second workflow, `.github/workflows/test.yml`: the
 `core` cargo suite and the app's `swift test`, both on macOS.
 `.github/workflows/lint.yml` runs the formatter check (`make fmt-check`), the
 Rust and Swift lints and the Swift compiler's warnings (`make lint`), the architecture check (`make arch-check`) and the tests of the check scripts; its jobs fail a pull request's run, and they block a
-merge only once the ruleset lists them. A fourth,
-`.github/workflows/dco.yml`, runs `scripts/dco-check.mjs` over the commits a pull
+merge only once the ruleset lists them. `.github/workflows/mutants.yml` runs
+`make mutants` on the Rust lines a pull request changed (and weekly over the
+whole workspace, as a report); it too blocks a merge only once the ruleset
+lists it. `.github/workflows/dco.yml` runs `scripts/dco-check.mjs` over the commits a pull
 request adds, requiring the DCO sign-off `CONTRIBUTING.md` asks for.
 
 `docs-check`, `test` and `dco` are **gates**, not just reports: the `Protect main` ruleset requires
@@ -112,7 +114,8 @@ M3 is tracked per GitHub issue; see [`workflow.md`](workflow.md).
 
 ## When you add a doc
 
-1. Put a status banner on line 3, right under the `#` title.
+1. Put a status banner on line 3, right under the `#` title (the check reads
+   the first 12 lines).
 2. ACTIVE goes at `docs/` root; PROPOSED goes in `docs/proposed/`; a record of a
    change you just shipped goes in `docs/designs/` and is **born HISTORICAL**. A
    design record for a change you investigated but did **not** build also goes in
