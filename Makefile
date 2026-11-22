@@ -81,11 +81,13 @@ fmt:
 fmt-check:
 	cd $(ROOT) && node scripts/check/fmt.mjs --check $(ONLY)
 
-# The lint check (scripts/check/lint.mjs): clippy over the workspace with the
-# lint table of core/Cargo.toml, where a warning is a failure. Not part of
-# `test`: it compiles the workspace a second way. CI runs it (lint.yml).
+# The lint check (scripts/check/lint.mjs), where a warning is a failure: clippy
+# over the workspace with the lint table of core/Cargo.toml, and the lint rules
+# of swift-format (.swift-format) over the tracked Swift files. ONLY=rust or
+# ONLY=swift limits a run. Not part of `test`: clippy compiles the workspace a
+# second way. CI runs it (lint.yml).
 lint:
-	cd $(ROOT) && node scripts/check/lint.mjs
+	cd $(ROOT) && node scripts/check/lint.mjs $(ONLY)
 
 # The unit tests of the check scripts themselves. They make small git
 # repositories in the temp directory and run the real formatter there.

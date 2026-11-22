@@ -78,7 +78,25 @@ jobs:
           workspaces: core
 
       - name: make lint
-        run: make lint
+        run: make lint ONLY=rust
+
+  lint-swift:
+    name: lint (swift)
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The check refuses a swift-format that lacks a rule .swift-format turns
+      # on, so a rule cannot be silently off here; the log shows the version.
+      - name: linter version
+        run: swift format --version
+
+      - name: make lint
+        run: make lint ONLY=swift
 
   check-scripts:
     name: check scripts (node --test)
