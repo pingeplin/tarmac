@@ -93,6 +93,13 @@ test("S3/S29: a file the checks do not own is left alone, with no output", () =>
   assert.equal(readFileSync(join(outside, "Loose.swift"), "utf8"), "let  x=1\n");
 });
 
+test("S3: an edit of an ignored file runs no check at all, whatever state the tree is in", () => {
+  const dir = repo({ ".gitignore": "build/\n", "app/Sources/TarmacKit/A.swift": "import AppKit\n", "app/Tests/TarmacKitTests/ATests.swift": "" });
+  write(dir, { "build/Gen.swift": "let x = 1\n" });
+
+  assert.deepEqual(hook("edit", editOf(join(dir, "build/Gen.swift"))), QUIET);
+});
+
 test("S4: a TarmacKit file that now imports AppKit is refused by the tree's rules", () => {
   const dir = repo({ "app/Sources/TarmacKit/A.swift": "import Foundation\n", "app/Tests/TarmacKitTests/ATests.swift": "" });
   write(dir, { "app/Sources/TarmacKit/A.swift": "import AppKit\n" });

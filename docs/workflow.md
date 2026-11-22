@@ -61,6 +61,10 @@ Conventional Commits (whole history conforms). End the message with **two
 trailers**: the DCO `Signed-off-by:` that `CONTRIBUTING.md` requires
 (`git commit -s`, enforced on PRs by `.github/workflows/dco.yml` — check locally
 with `make dco-check`), and the `Co-Authored-By:` the repo uses for attribution.
+The `commit-msg` hook (`make setup` installs it) refuses a subject that is not
+`type(scope): summary` with one of the types in use, and a message with no
+sign-off of the author or committer; `pre-commit` runs the format check, the
+lints and the tree checks on what is staged, and `pre-push` runs `make test`.
 `make test` must pass first; see [`coding-style.md`](coding-style.md) for the TDD
 workflow it gates.
 

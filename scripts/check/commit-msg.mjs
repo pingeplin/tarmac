@@ -36,7 +36,7 @@ export function judge(message, emails) {
     signed.length > 0 ? "the Signed-off-by line is not the author's or the committer's" : "the message has no Signed-off-by line",
     [subject],
     why,
-    "git commit --amend -s   (or commit with -s)",
+    "commit again with -s: git commit -s -F .git/COMMIT_EDITMSG",
   );
 }
 
