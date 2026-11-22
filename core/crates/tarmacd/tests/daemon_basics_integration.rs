@@ -303,7 +303,7 @@ fn a_daemon_started_at_256_files_gives_its_shells_open_max_and_keeps_the_hard_li
     assert_eq!(unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) }, 0);
     let hard = limit.rlim_max;
     let mut per_proc: libc::c_int = 0;
-    let mut size = std::mem::size_of::<libc::c_int>();
+    let mut size = size_of::<libc::c_int>();
     // SAFETY: the name is NUL-terminated and `per_proc` is `size` bytes.
     let rc = unsafe {
         libc::sysctlbyname(

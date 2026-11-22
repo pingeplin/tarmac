@@ -14,3 +14,6 @@ tokio = { workspace = true, features = ["io-util"], optional = true }
 
 [dev-dependencies]
 serde_json.workspace = true
+
+[lints]
+workspace = true

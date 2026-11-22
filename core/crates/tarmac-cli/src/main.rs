@@ -99,22 +99,23 @@ fn run(args: &[String]) -> i32 {
         Some("events") => events::run(&args[1..]),
         Some("wait") => wait::run(&args[1..]),
         Some(wait::STAT_HELPER) => wait::stat_helper(&args[1..]),
-        Some("open") => match &args[1..] {
-            [path] => match open(path) {
-                Ok(line) => {
-                    println!("{line}");
-                    0
+        Some("open") => {
+            if let [path] = &args[1..] {
+                match open(path) {
+                    Ok(line) => {
+                        println!("{line}");
+                        0
+                    }
+                    Err(line) => {
+                        eprintln!("tarmac: {line}");
+                        1
+                    }
                 }
-                Err(line) => {
-                    eprintln!("tarmac: {line}");
-                    1
-                }
-            },
-            _ => {
+            } else {
                 eprintln!("tarmac: usage: tarmac open <path>");
                 2
             }
-        },
+        }
         Some(other) => {
             eprintln!("tarmac: unknown command '{other}' (see tarmac --help)");
             2

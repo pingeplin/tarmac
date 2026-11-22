@@ -343,14 +343,14 @@ struct SpawnOpts<'a> {
 /// it took to return.
 async fn spawn(daemon: &Arc<Daemon>, term_id: &str, argv: &[&str], opts: SpawnOpts<'_>) -> Duration {
     let (daemon, term_id) = (daemon.clone(), term_id.to_owned());
-    let cmd = argv.iter().map(|a| a.to_string()).collect();
+    let cmd = argv.iter().map(ToString::to_string).collect();
     let owned = |s: Option<&str>| s.map(str::to_owned);
     let (board, inherit_cwd_from, succeeds) = (owned(opts.board), owned(opts.inherit_cwd_from), owned(opts.succeeds));
     let cwd = opts.cwd.map(|c| c.to_string_lossy().into_owned());
     let started = std::time::Instant::now();
     within(tokio::spawn(async move {
         crate::conn::spawn_requested(&daemon, term_id, (80, 24), cwd, Some(cmd), board, inherit_cwd_from, succeeds)
-            .await
+            .await;
     }))
     .await;
     started.elapsed()

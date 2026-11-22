@@ -15,7 +15,8 @@ import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { dirname, join } from "node:path";
 
-import { failure } from "./report.mjs";
+import { repoRoot, startedAs } from "./git.mjs";
+import { cannotRunFor, failure } from "./report.mjs";
 
 const RULE = "fmt";
 const CHECK = "make fmt-check";
@@ -58,7 +59,7 @@ export const notFormatted = (paths) =>
     then: CHECK,
   });
 
-const cannotRun = (summary, why, fix) => failure({ rule: RULE, summary, why, fix, then: CHECK });
+const cannotRun = cannotRunFor(RULE, CHECK);
 
 /** The formatted text of one file, or the reason the formatter gave none. */
 function formatted([command, ...args], cwd, text) {
@@ -131,20 +132,12 @@ async function run(language, root, write) {
   return { unformatted: write ? [] : changed.map((r) => r.path) };
 }
 
-function gitRoot() {
-  try {
-    return execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch {
-    return null;
-  }
-}
-
 async function main([mode, only]) {
   const names = Object.keys(LANGUAGES);
   const usage = (summary) => cannotRun(summary, [`it knows: ${names.join(", ")}`], `make fmt-check ONLY=${names[0]}`);
   if (mode !== "--check" && mode !== "--write") return { code: 2, text: usage("the mode must be --check or --write") };
   if (only && !names.includes(only)) return { code: 2, text: usage(`${only} is not a language this check knows`) };
-  const root = gitRoot();
+  const root = repoRoot();
   if (!root) return { code: 2, text: cannotRun("not in a git repository", [], "run it from inside the repository") };
 
   const done = await Promise.all((only ? [only] : names).map((name) => run(LANGUAGES[name], root, mode === "--write")));
@@ -159,7 +152,7 @@ function exitCode(blocked, unformatted) {
   return unformatted.length > 0 ? 1 : 0;
 }
 
-if (import.meta.filename === process.argv[1]) {
+if (startedAs(import.meta)) {
   const { code, text } = await main(process.argv.slice(2));
   process.stderr.write(text);
   process.exitCode = code;

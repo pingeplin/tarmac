@@ -32,7 +32,7 @@ async fn s28_an_app_that_never_answers_is_no_answer_at_the_bound_and_a_late_answ
 }
 
 /// A canonical shell `T`, whose held inputs wait at most `hold`, and its handle.
-async fn canonical_term(r: &Rig, hold: Duration) -> Arc<crate::term::TermHandle> {
+async fn canonical_term(r: &Rig, hold: Duration) -> Arc<TermHandle> {
     let plan = crate::term::SpawnPlan {
         term_id: "T".into(),
         size: (80, 24),
@@ -96,7 +96,7 @@ async fn a_held_input_whose_terminal_ends_gives_no_notice() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_folder_read_that_holds_ends_at_the_requests_bound_as_not_a_directory() {
     let r = rig_with("term-new-folder", None, Duration::from_secs(3)).await;
-    r.fs.hold(crate::fixtures::Call::IsDir, &r.dir);
+    r.fs.hold(Call::IsDir, &r.dir);
     let cwd = r.dir.to_string_lossy().into_owned();
     let started = std::time::Instant::now();
 
@@ -126,7 +126,7 @@ fn an_app_gone_ends_only_the_requests_of_its_own_connection() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_slow_folder_read_leaves_the_app_only_the_rest_of_the_bound() {
     let mut r = rig_with("term-new-shared", None, Duration::from_secs(3)).await;
-    r.fs.slow(crate::fixtures::Call::IsDir, &r.dir, Duration::from_millis(600));
+    r.fs.slow(Call::IsDir, &r.dir, Duration::from_millis(600));
     let daemon = r.daemon.clone();
     let cwd = r.dir.to_string_lossy().into_owned();
     let started = std::time::Instant::now();

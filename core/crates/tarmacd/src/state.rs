@@ -339,7 +339,7 @@ impl Daemon {
         let (entry, is_new) = {
             let mut boards = self.boards.lock().await;
             let reg = boards.registry_mut(board);
-            let is_new = crate::docs::upsert_doc(reg, path, via, term_id, seen, repo);
+            let is_new = crate::docs::upsert_doc(reg, path, via, term_id, seen, &repo);
             (reg.entry(path).expect("doc just upserted"), is_new)
         };
         if !is_new {

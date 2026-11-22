@@ -19,7 +19,7 @@ use common::{
 const NOT_ANSWERED: &str = "tarmac: wait: timed out before the daemon answered\n";
 
 fn subscribe(kinds: &[&str]) -> Msg {
-    Msg::Subscribe { kinds: Some(kinds.iter().map(|k| k.to_string()).collect()), term_id: Some("t9".into()) }
+    Msg::Subscribe { kinds: Some(kinds.iter().map(ToString::to_string).collect()), term_id: Some("t9".into()) }
 }
 
 // S9
@@ -269,6 +269,7 @@ fn stdout(out: &Output) -> &str {
 #[test]
 fn s13_a_change_of_the_file_ends_the_wait() {
     let dir = scratch();
+    #[expect(clippy::type_complexity, reason = "predates the lint; a design change, not part of #468")]
     let cases: Vec<(&str, Box<dyn FnOnce(&Path)>, &str)> = vec![
         ("append", Box::new(append), "{\"deleted\":false}\n"),
         (
@@ -362,6 +363,7 @@ fn file_at_half_second(dir: &Path, name: &str) -> (PathBuf, SystemTime) {
 #[test]
 fn a_change_of_the_size_alone_or_of_the_mtime_below_a_second_ends_the_wait() {
     let dir = scratch();
+    #[expect(clippy::type_complexity, reason = "predates the lint; a design change, not part of #468")]
     let cases: Vec<(&str, Box<dyn Fn(&Path, SystemTime)>)> = vec![
         (
             "size",
@@ -373,7 +375,7 @@ fn a_change_of_the_size_alone_or_of_the_mtime_below_a_second_ends_the_wait() {
         (
             "nsec",
             Box::new(|f, mtime| {
-                File::options().write(true).open(f).unwrap().set_modified(mtime + Duration::from_micros(1)).unwrap()
+                File::options().write(true).open(f).unwrap().set_modified(mtime + Duration::from_micros(1)).unwrap();
             }),
         ),
     ];

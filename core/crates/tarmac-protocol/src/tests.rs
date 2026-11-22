@@ -2,8 +2,9 @@ use super::*;
 use std::collections::BTreeMap;
 
 fn unhex(s: &str) -> Vec<u8> {
-    let digits: Vec<u8> = s.chars().filter(|c| c.is_ascii_hexdigit()).map(|c| c.to_digit(16).unwrap() as u8).collect();
-    assert!(digits.len() % 2 == 0);
+    #[expect(clippy::cast_possible_truncation, reason = "to_digit(16) is below 16")]
+    let digits: Vec<u8> = s.chars().filter(char::is_ascii_hexdigit).map(|c| c.to_digit(16).unwrap() as u8).collect();
+    assert!(digits.len().is_multiple_of(2));
     digits.chunks(2).map(|p| (p[0] << 4) | p[1]).collect()
 }
 
@@ -30,7 +31,7 @@ fn doc_tile(path: &str) -> Tile {
 }
 
 fn layout(dock: &[&str], tiles: Vec<Tile>) -> Msg {
-    Msg::Layout { dock: dock.iter().map(|p| p.to_string()).collect(), tiles, board: None, board_id: None }
+    Msg::Layout { dock: dock.iter().map(ToString::to_string).collect(), tiles, board: None, board_id: None }
 }
 
 /// An 80x24 spawn with no cwd and no cmd.
@@ -78,22 +79,22 @@ const VECTOR_6: &str = "83 a1 74 a6 6c 61 79 6f 75 74 \
      81 a4 6b 69 6e 64 a4 74 65 72 6d \
      82 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64";
 
-fn assert_vector(hex: &str, expected: Msg) {
+fn assert_vector(hex: &str, expected: &Msg) {
     let decoded = decode(&unhex(hex)).unwrap();
-    assert_eq!(decoded, expected);
-    assert_eq!(roundtrip(&expected), expected);
+    assert_eq!(decoded, *expected);
+    assert_eq!(roundtrip(expected), *expected);
 }
 
 #[test]
 fn conformance_vector_1_ack() {
-    assert_vector("81 a1 74 a3 61 63 6b", Msg::Ack);
+    assert_vector("81 a1 74 a3 61 63 6b", &Msg::Ack);
 }
 
 #[test]
 fn conformance_vector_2_hello() {
     assert_vector(
         "83 a1 74 a5 68 65 6c 6c 6f a4 72 6f 6c 65 a3 61 70 70 a1 76 01",
-        Msg::Hello { role: "app".into(), v: 1, app_version: None },
+        &Msg::Hello { role: "app".into(), v: 1, app_version: None },
     );
 }
 
@@ -102,7 +103,7 @@ fn conformance_vector_3_input() {
     assert_vector(
         "83 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 31 \
          a5 62 79 74 65 73 c4 03 6c 73 0a",
-        Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec(), typed: false, hold: false },
+        &Msg::Input { term_id: "t1".into(), bytes: b"ls\n".to_vec(), typed: false, hold: false },
     );
 }
 
@@ -111,7 +112,7 @@ fn conformance_vector_4_resize() {
     assert_vector(
         "84 a1 74 a6 72 65 73 69 7a 65 a7 74 65 72 6d 5f 69 64 a2 74 31 \
          a4 63 6f 6c 73 78 a4 72 6f 77 73 28",
-        Msg::Resize { term_id: "t1".into(), cols: 120, rows: 40 },
+        &Msg::Resize { term_id: "t1".into(), cols: 120, rows: 40 },
     );
 }
 
@@ -119,7 +120,7 @@ fn conformance_vector_4_resize() {
 fn conformance_vector_5_doc_read() {
     assert_vector(
         "82 a1 74 a8 64 6f 63 5f 72 65 61 64 a4 70 61 74 68 a5 2f 61 2e 6d 64",
-        Msg::DocRead { path: "/a.md".into() },
+        &Msg::DocRead { path: "/a.md".into() },
     );
 }
 
@@ -131,7 +132,7 @@ fn conformance_vector_6_layout() {
          a5 74 69 6c 65 73 92 \
          81 a4 6b 69 6e 64 a4 74 65 72 6d \
          82 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64",
-        Msg::Layout {
+        &Msg::Layout {
             dock: vec!["/a.md".into()],
             tiles: vec![term_tile(), doc_tile("/a.md")],
             board: None,
@@ -150,7 +151,7 @@ fn conformance_vector_7_doc_opened_extended() {
          aa 72 65 70 6f 5f 63 6f 6c 6f 72 03 \
          a4 72 65 61 64 c2 \
          ae 6c 61 73 74 5f 6f 70 65 6e 65 64 5f 6d 73 cf 00 00 01 90 00 c7 9c 00",
-        Msg::DocOpened(DocEntry {
+        &Msg::DocOpened(DocEntry {
             path: "/a.md".into(),
             via: "cli".into(),
             repo: Some("api".into()),
@@ -182,7 +183,7 @@ fn conformance_vector_8_v4_board_keys() {
          a4 7a 6f 6f 6d cb 3f ea 3d 70 a3 d7 0a 3d \
          a2 63 78 cb 40 84 00 00 00 00 00 00 \
          a2 63 79 cb 40 76 80 00 00 00 00 00",
-        Msg::Layout {
+        &Msg::Layout {
             dock: vec!["/a.md".into()],
             tiles: vec![Tile {
                 kind: "doc".into(),
@@ -209,7 +210,7 @@ fn conformance_vector_9_term_close() {
     assert_vector(
         "82 a1 74 aa 74 65 72 6d 5f 63 6c 6f 73 65 \
          a7 74 65 72 6d 5f 69 64 a2 74 31",
-        Msg::TermClose { term_id: "t1".into() },
+        &Msg::TermClose { term_id: "t1".into() },
     );
 }
 
@@ -218,7 +219,7 @@ fn conformance_vector_10_doc_close() {
     assert_vector(
         "82 a1 74 a9 64 6f 63 5f 63 6c 6f 73 65 \
          a4 70 61 74 68 a5 2f 61 2e 6d 64",
-        Msg::DocClose { path: "/a.md".into() },
+        &Msg::DocClose { path: "/a.md".into() },
     );
 }
 
@@ -227,7 +228,7 @@ fn conformance_vector_11_doc_refresh() {
     assert_vector(
         "82 a1 74 ab 64 6f 63 5f 72 65 66 72 65 73 68 \
          a4 70 61 74 68 a5 2f 61 2e 6d 64",
-        Msg::DocRefresh { path: "/a.md".into() },
+        &Msg::DocRefresh { path: "/a.md".into() },
     );
 }
 
@@ -236,7 +237,7 @@ fn conformance_vector_12_scrollback_request() {
     assert_vector(
         "82 a1 74 b2 73 63 72 6f 6c 6c 62 61 63 6b 5f 72 65 71 75 65 73 74 \
          a7 74 65 72 6d 5f 69 64 a2 74 31",
-        Msg::ScrollbackRequest { term_id: "t1".into() },
+        &Msg::ScrollbackRequest { term_id: "t1".into() },
     );
 }
 
@@ -247,7 +248,7 @@ fn conformance_vector_13_scrollback() {
         "83 a1 74 aa 73 63 72 6f 6c 6c 62 61 63 6b \
          a7 74 65 72 6d 5f 69 64 a2 74 31 \
          a5 62 79 74 65 73 c4 03 68 69 0a",
-        Msg::Scrollback { term_id: "t1".into(), bytes: b"hi\n".to_vec() },
+        &Msg::Scrollback { term_id: "t1".into(), bytes: b"hi\n".to_vec() },
     );
 }
 
@@ -261,7 +262,7 @@ fn conformance_vector_14_data_file() {
                74 73 2e 6a 73 6f 6e";
     let msg =
         Msg::DataFile { board_id: "board-0".into(), path: "/a/dash.html".into(), file: Some("/a/stats.json".into()) };
-    assert_vector(hex, msg.clone());
+    assert_vector(hex, &msg);
     assert_eq!(encode(&msg).unwrap(), unhex(hex));
 }
 
@@ -271,7 +272,7 @@ fn conformance_vector_15_data_file_with_no_file() {
                69 64 a7 62 6f 61 72 64 2d 30 a4 70 61 74 68 ac 2f 61 2f 64 \
                61 73 68 2e 68 74 6d 6c";
     let msg = Msg::DataFile { board_id: "board-0".into(), path: "/a/dash.html".into(), file: None };
-    assert_vector(hex, msg.clone());
+    assert_vector(hex, &msg);
     assert_eq!(encode(&msg).unwrap(), unhex(hex));
 }
 
@@ -282,7 +283,7 @@ fn conformance_vector_16_push() {
     let hex = "83 a1 74 a4 70 75 73 68 a4 70 61 74 68 ac 2f 61 2f 64 61 73 68 2e 68 74 6d 6c \
                a5 76 61 6c 75 65 a7 7b 22 6e 22 3a 31 7d";
     let msg = Msg::Push { path: "/a/dash.html".into(), value: r#"{"n":1}"#.into() };
-    assert_vector(hex, msg.clone());
+    assert_vector(hex, &msg);
     assert_eq!(encode(&msg).unwrap(), unhex(hex));
 }
 
@@ -291,7 +292,7 @@ fn conformance_vector_17_doc_event() {
     let hex = "83 a1 74 a9 64 6f 63 5f 65 76 65 6e 74 a4 70 61 74 68 ac 2f 61 2f 64 61 73 68 \
                2e 68 74 6d 6c a5 76 61 6c 75 65 a7 7b 22 6e 22 3a 31 7d";
     let msg = Msg::DocEvent { path: "/a/dash.html".into(), value: r#"{"n":1}"#.into() };
-    assert_vector(hex, msg.clone());
+    assert_vector(hex, &msg);
     assert_eq!(encode(&msg).unwrap(), unhex(hex));
 }
 
@@ -315,7 +316,7 @@ fn conformance_vector_18_restore_term_records() {
                81 a8 6c 61 73 74 5f 63 77 64 a2 2f 77";
     let msg =
         restore_with_records(BTreeMap::from([("t1".into(), TermRecord { last_cwd: Some("/w".into()), resume: None })]));
-    assert_vector(hex, msg.clone());
+    assert_vector(hex, &msg);
     assert_eq!(encode(&msg).unwrap(), unhex(hex));
 }
 
@@ -325,15 +326,15 @@ fn conformance_vector_19_spawn_term_succeeds() {
                a4 63 6f 6c 73 50 a4 72 6f 77 73 18 a3 63 77 64 c0 a3 63 6d 64 c0 \
                a8 73 75 63 63 65 65 64 73 a2 74 30";
     let msg = spawn_succeeding(Some("t0"));
-    assert_vector(hex, msg.clone());
+    assert_vector(hex, &msg);
     assert_eq!(encode(&msg).unwrap(), unhex(hex));
 }
 
 // Spec 2611.0009: a terminal's report. Each vector pins the encoder's bytes
 // too: a `None` key or a `false` flag would decode the same.
-fn assert_frame(hex: &str, msg: Msg) {
-    assert_vector(hex, msg.clone());
-    assert_eq!(encode(&msg).unwrap(), unhex(hex));
+fn assert_frame(hex: &str, msg: &Msg) {
+    assert_vector(hex, msg);
+    assert_eq!(encode(msg).unwrap(), unhex(hex));
 }
 
 fn report(kind: &str, text: Option<&str>) -> Msg {
@@ -358,7 +359,7 @@ fn conformance_vector_20_report() {
     assert_frame(
         "84 a1 74 a6 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31 \
          a4 6b 69 6e 64 a7 62 6c 6f 63 6b 65 64 a4 74 65 78 74 a3 6f 6b 3f",
-        report("blocked", Some("ok?")),
+        &report("blocked", Some("ok?")),
     );
 }
 
@@ -367,7 +368,7 @@ fn conformance_vector_21_report_clear() {
     assert_frame(
         "83 a1 74 a6 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31 \
          a4 6b 69 6e 64 a5 63 6c 65 61 72",
-        report("clear", None),
+        &report("clear", None),
     );
 }
 
@@ -378,7 +379,7 @@ fn conformance_vector_22_term_report() {
          a4 6b 69 6e 64 a4 64 6f 6e 65 a4 74 65 78 74 a2 6f 6b \
          a5 61 74 5f 6d 73 cf 00 00 01 8b cf e5 68 00 \
          a4 70 72 6f 63 a6 63 6c 61 75 64 65 a4 72 65 61 64 c3",
-        Msg::TermReport {
+        &Msg::TermReport {
             term_id: "t1".into(),
             kind: Some("done".into()),
             text: Some("ok".into()),
@@ -393,7 +394,7 @@ fn conformance_vector_22_term_report() {
 
 #[test]
 fn conformance_vector_23_term_report_none() {
-    assert_frame("82 a1 74 ab 74 65 72 6d 5f 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31", term_report_none());
+    assert_frame("82 a1 74 ab 74 65 72 6d 5f 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31", &term_report_none());
 }
 
 #[test]
@@ -401,7 +402,7 @@ fn conformance_vector_24_typed_input() {
     assert_frame(
         "84 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 31 \
          a5 62 79 74 65 73 c4 01 61 a5 74 79 70 65 64 c3",
-        Msg::Input { term_id: "t1".into(), bytes: b"a".to_vec(), typed: true, hold: false },
+        &Msg::Input { term_id: "t1".into(), bytes: b"a".to_vec(), typed: true, hold: false },
     );
 }
 
@@ -412,7 +413,7 @@ fn conformance_vector_28_term_report_with_its_place() {
         "86 a1 74 ab 74 65 72 6d 5f 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31 \
          a4 6b 69 6e 64 a7 62 6c 6f 63 6b 65 64 a5 61 74 5f 6d 73 cf 00 00 01 8b cf e5 68 00 \
          a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31 a3 63 77 64 a2 2f 77",
-        Msg::TermReport {
+        &Msg::TermReport {
             term_id: "t1".into(),
             kind: Some("blocked".into()),
             text: None,
@@ -430,7 +431,7 @@ fn conformance_vector_29_bell_with_its_board() {
     assert_frame(
         "83 a1 74 a4 62 65 6c 6c a7 74 65 72 6d 5f 69 64 a2 74 31 \
          a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31",
-        Msg::Bell { term_id: "t1".into(), board_id: Some("board-1".into()) },
+        &Msg::Bell { term_id: "t1".into(), board_id: Some("board-1".into()) },
     );
 }
 
@@ -439,7 +440,7 @@ fn conformance_vector_30_exit_with_its_board() {
     assert_frame(
         "84 a1 74 a4 65 78 69 74 a7 74 65 72 6d 5f 69 64 a2 74 31 a4 63 6f 64 65 03 \
          a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 31",
-        Msg::Exit { term_id: "t1".into(), code: Some(3), board_id: Some("board-1".into()) },
+        &Msg::Exit { term_id: "t1".into(), code: Some(3), board_id: Some("board-1".into()) },
     );
 }
 
@@ -447,18 +448,18 @@ fn conformance_vector_30_exit_with_its_board() {
 fn a_bell_and_an_exit_with_no_board_encode_as_before() {
     assert_frame(
         "82 a1 74 a4 62 65 6c 6c a7 74 65 72 6d 5f 69 64 a2 74 31",
-        Msg::Bell { term_id: "t1".into(), board_id: None },
+        &Msg::Bell { term_id: "t1".into(), board_id: None },
     );
     assert_frame(
         "83 a1 74 a4 65 78 69 74 a7 74 65 72 6d 5f 69 64 a2 74 31 a4 63 6f 64 65 c0",
-        Msg::Exit { term_id: "t1".into(), code: None, board_id: None },
+        &Msg::Exit { term_id: "t1".into(), code: None, board_id: None },
     );
 }
 
 // Spec 2611.0012: the facts for scripts.
 fn subscribe(kinds: Option<&[&str]>, term_id: Option<&str>) -> Msg {
     Msg::Subscribe {
-        kinds: kinds.map(|k| k.iter().map(|s| s.to_string()).collect()),
+        kinds: kinds.map(|k| k.iter().map(ToString::to_string).collect()),
         term_id: term_id.map(str::to_string),
     }
 }
@@ -477,18 +478,18 @@ fn conformance_vector_31_subscribe() {
     assert_frame(
         "83 a1 74 a9 73 75 62 73 63 72 69 62 65 a5 6b 69 6e 64 73 92 a4 65 78 69 74 \
          a6 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31",
-        subscribe(Some(&["exit", "report"]), Some("t1")),
+        &subscribe(Some(&["exit", "report"]), Some("t1")),
     );
 }
 
 #[test]
 fn conformance_vector_32_subscribe_to_everything() {
-    assert_frame("81 a1 74 a9 73 75 62 73 63 72 69 62 65", subscribe(None, None));
+    assert_frame("81 a1 74 a9 73 75 62 73 63 72 69 62 65", &subscribe(None, None));
 }
 
 #[test]
 fn conformance_vector_33_terms_list() {
-    assert_frame("81 a1 74 aa 74 65 72 6d 73 5f 6c 69 73 74", Msg::TermsList);
+    assert_frame("81 a1 74 aa 74 65 72 6d 73 5f 6c 69 73 74", &Msg::TermsList);
 }
 
 #[test]
@@ -496,7 +497,7 @@ fn conformance_vector_34_terms() {
     assert_frame(
         "82 a1 74 a5 74 65 72 6d 73 a5 74 65 72 6d 73 91 84 a7 74 65 72 6d 5f 69 64 a2 74 31 \
          a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 30 a3 63 77 64 a2 2f 77 a4 70 72 6f 63 a3 7a 73 68",
-        Msg::Terms { terms: vec![term_info(Some("/w"), Some("zsh"))] },
+        &Msg::Terms { terms: vec![term_info(Some("/w"), Some("zsh"))] },
     );
 }
 
@@ -505,7 +506,7 @@ fn conformance_vector_35_terms_with_no_cwd_or_proc() {
     assert_frame(
         "82 a1 74 a5 74 65 72 6d 73 a5 74 65 72 6d 73 91 82 a7 74 65 72 6d 5f 69 64 a2 74 31 \
          a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 30",
-        Msg::Terms { terms: vec![term_info(None, None)] },
+        &Msg::Terms { terms: vec![term_info(None, None)] },
     );
 }
 
@@ -523,13 +524,13 @@ fn conformance_vector_25_resume() {
     assert_frame(
         "83 a1 74 a6 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2 74 31 \
          a3 63 6d 64 b5 63 6c 61 75 64 65 20 2d 2d 72 65 73 75 6d 65 20 61 62 2d 31 32",
-        resume(Some("claude --resume ab-12")),
+        &resume(Some("claude --resume ab-12")),
     );
 }
 
 #[test]
 fn conformance_vector_26_resume_clear() {
-    assert_frame("82 a1 74 a6 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2 74 31", resume(None));
+    assert_frame("82 a1 74 a6 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2 74 31", &resume(None));
 }
 
 #[test]
@@ -539,7 +540,7 @@ fn conformance_vector_27_restore_resume_record() {
          ac 74 65 72 6d 5f 72 65 63 6f 72 64 73 81 a2 74 31 \
          82 a8 6c 61 73 74 5f 63 77 64 a2 2f 77 a6 72 65 73 75 6d 65 81 a3 63 6d 64 \
          b5 63 6c 61 75 64 65 20 2d 2d 72 65 73 75 6d 65 20 61 62 2d 31 32",
-        restore_with_records(BTreeMap::from([("t1".into(), record(Some("/w"), Some("claude --resume ab-12")))])),
+        &restore_with_records(BTreeMap::from([("t1".into(), record(Some("/w"), Some("claude --resume ab-12")))])),
     );
 }
 
@@ -554,13 +555,13 @@ fn conformance_vector_36_term_resume() {
         "83 a1 74 ab 74 65 72 6d 5f 72 65 73 75 6d 65 a7 74 65 72 6d \
          5f 69 64 a2 74 31 a3 63 6d 64 b5 63 6c 61 75 64 65 20 2d 2d \
          72 65 73 75 6d 65 20 61 62 2d 31 32",
-        term_resume(Some("claude --resume ab-12")),
+        &term_resume(Some("claude --resume ab-12")),
     );
 }
 
 #[test]
 fn conformance_vector_37_term_resume_none() {
-    assert_frame("82 a1 74 ab 74 65 72 6d 5f 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2 74 31", term_resume(None));
+    assert_frame("82 a1 74 ab 74 65 72 6d 5f 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2 74 31", &term_resume(None));
 }
 
 // Spec 2611.0016: `tarmac term new`, and the held input that types its command.
@@ -579,7 +580,7 @@ fn conformance_vector_38_term_new_from_the_cli() {
     assert_frame(
         "84 a1 74 a8 74 65 72 6d 5f 6e 65 77 a3 63 6d 64 a7 65 63 68 6f 20 68 69 \
          a3 63 77 64 a4 2f 74 6d 70 a7 74 65 72 6d 5f 69 64 a2 74 31",
-        term_new(None, None),
+        &term_new(None, None),
     );
 }
 
@@ -589,7 +590,7 @@ fn conformance_vector_39_term_new_to_the_app() {
         "86 a1 74 a8 74 65 72 6d 5f 6e 65 77 a6 72 65 71 5f 69 64 01 \
          a3 63 6d 64 a7 65 63 68 6f 20 68 69 a3 63 77 64 a4 2f 74 6d 70 \
          a7 74 65 72 6d 5f 69 64 a2 74 31 a8 62 6f 61 72 64 5f 69 64 a7 62 6f 61 72 64 2d 30",
-        term_new(Some(1), Some("board-0")),
+        &term_new(Some(1), Some("board-0")),
     );
 }
 
@@ -598,7 +599,7 @@ fn conformance_vector_40_term_new_ok_from_the_app() {
     assert_frame(
         "83 a1 74 ab 74 65 72 6d 5f 6e 65 77 5f 6f 6b a6 72 65 71 5f 69 64 01 \
          a7 74 65 72 6d 5f 69 64 a2 74 39",
-        Msg::TermNewOk { req_id: Some(1), term_id: "t9".into() },
+        &Msg::TermNewOk { req_id: Some(1), term_id: "t9".into() },
     );
 }
 
@@ -606,7 +607,7 @@ fn conformance_vector_40_term_new_ok_from_the_app() {
 fn conformance_vector_41_term_new_ok_to_the_cli() {
     assert_frame(
         "82 a1 74 ab 74 65 72 6d 5f 6e 65 77 5f 6f 6b a7 74 65 72 6d 5f 69 64 a2 74 39",
-        Msg::TermNewOk { req_id: None, term_id: "t9".into() },
+        &Msg::TermNewOk { req_id: None, term_id: "t9".into() },
     );
 }
 
@@ -614,7 +615,7 @@ fn conformance_vector_41_term_new_ok_to_the_cli() {
 fn conformance_vector_42_term_new_err() {
     assert_frame(
         "83 a1 74 ac 74 65 72 6d 5f 6e 65 77 5f 65 72 72 a6 72 65 71 5f 69 64 01 a3 6d 73 67 a1 6d",
-        Msg::TermNewErr { req_id: 1, msg: "m".into() },
+        &Msg::TermNewErr { req_id: 1, msg: "m".into() },
     );
 }
 
@@ -623,7 +624,7 @@ fn conformance_vector_43_held_input() {
     assert_frame(
         "84 a1 74 a5 69 6e 70 75 74 a7 74 65 72 6d 5f 69 64 a2 74 39 \
          a5 62 79 74 65 73 c4 08 65 63 68 6f 20 68 69 0d a4 68 6f 6c 64 c3",
-        Msg::Input { term_id: "t9".into(), bytes: b"echo hi\r".to_vec(), typed: false, hold: true },
+        &Msg::Input { term_id: "t9".into(), bytes: b"echo hi\r".to_vec(), typed: false, hold: true },
     );
 }
 
@@ -637,7 +638,7 @@ const VECTOR_44: &str = "83 a1 74 a6 6c 61 79 6f 75 74 a4 64 6f 63 6b 90 a5 74 6
 fn conformance_vector_44_doc_tile_sidebar() {
     assert_frame(
         VECTOR_44,
-        Msg::Layout {
+        &Msg::Layout {
             dock: vec![],
             tiles: vec![Tile { sidebar_w: Some(300.5), sidebar_open: Some(false), ..doc_tile("/a.md") }],
             board: None,
@@ -654,7 +655,7 @@ fn s2611_0024_s2_the_built_doc_tile_carries_one_sidebar_key_after_loose() {
          6d 64 a1 78 cb 40 24 00 00 00 00 00 00 a1 79 cb 40 34 00 00 00 00 00 00 \
          a1 77 cb 40 94 00 00 00 00 00 00 a1 68 cb 40 82 c0 00 00 00 00 00 a1 7a \
          01 a5 6c 6f 6f 73 65 c3 ac 73 69 64 65 62 61 72 5f 6f 70 65 6e c3",
-        Msg::Layout {
+        &Msg::Layout {
             dock: vec!["/c.md".into()],
             tiles: vec![Tile {
                 x: Some(10.0),
@@ -684,7 +685,7 @@ fn s2611_0024_a_sidebar_key_follows_term_id() {
         "83 a1 74 a6 6c 61 79 6f 75 74 a4 64 6f 63 6b 90 a5 74 69 6c 65 73 91 \
          84 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64 \
          a7 74 65 72 6d 5f 69 64 a2 74 31 a9 73 69 64 65 62 61 72 5f 77 cb 40 72 c8 00 00 00 00 00",
-        msg,
+        &msg,
     );
 }
 
@@ -768,6 +769,7 @@ fn resume_cmd_cases() -> Vec<(String, Result<(), String>)> {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/resume_cmd_cases.json");
     let table: serde_json::Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     let case = |c: &serde_json::Value| {
+        #[expect(clippy::cast_possible_truncation, reason = "predates the lint; decided in #470")]
         let cmd: String = c["parts"]
             .as_array()
             .unwrap()
@@ -1273,6 +1275,7 @@ fn byte_fields_encode_with_bin_family() {
 }
 
 #[test]
+#[expect(clippy::too_many_lines, reason = "predates the lint; a design change, not part of #468")]
 fn all_message_types_roundtrip() {
     let msgs = vec![
         Msg::Hello { role: "cli".into(), v: 1, app_version: None },

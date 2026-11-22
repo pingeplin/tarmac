@@ -1,3 +1,8 @@
+// The daemon's own rules, beside the workspace lint table (core/Cargo.toml):
+// a failure it cannot recover from says why (`.expect("…")`), and it logs
+// with `tracing`, never by printing (docs/coding-style.md §3).
+#![warn(clippy::unwrap_used, clippy::print_stdout, clippy::print_stderr)]
+
 mod bell_scan;
 mod boards;
 mod conn;
@@ -56,15 +61,17 @@ fn claim_socket(path: &PathBuf) -> anyhow::Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     if path.exists() {
-        match std::os::unix::net::UnixStream::connect(path) {
-            Ok(_) => {
-                error!("another tarmacd is already listening on {}", path.display());
-                std::process::exit(1);
-            }
-            Err(_) => {
-                warn!("removing stale socket {}", path.display());
-                std::fs::remove_file(path)?;
-            }
+        #[expect(
+            clippy::redundant_pattern_matching,
+            reason = "is_ok() would close the probe connection before the log and the exit"
+        )]
+        if let Ok(_) = std::os::unix::net::UnixStream::connect(path) {
+            error!("another tarmacd is already listening on {}", path.display());
+            #[expect(clippy::exit, reason = "docs/protocol.md: a live daemon on the socket means log and exit 1")]
+            std::process::exit(1);
+        } else {
+            warn!("removing stale socket {}", path.display());
+            std::fs::remove_file(path)?;
         }
     }
     Ok(())
@@ -73,7 +80,13 @@ fn claim_socket(path: &PathBuf) -> anyhow::Result<()> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     if std::env::args().any(|a| a == "--version") {
-        println!("{}", env!("CARGO_PKG_VERSION"));
+        #[expect(
+            clippy::print_stdout,
+            reason = "`--version` answers on stdout, before the tracing subscriber is set up"
+        )]
+        {
+            println!("{}", env!("CARGO_PKG_VERSION"));
+        }
         std::process::exit(0);
     }
 

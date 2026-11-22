@@ -17,6 +17,40 @@ edition = "2024"
 # cross-channel collision and risking release `state.json` corruption — without
 # touching any path code.
 
+# One switch makes a warning fail: `make lint` (scripts/check/lint.mjs). The
+# entries stay at `warn` so that `cargo test` still runs a `todo!()` stub, the
+# first step of a red test. A rule for one crate only is a `#![warn(...)]` at
+# that crate's root: cargo refuses a crate that inherits this table and adds to it.
+[workspace.lints.rust]
+unused_qualifications = "warn"
+trivial_casts = "warn"
+unsafe_op_in_unsafe_fn = "warn"
+
+[workspace.lints.clippy]
+# Lock discipline. It sees a guard bound to a local, not one stored in a field.
+await_holding_lock = "warn"
+# The wire contract: rmp_serde::to_vec is refused in clippy.toml.
+disallowed_methods = "warn"
+undocumented_unsafe_blocks = "warn"
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+exit = "warn"
+mem_forget = "warn"
+cast_possible_truncation = "warn"
+cast_possible_wrap = "warn"
+cast_sign_loss = "warn"
+cast_lossless = "warn"
+needless_pass_by_value = "warn"
+option_option = "warn"
+too_many_lines = "warn"
+single_match_else = "warn"
+manual_let_else = "warn"
+match_same_arms = "warn"
+map_unwrap_or = "warn"
+semicolon_if_nothing_returned = "warn"
+redundant_closure_for_method_calls = "warn"
+
 [workspace.dependencies]
 tarmac-protocol = { path = "crates/tarmac-protocol" }
 # serde stack pinned: the rmp-serde tagged-enum + serde_bytes interaction is

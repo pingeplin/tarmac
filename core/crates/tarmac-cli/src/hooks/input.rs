@@ -155,7 +155,7 @@ mod tests {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
     }
 
-    fn stop(message: Value) -> Value {
+    fn stop(message: &Value) -> Value {
         json!({"hook_event_name": "Stop", "last_assistant_message": message})
     }
 
@@ -171,7 +171,7 @@ mod tests {
         Msg::Report { term_id: "t9".into(), kind: kind.into(), text: text.map(str::to_string) }
     }
 
-    fn done_text(message: Value) -> Option<String> {
+    fn done_text(message: &Value) -> Option<String> {
         match message_of(stop(message)) {
             Some(Msg::Report { kind, text, .. }) if kind == "done" => text,
             other => panic!("a Stop is done, got {other:?}"),
@@ -222,7 +222,7 @@ mod tests {
 
     #[test]
     fn s5_stop_is_done_with_its_text_folded() {
-        assert_eq!(done_text(json!("Done.\n\n  All   tests pass.\n")), Some("Done. All tests pass.".into()));
+        assert_eq!(done_text(&json!("Done.\n\n  All   tests pass.\n")), Some("Done. All tests pass.".into()));
     }
 
     #[test]
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn s18_a_long_text_is_capped_to_280_chars() {
-        let text = done_text(json!("a".repeat(400))).unwrap();
+        let text = done_text(&json!("a".repeat(400))).unwrap();
         assert_eq!(text.chars().count(), REPORT_TEXT_MAX);
         assert!(text.ends_with('…'));
     }
@@ -305,45 +305,45 @@ mod tests {
     #[test]
     fn s18_no_text_when_it_is_blank_or_not_a_string() {
         for message in [json!(" \n\t "), json!(""), json!(7)] {
-            assert_eq!(done_text(message.clone()), None, "{message}");
+            assert_eq!(done_text(&message), None, "{message}");
         }
         assert_eq!(message_of(json!({"hook_event_name": "Stop"})), Some(msg("done", None)));
     }
 
     #[test]
     fn s18_the_ends_are_trimmed() {
-        assert_eq!(done_text(json!(" \n\t Done. \n")), Some("Done.".into()));
+        assert_eq!(done_text(&json!(" \n\t Done. \n")), Some("Done.".into()));
     }
 
     #[test]
     fn s18_every_kind_of_whitespace_folds() {
-        assert_eq!(done_text(json!("a\t\r\n\u{000b}\u{000c}b")), Some("a b".into()));
+        assert_eq!(done_text(&json!("a\t\r\n\u{000b}\u{000c}b")), Some("a b".into()));
     }
 
     #[test]
     fn s18_control_characters_are_removed_and_nothing_else_changes() {
-        assert_eq!(done_text(json!("a\u{001b}[31mb\u{0007}c\u{009b}d")), Some("a[31mbcd".into()));
-        assert_eq!(done_text(json!("a \u{001b} b")), Some("a b".into()));
-        assert_eq!(done_text(json!("\u{001b}\u{0007}")), None);
+        assert_eq!(done_text(&json!("a\u{001b}[31mb\u{0007}c\u{009b}d")), Some("a[31mbcd".into()));
+        assert_eq!(done_text(&json!("a \u{001b} b")), Some("a b".into()));
+        assert_eq!(done_text(&json!("\u{001b}\u{0007}")), None);
     }
 
     #[test]
     fn s18_the_cap_counts_the_text_after_the_fold() {
         let text = format!("a{}", "   \n b".repeat(200));
         let folded = format!("a{}", " b".repeat(200));
-        assert_eq!(done_text(json!(text)), Some(tarmac_protocol::cap_report_text(&folded)));
-        assert_eq!(done_text(json!(text)).unwrap().chars().count(), REPORT_TEXT_MAX);
+        assert_eq!(done_text(&json!(text)), Some(cap_report_text(&folded)));
+        assert_eq!(done_text(&json!(text)).unwrap().chars().count(), REPORT_TEXT_MAX);
     }
 
     #[test]
     fn s18_unicode_whitespace_folds_and_is_not_removed() {
-        assert_eq!(done_text(json!("a\u{000b}b\u{000c}c\u{0085}d\u{00a0}e")), Some("a b c d e".into()));
+        assert_eq!(done_text(&json!("a\u{000b}b\u{000c}c\u{0085}d\u{00a0}e")), Some("a b c d e".into()));
     }
 
     #[test]
     fn s18_the_cap_counts_the_text_after_removal() {
         let letters = "a".repeat(REPORT_TEXT_MAX);
         let with_esc = format!("{}\u{001b}{}", &letters[..140], &letters[140..]);
-        assert_eq!(done_text(json!(with_esc)), Some(letters));
+        assert_eq!(done_text(&json!(with_esc)), Some(letters));
     }
 }

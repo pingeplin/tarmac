@@ -195,7 +195,7 @@ impl Conn {
     /// before `ack`. An `err`, or no `ack` in 5 s, fails the test.
     pub fn subscribe(&mut self, kinds: Option<&[&str]>, term_id: Option<&str>) -> Vec<Msg> {
         self.send(&Msg::Subscribe {
-            kinds: kinds.map(|k| k.iter().map(|s| s.to_string()).collect()),
+            kinds: kinds.map(|k| k.iter().map(ToString::to_string).collect()),
             term_id: term_id.map(str::to_string),
         });
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -305,7 +305,7 @@ impl Conn {
             cols: opts.cols,
             rows: opts.rows,
             cwd: opts.cwd,
-            cmd: (!opts.login_shell).then(|| cmd.iter().map(|s| s.to_string()).collect()),
+            cmd: (!opts.login_shell).then(|| cmd.iter().map(ToString::to_string).collect()),
             board_id: opts.board_id,
             inherit_cwd_from: opts.inherit_cwd_from,
             succeeds: opts.succeeds,

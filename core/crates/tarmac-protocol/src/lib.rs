@@ -1,6 +1,9 @@
 //! Wire types, codec, and framing for the tarmac unix-socket protocol.
 //! Authoritative contract: docs/protocol.md.
 
+// The protocol crate logs nothing (docs/coding-style.md §3).
+#![warn(clippy::print_stdout, clippy::print_stderr)]
+
 mod channel;
 pub mod dev;
 pub mod frame;

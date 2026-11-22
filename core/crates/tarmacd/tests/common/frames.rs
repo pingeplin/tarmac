@@ -9,7 +9,7 @@ use super::Conn;
 pub const ACK: &[u8] = &[0x81, 0xa1, 0x74, 0xa3, 0x61, 0x63, 0x6b];
 
 #[track_caller]
-pub fn assert_ack(answer: Msg) {
+pub fn assert_ack(answer: &Msg) {
     assert!(matches!(answer, Msg::Ack), "expected ack, got {answer:?}");
 }
 

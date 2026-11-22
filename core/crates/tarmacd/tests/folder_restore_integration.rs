@@ -38,18 +38,18 @@ fn send_layout(app: &mut Conn, term_ids: &[&str]) {
     });
 }
 
-fn board(id: &str, term_records: Value) -> Value {
+fn board(id: &str, term_records: &Value) -> Value {
     json!({"board_id": id, "tiles": [{"kind": "term", "term_id": "T"}], "term_records": term_records})
 }
 
 /// One board with `term_records`, as a daemon wrote it.
-fn seeded(term_records: Value) -> Value {
+fn seeded(term_records: &Value) -> Value {
     json!({"boards": [board("board-0", term_records)], "active": "board-0"})
 }
 
 /// board-0 active with no record, board-1 with `T`'s record.
 fn seeded_on_board_1() -> Value {
-    json!({"boards": [board("board-0", json!({})), board("board-1", json!({"T": {"last_cwd": "/seeded"}}))], "active": "board-0"})
+    json!({"boards": [board("board-0", &json!({})), board("board-1", &json!({"T": {"last_cwd": "/seeded"}}))], "active": "board-0"})
 }
 
 fn wait_output(app: &mut Conn, term_id: &str, needle: &str) {
@@ -71,7 +71,7 @@ fn proc_pid(app: &mut Conn, term_id: &str, what: &str, pred: impl Fn(&str, i64) 
 /// first pid and the newest connection.
 fn job_shell_recorded(daemon: &TestDaemon, a: &str) -> (Conn, i64) {
     let mut app = daemon.connect_app_drained();
-    let argv: Vec<String> = JOB_SHELL.iter().map(|s| s.to_string()).collect();
+    let argv: Vec<String> = JOB_SHELL.iter().map(ToString::to_string).collect();
     spawn(&mut app, "T", &argv, in_dir(a));
     let first = proc_pid(&mut app, "T", "T's first term_proc", |_, _| true);
     (probe_until_cwd(daemon, "T", a), first)
@@ -203,7 +203,7 @@ fn sigint_saves_before_the_socket_goes() {
 fn succeeds_moves_the_record_to_the_new_term() {
     let tmp = common::temp_dir();
     let b = canon_dir(&tmp.join("b"));
-    let daemon = TestDaemon::start_seeded(&seeded(json!({"T": {"last_cwd": b}})));
+    let daemon = TestDaemon::start_seeded(&seeded(&json!({"T": {"last_cwd": b}})));
     let mut app = daemon.connect_app_drained();
 
     spawn(&mut app, "T2", &plain("pwd -P; read _"), Spawn { succeeds: Some("T".into()), ..in_dir(&b) });
@@ -236,7 +236,7 @@ fn succeeds_with_no_cwd_spawns_in_the_record_folder() {
 // S6
 #[test]
 fn a_layout_keeps_the_records() {
-    let daemon = TestDaemon::start_seeded(&seeded(json!({"T": {"last_cwd": "/seeded"}})));
+    let daemon = TestDaemon::start_seeded(&seeded(&json!({"T": {"last_cwd": "/seeded"}})));
     let mut app = daemon.connect_app_drained();
 
     send_layout(&mut app, &["X"]);
@@ -338,7 +338,7 @@ fn a_gone_folder_spawns_in_home() {
     let home_dir = common::temp_dir();
     let home = canon_dir(&home_dir);
     let gone = home_dir.join("gone").to_string_lossy().into_owned();
-    let daemon = TestDaemon::start_seeded_with(&seeded(json!({"T": {"last_cwd": gone}})), |c| {
+    let daemon = TestDaemon::start_seeded_with(&seeded(&json!({"T": {"last_cwd": gone}})), |c| {
         c.env("HOME", &home);
     });
     let mut app = daemon.connect_app_drained();
@@ -381,7 +381,7 @@ fn succeeds_naming_an_id_with_no_record_is_no_error() {
 // S16
 #[test]
 fn a_failed_spawn_moves_nothing() {
-    let daemon = TestDaemon::start_seeded(&seeded(json!({"T": {"last_cwd": "/seeded"}})));
+    let daemon = TestDaemon::start_seeded(&seeded(&json!({"T": {"last_cwd": "/seeded"}})));
     let mut app = daemon.connect_app_drained();
     spawn(&mut app, "X", &plain("echo XUP; read _"), Spawn::default());
     wait_output(&mut app, "X", "XUP");
@@ -397,7 +397,7 @@ fn a_failed_spawn_moves_nothing() {
 // S16: a spawn that fails after its id was found free moves nothing.
 #[test]
 fn a_spawn_that_cannot_exec_moves_nothing() {
-    let daemon = TestDaemon::start_seeded(&seeded(json!({"T": {"last_cwd": "/seeded"}})));
+    let daemon = TestDaemon::start_seeded(&seeded(&json!({"T": {"last_cwd": "/seeded"}})));
     let mut app = daemon.connect_app_drained();
 
     spawn(

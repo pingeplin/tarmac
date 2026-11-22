@@ -231,9 +231,12 @@ pub fn signal_and_wait(child: &mut Child, sig: libc::c_int) -> std::process::Exi
 }
 
 pub fn signal(child: &Child, sig: libc::c_int) {
+    #[expect(clippy::cast_possible_wrap, reason = "predates the lint; decided in #470")]
     // SAFETY: kill(2) on the test's own daemon child; a failure only means
     // it is gone.
-    unsafe { libc::kill(child.id() as libc::pid_t, sig) };
+    unsafe {
+        libc::kill(child.id() as libc::pid_t, sig)
+    };
 }
 
 /// Waits, to a deadline, for a daemon child to exit.

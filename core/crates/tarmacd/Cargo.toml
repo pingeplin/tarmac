@@ -29,3 +29,6 @@ anyhow.workspace = true
 # Honest signals: sysctl and proc_pidpath (foreground process facts). Already
 # present transitively via portable-pty; declared directly for the FFI calls.
 libc = "0.2"
+
+[lints]
+workspace = true

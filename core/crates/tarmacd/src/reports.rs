@@ -35,6 +35,7 @@ pub struct Reports {
 }
 
 impl Reports {
+    #[expect(clippy::too_many_arguments, reason = "predates the lint; a design change, not part of #468")]
     pub fn report(
         &mut self,
         term: &str,

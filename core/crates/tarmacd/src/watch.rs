@@ -32,6 +32,7 @@ pub struct Wake {
 impl Wake {
     /// A file in a watched directory may have changed, or a gate call that
     /// was out returned.
+    #[expect(clippy::wrong_self_convention, reason = "predates the lint; a design change, not part of #468")]
     pub fn from_fs(&self) {
         self.from_fs.store(true, Ordering::SeqCst);
         self.notify.notify_one();
@@ -39,6 +40,7 @@ impl Wake {
 
     /// The daemon's own: the watcher thread after a call of the source, or a
     /// repair.
+    #[expect(clippy::wrong_self_convention, reason = "predates the lint; a design change, not part of #468")]
     pub fn from_daemon(&self) {
         self.notify.notify_one();
     }

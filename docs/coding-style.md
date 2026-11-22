@@ -24,7 +24,9 @@ change tests something else that happened to be true.
 Test-first fails to *compile* or resolve before it ever fails an assertion, and
 that is not yet red. Introduce the symbol under test as a stub — `todo!()` in
 Rust, a function returning a placeholder in Swift — then observe the assertion
-fail. Run just the test you are driving:
+fail. The stub is for the red phase only: `cargo test` runs it, and `make lint`
+and CI (`clippy::todo`) fail while one is left. Run just the test you
+are driving:
 
 | Suite | Command (from the repo root) |
 | --- | --- |
@@ -131,7 +133,14 @@ back from a rendered bitmap.
   rows. It also rewrites a few constructs to one form — the order of imports,
   `case let`, the access level of an extension's members — so expect more than
   white space in its diff. A script that starts with `#!` is left alone. There
-  is no linter yet.
+  is no Swift linter yet.
+- **Rust rules that a tool can decide are lints.** `make lint` runs clippy with
+  the table in `core/Cargo.toml` and fails on any finding; CI runs it. §3 names
+  the lint beside each rule it holds. Clear a finding by fixing it. Where the
+  fix would change what the program does, or is a design change, put
+  `#[expect(lint, reason = "…")]` on the narrowest item — never `#[allow]`: a
+  stale `expect` fails by itself — and state a bound in the reason only when
+  the code beside it shows the bound.
 - **One responsibility per module.** Depend on the narrow contract — the `Msg`
   enum, a pure function signature — rather than reaching across a layer.
 - **A comment earns its place by explaining a non-obvious *why***: a constraint,
@@ -168,7 +177,9 @@ back from a rendered bitmap.
 - **Never `.unwrap()` in `tarmacd` production code.** Where a failure is
   genuinely impossible, say why in a short lowercase string:
   `.expect("active board present")`, `.expect("watcher lock")`. Reserve
-  `.unwrap()` for tests.
+  `.unwrap()` for tests. (`clippy::unwrap_used`, on `tarmacd` only; a `#[test]`
+  function, a `#[cfg(test)]` module and the integration tests are exempt, a
+  `#[cfg(all(test, …))]` module is not.)
 - **`let _ =` only for best-effort work** — a channel send whose receiver may be
   gone, cleanup on the way out. Never to silence a failure that matters.
 - **Ids are `String` aliases, not newtypes** — `pub type BoardId = String;` in
@@ -184,11 +195,15 @@ back from a rendered bitmap.
   thing, drop; clone what the slow call needs first. `tokio::sync::Mutex` may be
   held across `.await`. The full rule, and why it is load-bearing, is in
   [`architecture.md`](architecture.md) (*Lock discipline*).
+  (`clippy::await_holding_lock` sees a guard bound to a local, also one a helper
+  returned. It does **not** see a guard stored in a struct field, so that case
+  is still yours to check.)
 - **Logging follows the binary's lifetime.** The long-running daemon uses
   `tracing` (`debug!`/`info!`/`warn!`/`error!`). The short-lived CLI writes
   results to stdout unprefixed and errors to stderr prefixed `tarmac: ` — a
   usage or help block printed to stderr keeps its own formatting. The protocol
-  crate logs nothing.
+  crate logs nothing. (`clippy::print_stdout` and `clippy::print_stderr`, on
+  `tarmacd` and `tarmac-protocol`.)
 - **Name test functions as sentences** — `respects_posix_precedence_lc_all_over_lang`,
   not a `test_` prefix. Integration tests drive a real daemon over a real socket
   through `core/crates/tarmacd/tests/common/mod.rs`; add helpers to the file of
@@ -262,7 +277,7 @@ back from a rendered bitmap.
    or the change is on the exception list and you have discharged what §1.3 owes
    it.
 2. `make test` passes (docs-check, the check scripts' tests and both suites), and
-   `make fmt-check` reports nothing.
+   `make fmt-check` and `make lint` report nothing.
 3. Commits are Conventional and carry both trailers named in
    [`workflow.md`](workflow.md) — the DCO `Signed-off-by:` and `Co-Authored-By:`.
    `make dco-check` verifies the branch.

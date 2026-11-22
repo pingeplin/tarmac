@@ -60,8 +60,7 @@ fn shell_locale_result(daemon: &TestDaemon, term_id: &str) -> String {
     let text = String::from_utf8_lossy(&out);
     text.lines()
         .find(|l| l.contains("RESULT "))
-        .map(|l| l.trim().to_string())
-        .unwrap_or_else(|| panic!("no RESULT line in pty output; got:\n{text}"))
+        .map_or_else(|| panic!("no RESULT line in pty output; got:\n{text}"), |l| l.trim().to_string())
 }
 
 #[test]

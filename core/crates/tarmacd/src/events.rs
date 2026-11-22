@@ -61,6 +61,7 @@ impl ExitRing {
     }
 
     /// The code of the latest exit of `term_id`.
+    #[expect(clippy::option_option, reason = "predates the lint; a design change, not part of #468")]
     pub fn lookup(&self, term_id: &str) -> Option<Option<i64>> {
         self.0.iter().rev().find(|(id, _)| id == term_id).map(|(_, code)| *code)
     }
@@ -190,7 +191,7 @@ mod tests {
     }
 
     fn names(names: &[&str]) -> Option<Vec<String>> {
-        Some(names.iter().map(|n| n.to_string()).collect())
+        Some(names.iter().map(ToString::to_string).collect())
     }
 
     fn admitted(filter: &Filter, msgs: &[Msg]) -> Vec<Msg> {

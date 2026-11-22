@@ -8,6 +8,10 @@ use std::time::Instant;
 
 use tarmac_protocol::{self as proto, Msg, frame};
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "predates the lint; a borrow also changes NoHandshake::failed and its callers, not part of #468"
+)]
 pub(crate) fn lost(e: io::Error) -> String {
     format!("daemon connection lost: {e}")
 }

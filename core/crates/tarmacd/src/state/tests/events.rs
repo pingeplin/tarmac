@@ -21,6 +21,7 @@ fn is_file_event(msg: &Msg, path: &Path) -> bool {
     matches!(msg, Msg::FileEvent { path: p, .. } if Path::new(p) == path)
 }
 
+#[expect(clippy::option_option, reason = "predates the lint; a design change, not part of #468")]
 fn exits(daemon: &Daemon, term_id: &str) -> Option<Option<i64>> {
     daemon.exits.lock().unwrap().lookup(term_id)
 }
@@ -118,7 +119,7 @@ async fn subscribers_and_the_terms_list_make_no_watch() {
 
     let mut subscribers = Vec::new();
     for (kinds, term_id) in shapes {
-        let kinds = kinds.map(|k| k.iter().map(|s| s.to_string()).collect());
+        let kinds = kinds.map(|k| k.iter().map(ToString::to_string).collect());
         subscribers.push(daemon.subscribe(kinds, term_id.map(str::to_string)).await);
     }
     daemon.terms_list().await;

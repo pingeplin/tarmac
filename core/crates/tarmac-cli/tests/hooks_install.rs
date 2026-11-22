@@ -453,7 +453,7 @@ fn s10_an_old_form_shows_in_status_and_install_replaces_it() {
             "d",
             with(&|v| {
                 v["hooks"]["Stop"] =
-                    serde_json::json!([{"hooks": [{"type": "command", "command": "say done"}, handler()]}])
+                    serde_json::json!([{"hooks": [{"type": "command", "command": "say done"}, handler()]}]);
             }),
         ),
         ("e", with(&|v| v["hooks"]["Notification"][0]["matcher"] = serde_json::json!("permission_prompt"))),
