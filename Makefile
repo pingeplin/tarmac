@@ -41,9 +41,7 @@ GATE_ENV := $(if $(filter 1,$(SHELL_GATE)),TARMAC_QA_SHELL="$${TARMAC_QA_SHELL:-
 
 # Once per clone: settings git keeps outside the tree, so a checkout cannot
 # carry them. Worktrees share the clone's configuration. `git blame` then skips
-# the commits in .git-blame-ignore-revs (the formatter baselines); in a checkout
-# older than that file it stops with "could not open object name list", and
-# `git blame --ignore-revs-file= <file>` is the way round it there.
+# the commits in .git-blame-ignore-revs (the formatter baselines).
 setup:
 	git -C $(ROOT) config blame.ignoreRevsFile .git-blame-ignore-revs
 

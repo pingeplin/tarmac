@@ -4,8 +4,7 @@
 #
 # A line that such a commit only moved or re-indented is attributed to the
 # commit that last changed its content. Add a commit here only when a formatter
-# wrote it; each one below also holds the configuration and the check that came
-# with the formatter, in new files and a few edited lines.
+# wrote it.
 
 # chore(core): format the Rust workspace with rustfmt and check it on every PR (#465)
 f51b25c0c93e16356ad939218a93b2df645e9c9f
