@@ -395,6 +395,27 @@ test("Swift: a second configuration below the root cannot run the check, because
   assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swift-format", "  why  app/.swift-format: only the configuration at the repository root is read"]);
 });
 
+test("Swift: an untracked configuration above a tracked Swift file is refused too: the tool would obey it", () => {
+  const dir = swiftRepo({ "app/A.swift": UNWRAP });
+  writeFileSync(join(dir, "app/.swift-format"), '{"version": 1, "rules": {"NeverForceUnwrap": false}}\n');
+
+  const run = lintSwift(dir);
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run).slice(0, 3), [
+    "✗ lint: cannot run swift-format",
+    "  why  app/.swift-format: only the configuration at the repository root is read",
+    "  fix  remove it, and put its settings in .swift-format at the repository root",
+  ]);
+});
+
+test("Swift: a configuration whose rules are not a table cannot run the check", () => {
+  const run = lintSwift(swiftRepo({ ".swift-format": '{"version": 1, "rules": ["NeverForceUnwrap"]}\n', "app/A.swift": "let x = 1\n" }));
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swift-format", "  why  .swift-format: rules is not a table of rule names"]);
+});
+
 test("Swift: when the tool fails without a finding, the check has not run", () => {
   const bin = scratch();
   const real = execFileSync("which", ["swift"], { encoding: "utf8" }).trim();

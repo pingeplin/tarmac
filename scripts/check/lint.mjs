@@ -94,20 +94,33 @@ const CONFIG = ".swift-format";
 
 /**
  * The rules the configuration knows by name and the ones it turns on, or the
- * parts of a "cannot run" report. Only the root file is read, so a second one
- * lower down, which the tool would obey for the files under it, is refused.
+ * parts of a "cannot run" report. Only the root file is read, while the tool
+ * obeys the nearest one above each file, tracked or not; so a second one in a
+ * directory above any linted file is refused.
  */
-function configuredRules(root, language) {
-  const blocked = (why) => ({ blocked: { summary: `cannot run ${language.tool}`, why: [why], fix: `correct ${CONFIG} at the repository root` } });
-  const nested = tracked(root, `*${CONFIG}`).find((path) => path !== CONFIG);
-  if (nested) return blocked(`${nested}: only the configuration at the repository root is read`);
-  if (!existsSync(join(root, CONFIG))) return { known: new Set(), on: [] };
-  try {
-    const rules = JSON.parse(readFileSync(join(root, CONFIG), "utf8")).rules ?? {};
-    return { known: new Set(Object.keys(rules)), on: Object.keys(rules).filter((name) => rules[name]) };
-  } catch {
-    return blocked(`${CONFIG} is not valid JSON`);
+function configuredRules(root, language, files) {
+  const blocked = (why, fix) => ({ blocked: { summary: `cannot run ${language.tool}`, why: [why], fix } });
+  const above = new Set(files.flatMap(({ path }) => ancestors(path)));
+  const nested = [...above].sort().find((dir) => existsSync(join(root, dir, CONFIG)));
+  if (nested) {
+    return blocked(`${nested}/${CONFIG}: only the configuration at the repository root is read`, `remove it, and put its settings in ${CONFIG} at the repository root`);
   }
+  if (!existsSync(join(root, CONFIG))) return { known: new Set(), on: [] };
+  const correct = `correct ${CONFIG} at the repository root`;
+  let rules;
+  try {
+    rules = JSON.parse(readFileSync(join(root, CONFIG), "utf8"))?.rules ?? {};
+  } catch {
+    return blocked(`${CONFIG} is not valid JSON`, correct);
+  }
+  if (typeof rules !== "object" || Array.isArray(rules)) return blocked(`${CONFIG}: rules is not a table of rule names`, correct);
+  return { known: new Set(Object.keys(rules)), on: Object.keys(rules).filter((name) => rules[name]) };
+}
+
+/** The directories above a repo-relative path, the root not among them: `a/b/c.swift` gives `a/b` and `a`. */
+function ancestors(path) {
+  const parts = path.split("/").slice(0, -1);
+  return parts.map((_, i) => parts.slice(0, i + 1).join("/"));
 }
 
 /** A rule that is on in the configuration and unknown to the running tool would be off without a word. */
@@ -153,7 +166,7 @@ function lintSwift(root) {
   const files = sources(language, root);
   if (files.length === 0) return CLEAN;
   const version = toolVersion(language);
-  const { known, on, blocked: badConfig } = configuredRules(root, language);
+  const { known, on, blocked: badConfig } = configuredRules(root, language, files);
   const reason = unusable(language, version) ?? badConfig ?? missingRules(language, on, version.found);
   if (reason) return cannotRun(reason.summary, reason.why, reason.fix);
 

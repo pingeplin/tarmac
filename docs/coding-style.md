@@ -148,8 +148,8 @@ back from a rendered bitmap.
   refuses every other form of that comment — no rule name, a name that is not a
   rule, the file-wide form, no reason line above (a `///` line is not one), or
   the comment at the end of a code line, where the tool does not honour it. It
-  also refuses a second `.swift-format` below the root, which could turn a
-  rule off for the files under it. It **cannot** tell when such a
+  also refuses a second `.swift-format` in a directory above a linted file,
+  tracked or not: the tool would obey it and could turn a rule off there. It **cannot** tell when such a
   comment is stale: when you remove the code, remove the comment with it.
 - **Rust rules that a tool can decide are lints.** `make lint` runs clippy with
   the table in `core/Cargo.toml` and fails on any finding; CI runs it. §3 names
