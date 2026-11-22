@@ -11,6 +11,7 @@ import { join, relative } from "node:path";
 
 import { LANGUAGES } from "./languages.mjs";
 import { CLEAN, RULE, blockedFor, findings } from "./lint-common.mjs";
+import { parseList } from "./list.mjs";
 import { failure } from "./report.mjs";
 
 const KNOWN = "scripts/check/swiftc-known-warnings.json";
@@ -19,20 +20,8 @@ const PACKAGE = "app";
 const cannotRun = blockedFor(THEN);
 
 /** The known-warnings list, or the reason it cannot be used. */
-function knownWarnings(root) {
-  const bad = (why) => ({ bad: `${KNOWN} ${why}` });
-  if (!existsSync(join(root, KNOWN))) return bad("is missing");
-  let list;
-  try {
-    list = JSON.parse(readFileSync(join(root, KNOWN), "utf8"));
-  } catch {
-    return bad("is not valid JSON");
-  }
-  if (!Array.isArray(list)) return bad("is not a list");
-  const fields = ["file", "message", "issue", "reason"];
-  const at = list.findIndex((entry) => fields.some((field) => typeof entry?.[field] !== "string" || entry[field] === ""));
-  return at === -1 ? { list } : bad(`entry ${at + 1} needs ${fields.join(", ")}, each a text that is not empty`);
-}
+const knownWarnings = (root) =>
+  parseList(existsSync(join(root, KNOWN)) ? readFileSync(join(root, KNOWN), "utf8") : null, KNOWN, ["file", "message", "issue", "reason"]);
 
 /**
  * The warnings with no entry in the list, and the positions (from 1) of the

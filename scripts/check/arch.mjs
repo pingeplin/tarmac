@@ -12,6 +12,7 @@ import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { repoRoot, startedAs } from "./git.mjs";
+import { parseList } from "./list.mjs";
 import { failure } from "./report.mjs";
 
 const RULE = "arch";
@@ -59,7 +60,8 @@ function tomlLines(tree, path) {
   let table = "";
   return tree.lines(path).map((line, i) => {
     const code = line.split("#")[0];
-    table = code.match(/^\s*\[([^\]]+)\]\s*$/)?.[1].trim() ?? table;
+    // `[[bin]]`, an array of tables, starts a table too.
+    table = code.match(/^\s*\[\[?([^\]]+)\]\]?\s*$/)?.[1].trim() ?? table;
     return { table, code, number: i + 1 };
   });
 }
@@ -84,32 +86,21 @@ function unpinned(tree) {
     const entry = lines.find(({ table, code }) => table === "workspace.dependencies" && sets(code, name));
     if (!entry) return [`${CARGO}:${header}`];
     const value = entry.code.slice(entry.code.indexOf("=") + 1).trim();
-    const version = value.startsWith('"') ? value.match(/^"([^"]*)"/)?.[1] : value.match(/\bversion\s*=\s*"([^"]*)"/)?.[1];
+    const version = value.startsWith('"') ? value.match(/^"([^"]*)"/)?.[1] : value.match(/(?<![\w-])version\s*=\s*"([^"]*)"/)?.[1];
     return version?.startsWith("=") ? [] : [`${CARGO}:${entry.number}`];
   });
 }
 
 // ------------------------------------------------------------- kit tests
 
-/** The exceptions list as `{ list, text }`, or `{ bad }`: why it cannot be used. */
+/** The exceptions list as `{ list }`, or `{ bad }`: why it cannot be used. */
 function exceptions(tree) {
-  const bad = (why) => ({ bad: `${LIST} ${why}` });
-  if (!tree.has(LIST)) return bad("is missing");
-  let list;
-  try {
-    list = JSON.parse(tree.text(LIST));
-  } catch {
-    return bad("is not valid JSON");
-  }
-  if (!Array.isArray(list)) return bad("is not a list");
-  const fields = ["module", "issue", "reason"];
-  const at = list.findIndex((entry) => fields.some((field) => typeof entry?.[field] !== "string" || entry[field] === ""));
-  if (at !== -1) return bad(`entry ${at + 1} needs ${fields.join(", ")}, each a text that is not empty`);
-  const twice = list.find(({ module }, i) => list.findIndex((other) => other.module === module) !== i);
-  return twice ? bad(`names ${twice.module} twice`) : { list };
+  const read = parseList(tree.has(LIST) ? tree.text(LIST) : null, LIST, ["module", "issue", "reason"]);
+  const twice = read.list?.find(({ module }, i) => read.list.findIndex((other) => other.module === module) !== i);
+  return twice ? { bad: `${LIST} names ${twice.module} twice` } : read;
 }
 
-const untested = (list) => (tree) => {
+function untested(tree, list) {
   const modules = tree.paths
     .filter((path) => path.startsWith(KIT) && !path.slice(KIT.length).includes("/") && path.endsWith(".swift"))
     .map((path) => path.slice(KIT.length, -".swift".length))
@@ -118,17 +109,19 @@ const untested = (list) => (tree) => {
   const tested = (module) => tree.has(`${KIT_TESTS}${module}Tests.swift`);
   const excepted = new Set(list.map(({ module }) => module));
   const bare = modules.filter((module) => !tested(module) && !excepted.has(module)).map((module) => `${KIT}${module}.swift:1`);
-  const lineOf = (module) => tree.lines(LIST).findIndex((line) => new RegExp(`"module"\\s*:\\s*"${module}"`).test(line)) + 1;
+  // The line that holds the module's name as JSON writes it; line 1 if a formatter split it past recognition.
+  const lineOf = (module) => Math.max(1, tree.lines(LIST).findIndex((line) => line.includes(JSON.stringify(module))) + 1);
   const stale = list.filter(({ module }) => tested(module) || !modules.includes(module)).map(({ module }) => `${LIST}:${lineOf(module)}`);
   return [...bare, ...stale];
-};
+}
 
 // ------------------------------------------------------------- the rules
 
 const swiftFiles = (tree) => tree.paths.filter((path) => path.endsWith(".swift"));
-const named = (text) => new RegExp(`${text.replace(/[.:]/g, "\\$&")}(?![A-Za-z0-9_])`);
 
-const rules = (list) => [
+// Each rule: what it says when broken, why it exists, what fixes it, and
+// `find(tree, exceptions)`, the places that break it. A new rule is a new entry.
+const RULES = [
   {
     summary: "TarmacKit must not import AppKit, WebKit or a sibling target",
     why: "TarmacKit holds the pure decisions and is the only layer with unit tests",
@@ -146,7 +139,7 @@ const rules = (list) => [
     summary: "Bundle.module is used outside BundledResource",
     why: "a built Tarmac.app has no package bundle, so Bundle.module traps there; BundledResource asks Bundle.main first",
     fix: "look the resource up through BundledResource",
-    find: (tree) => linesWhere(tree, swiftFiles(tree).filter((path) => path !== "app/Sources/TarmacApp/BundledResource.swift"), "//", (code) => named("Bundle.module").test(code)),
+    find: (tree) => linesWhere(tree, swiftFiles(tree).filter((path) => path !== "app/Sources/TarmacApp/BundledResource.swift"), "//", (code) => /Bundle\.module\b/.test(code)),
   },
   {
     summary: "a signal is sent outside TermHandle::kill",
@@ -154,7 +147,7 @@ const rules = (list) => [
     fix: "call TermHandle::kill, or move the new use into core/crates/tarmacd/src/term.rs",
     find: (tree) => {
       const sources = tree.paths.filter((path) => /^core\/crates\/[^/]+\/src\/.*\.rs$/.test(path) && path !== "core/crates/tarmacd/src/term.rs");
-      return linesWhere(tree, sources, "//", (code) => named("libc::kill").test(code) || named("libc::killpg").test(code));
+      return linesWhere(tree, sources, "//", (code) => /libc::kill(?:pg)?\b/.test(code));
     },
   },
   {
@@ -173,12 +166,13 @@ const rules = (list) => [
     summary: "a TarmacKit module has no paired test file, or an exception is no longer needed",
     why: "every kit module ships with its <Module>Tests.swift (docs/coding-style.md §4)",
     fix: `add ${KIT_TESTS}<Module>Tests.swift, or remove the entry from ${LIST}`,
-    find: untested(list),
+    find: untested,
   },
 ];
 
+const cannotRun = (summary, why, fix) => ({ code: 2, text: failure({ rule: RULE, summary, why, fix, then: THEN }) });
+
 function main() {
-  const cannotRun = (summary, why, fix) => ({ code: 2, text: failure({ rule: RULE, summary, why, fix, then: THEN }) });
   const root = repoRoot();
   if (!root) return cannotRun("not in a git repository", [], "run it from inside the repository");
   const tree = treeOf(root);
@@ -186,15 +180,22 @@ function main() {
   const { list, bad } = exceptions(tree);
   if (bad) return cannotRun("cannot run the architecture check", [bad], `correct ${LIST}`);
 
-  const broken = rules(list)
-    .map((rule) => ({ ...rule, at: [...new Set(rule.find(tree))] }))
-    .filter(({ at }) => at.length > 0);
+  const broken = RULES.map((rule) => ({ ...rule, at: [...new Set(rule.find(tree, list))] })).filter(({ at }) => at.length > 0);
   const text = broken.map(({ summary, at, why, fix }) => failure({ rule: RULE, summary, at, why: [why], fix, then: THEN })).join("");
   return { code: broken.length > 0 ? 1 : 0, text };
 }
 
+/** A rule that throws has not judged the tree, so that is "could not run" and never "a rule is broken". */
+function guarded() {
+  try {
+    return main();
+  } catch (error) {
+    return cannotRun("cannot run the architecture check", [error.message], "correct what the line above names");
+  }
+}
+
 if (startedAs(import.meta)) {
-  const { code, text } = main();
+  const { code, text } = guarded();
   process.stderr.write(text);
   process.exitCode = code;
 }

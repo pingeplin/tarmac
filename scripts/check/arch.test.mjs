@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -84,6 +84,25 @@ test("S2/S14: every form of a forbidden import in TarmacKit is reported at its l
   assert.deepEqual(places(run), [1, 11, 12, 13, 14, 2, 3, 4, 5, 6, 7, 8, 9].map((line) => `${KIT}/A.swift:${line}`));
 });
 
+for (const form of [
+  ...["public", "package", "internal", "fileprivate", "private"].map((access) => `${access} import AppKit`),
+  ...["struct", "class", "enum", "protocol", "func", "var", "let", "typealias"].map((kind) => `import ${kind} AppKit.Thing`),
+  "@preconcurrency @testable import AppKit",
+  "import\tAppKit",
+]) {
+  test(`S14: "${form.replace("\t", "<tab>")}" in TarmacKit is a forbidden import`, () => {
+    const run = arch(repo({ [`${KIT}/A.swift`]: `${form}\n`, "app/Tests/TarmacKitTests/ATests.swift": "" }));
+
+    assert.deepEqual(places(run), [`${KIT}/A.swift:1`]);
+  });
+}
+
+test("S2: only Swift files are read for imports", () => {
+  const run = arch(repo({ [`${KIT}/notes.md`]: "import AppKit\n", "app/Sources/TarmacTerm/notes.txt": "import TarmacKit\n" }));
+
+  assert.equal(run.code, 0);
+});
+
 test("S2/S14: the near misses of a forbidden import are not reported", () => {
   const kit = ["import Foundation", "import AppKitLike", "// import AppKit", "let x = 1 // import AppKit", "let importAppKit = 1"].join("\n");
 
@@ -107,11 +126,13 @@ test("S4/S15: Bundle.module in code is reported everywhere but in BundledResourc
       "app/Sources/TarmacApp/BundledResource.swift": "let a = Bundle.module\n",
       "app/Sources/TarmacApp/Other.swift": "/// Bundle.module traps there.\nlet b = Bundle.module.url\nlet c = Bundle.moduleURL\nlet d = 1 // Bundle.module\n",
       "scripts/qa/x.swift": "let e = Bundle.module\n",
+      "app/Sources/TarmacKit/BundledResource.swift": "let f = Bundle.module\n",
+      "app/Tests/TarmacKitTests/BundledResourceTests.swift": "",
     }),
   );
 
   assert.deepEqual(summaries(run), [BUNDLE]);
-  assert.deepEqual(places(run), ["app/Sources/TarmacApp/Other.swift:2", "scripts/qa/x.swift:1"]);
+  assert.deepEqual(places(run), ["app/Sources/TarmacApp/Other.swift:2", "app/Sources/TarmacKit/BundledResource.swift:1", "scripts/qa/x.swift:1"]);
 });
 
 test("S5/S15: a signal is sent in term.rs only, among the files under a crate's src", () => {
@@ -123,27 +144,43 @@ test("S5/S15: a signal is sent in term.rs only, among the files under a crate's 
       "core/crates/tarmacd/src/state/deep.rs": send,
       "core/crates/tarmacd/tests/common/daemon.rs": send,
       "core/crates/tarmac-cli/src/main.rs": send,
+      "core/crates/tarmac-cli/src/term.rs": send,
     }),
   );
 
   assert.deepEqual(summaries(run), [SIGNAL]);
-  assert.deepEqual(places(run), ["core/crates/tarmac-cli/src/main.rs:2", "core/crates/tarmacd/src/conn.rs:2", "core/crates/tarmacd/src/conn.rs:5", "core/crates/tarmacd/src/state/deep.rs:2"]);
+  assert.deepEqual(places(run), [
+    "core/crates/tarmac-cli/src/main.rs:2",
+    "core/crates/tarmac-cli/src/term.rs:2",
+    "core/crates/tarmacd/src/conn.rs:2",
+    "core/crates/tarmacd/src/conn.rs:5",
+    "core/crates/tarmacd/src/state/deep.rs:2",
+  ]);
 });
 
 test("S6/S16: debug-assertions in any profile table is reported at its line, and nowhere else", () => {
   const workspace = [PINNED, "[profile.release]", "lto = true", "debug-assertions = true", "[profile.dev]", "# debug-assertions = false", "opt-level = 1", "[profile.dev.package.foo]", "debug-assertions = false"].join("\n");
   const crate = "[package]\nname = \"x\"\ndebug-assertions = false\n[profile.dev]\ndebug-assertions = false\n";
 
-  const run = arch(repo({ [CARGO]: workspace, "core/crates/x/Cargo.toml": crate, "core/.cargo/config.toml": "[profile.dev]\ndebug-assertions = false\n" }));
+  const config = "[profile.dev]\ndebug-assertions = false\n";
+  const run = arch(repo({ [CARGO]: workspace, "core/crates/x/Cargo.toml": crate, "core/.cargo/config.toml": config, ".cargo/config.toml": config }));
 
   assert.deepEqual(summaries(run), [PROFILE]);
-  assert.deepEqual(places(run), ["core/.cargo/config.toml:2", "core/Cargo.toml:13", "core/Cargo.toml:8", "core/crates/x/Cargo.toml:5"]);
+  assert.deepEqual(places(run), [".cargo/config.toml:2", "core/.cargo/config.toml:2", "core/Cargo.toml:13", "core/Cargo.toml:8", "core/crates/x/Cargo.toml:5"]);
 });
 
 test("S16: a table header with a comment after it is still a header", () => {
   const run = arch(repo({ [CARGO]: `${PINNED}[profile.dev] # for local builds\ndebug-assertions = false\n` }));
 
   assert.deepEqual(places(run), ["core/Cargo.toml:6"]);
+});
+
+test("S16: an array-of-tables header ends a profile table, and a header may have spaces inside", () => {
+  const ended = `${PINNED}[profile.dev]\nopt-level = 1\n[[bin]]\ndebug-assertions = false\n`;
+  const spaced = `${PINNED}[ profile.dev ]\ndebug-assertions = false\n`;
+
+  assert.equal(arch(repo({ [CARGO]: ended })).code, 0);
+  assert.deepEqual(places(arch(repo({ [CARGO]: spaced }))), ["core/Cargo.toml:6"]);
 });
 
 test("S6: a profile with no debug-assertions key passes", () => {
@@ -164,6 +201,12 @@ test("S7/S17: a path dependency has no version to pin, and a missing table is re
 
   assert.deepEqual(places(arch(repo({ [CARGO]: byPath }))), ["core/Cargo.toml:2"]);
   assert.deepEqual(places(arch(repo({ [CARGO]: "[workspace]\n" }))), ["core/Cargo.toml:1"]);
+});
+
+test("S17: a key that only ends in version is not the version", () => {
+  const sly = '[workspace.dependencies]\nserde = { default-version = "=1", version = "1.0" }\nrmp-serde = "=1.3.1"\nserde_bytes = "=0.11.19"\n';
+
+  assert.deepEqual(places(arch(repo({ [CARGO]: sly }))), ["core/Cargo.toml:2"]);
 });
 
 test("S8/S19: a kit module needs its test file or an entry; a slice needs neither", () => {
@@ -232,6 +275,7 @@ for (const [name, files, why] of [
   ["not JSON", { [LIST]: "[ nope" }, `${LIST} is not valid JSON`],
   ["not a list", { [LIST]: "{}" }, `${LIST} is not a list`],
   ["an entry with no reason", { [LIST]: '[{"module": "A", "issue": "#1"}]' }, `${LIST} entry 1 needs module, issue, reason, each a text that is not empty`],
+  ["an entry with no module", { [LIST]: '[{"issue": "#1", "reason": "r"}]' }, `${LIST} entry 1 needs module, issue, reason, each a text that is not empty`],
   ["an entry with an empty issue", { [LIST]: '[{"module": "A", "issue": "", "reason": "r"}]' }, `${LIST} entry 1 needs module, issue, reason, each a text that is not empty`],
   ["two entries for one module", { [LIST]: '[{"module": "A", "issue": "#1", "reason": "r"}, {"module": "A", "issue": "#1", "reason": "r"}]' }, `${LIST} names A twice`],
 ]) {
@@ -262,4 +306,24 @@ test("S10/S20: an untracked file is not read; a tracked file is read as it is in
 
   assert.equal(run.code, 1);
   assert.deepEqual(places(run), [`${KIT}/Tracked.swift:1`]);
+});
+
+test("S19: a stale entry is placed at its module's line, whatever characters the name has and however the entry is laid out", () => {
+  const list = '[\n  { "issue": "#1",\n    "module":\n      "A(",\n    "reason": "r" }\n]\n';
+
+  const run = arch(repo({ [LIST]: list }));
+
+  assert.equal(run.code, 1);
+  assert.deepEqual(places(run), [`${LIST}:4`]);
+});
+
+test("a file that cannot be read cannot run the check: it is not a broken rule", () => {
+  const dir = repo({ [`${KIT}/A.swift`]: "import Foundation\n", "app/Tests/TarmacKitTests/ATests.swift": "" });
+  chmodSync(join(dir, `${KIT}/A.swift`), 0o000);
+
+  const run = arch(dir);
+  chmodSync(join(dir, `${KIT}/A.swift`), 0o644);
+
+  assert.equal(run.code, 2);
+  assert.equal(run.err[0], "✗ arch: cannot run the architecture check");
 });

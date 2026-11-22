@@ -22,11 +22,11 @@
   {
     "module": "InlineMarks",
     "issue": "#481",
-    "reason": "added after the rule with no test file; no file under app/Tests names it"
+    "reason": "added after the rule with no file of its own; tested through InlineMarkdownTests, the suite of the type that calls it"
   },
   {
     "module": "SpawnRequest",
     "issue": "#481",
-    "reason": "added after the rule with no suite of its own; exercised from BoardRestoreTests, DeadCardOfferTests and DevSnapshotTests"
+    "reason": "added after the rule with no suite of its own; used by eight test files, RestoreCardTests and TermNewPlanTests among them"
   }
 ]
