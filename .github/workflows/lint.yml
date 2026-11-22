@@ -48,10 +48,9 @@ jobs:
         with:
           node-version: '22'
 
-      # The tests run the real formatter in small temporary repositories, which
-      # are outside this checkout, so there rustup picks its default toolchain.
+      # The tests run the real formatter in small temporary repositories.
       - name: install the pinned toolchain
-        run: rustup toolchain install && rustup default "$(rustup show active-toolchain | cut -d' ' -f1)"
+        run: rustup toolchain install
 
       - name: make check-test
         run: make check-test

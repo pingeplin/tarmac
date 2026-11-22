@@ -38,10 +38,10 @@ test("a failure with no place and no reason has only the two commands", () => {
   assert.deepEqual(text.split("\n"), ["✗ fmt: unknown language", "  fix  f", "  then t", ""]);
 });
 
-test("a failure with no fix cannot be written", () => {
-  assert.throws(() => failure({ rule: "fmt", summary: "s", then: "t" }), /fix/);
-});
+for (const missing of ["fix", "then"]) {
+  test(`a failure with no ${missing} cannot be written`, () => {
+    const complete = { rule: "fmt", summary: "s", fix: "f", then: "t" };
 
-test("a failure with no then cannot be written", () => {
-  assert.throws(() => failure({ rule: "fmt", summary: "s", fix: "f" }), /then/);
-});
+    assert.throws(() => failure({ ...complete, [missing]: undefined }), new RegExp(missing));
+  });
+}

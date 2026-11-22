@@ -10,6 +10,10 @@ import { notFormatted } from "./fmt.mjs";
 const SCRIPT = join(import.meta.dirname, "fmt.mjs");
 const FORMATTED = "fn main() {}\n";
 const UGLY = "pub fn y(){let a=1;let _=a;}\n";
+const CLEAN = { code: 0, err: [""] };
+// The fixtures are outside this checkout, so each one carries the pin: a test
+// then runs the same rustfmt as a check of the real tree.
+const TOOLCHAIN = readFileSync(join(import.meta.dirname, "../../rust-toolchain.toml"), "utf8");
 const repos = [];
 after(() => repos.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
 
@@ -19,10 +23,11 @@ function scratch() {
   return dir;
 }
 
-/** A git repository in which every listed file is tracked. */
+/** A git repository in which every listed file is tracked, beside one formatted `main.rs`. */
 function repo(files = {}) {
   const dir = scratch();
-  for (const [path, text] of Object.entries({ "core/src/main.rs": FORMATTED, ...files })) write(dir, path, text);
+  const tracked = { "rust-toolchain.toml": TOOLCHAIN, "core/src/main.rs": FORMATTED, ...files };
+  for (const [path, text] of Object.entries(tracked)) if (text !== null) write(dir, path, text);
   git(dir, "init", "-q");
   git(dir, "add", "-A");
   return dir;
@@ -47,14 +52,17 @@ function fmt(dir, args, env = process.env) {
   return { code: run.status, err: run.stderr.split("\n") };
 }
 
-test("S1: a formatted tree passes and says nothing", () => {
-  const run = fmt(repo(), ["--check", "rust"]);
+const runCheck = (dir, env) => fmt(dir, ["--check", "rust"], env);
+const runWrite = (dir, env) => fmt(dir, ["--write", "rust"], env);
 
-  assert.deepEqual(run, { code: 0, err: [""] });
+test("S1: a formatted tree passes and says nothing", () => {
+  const run = runCheck(repo());
+
+  assert.deepEqual(run, CLEAN);
 });
 
 test("S2: one file the formatter would rewrite is named, with the command that fixes it", () => {
-  const run = fmt(repo({ "core/src/ugly.rs": UGLY }), ["--check", "rust"]);
+  const run = runCheck(repo({ "core/src/ugly.rs": UGLY }));
 
   assert.equal(run.code, 1);
   assert.deepEqual(run.err, [
@@ -69,11 +77,11 @@ test("S2: one file the formatter would rewrite is named, with the command that f
 test("S3: after a write, the check passes", () => {
   const dir = repo({ "core/src/ugly.rs": UGLY });
 
-  const before = fmt(dir, ["--check", "rust"]).code;
+  const before = runCheck(dir).code;
 
-  fmt(dir, ["--write", "rust"]);
+  runWrite(dir);
 
-  assert.deepEqual([before, fmt(dir, ["--check", "rust"]).code], [1, 0]);
+  assert.deepEqual([before, runCheck(dir).code], [1, 0]);
 });
 
 test("S21: a write succeeds silently and leaves other files alone", () => {
@@ -83,9 +91,9 @@ test("S21: a write succeeds silently and leaves other files alone", () => {
   const mtime = () => statSync(join(dir, "core/src/main.rs")).mtimeMs;
   const before = mtime();
 
-  const run = fmt(dir, ["--write", "rust"]);
+  const run = runWrite(dir);
 
-  assert.deepEqual(run, { code: 0, err: [""] });
+  assert.deepEqual(run, CLEAN);
   assert.equal(mtime(), before, "a file that is already formatted is not written again");
   assert.notEqual(readFileSync(join(dir, "core/src/ugly.rs"), "utf8"), UGLY);
   assert.equal(readFileSync(join(dir, "core/src/stray.rs"), "utf8"), UGLY);
@@ -97,10 +105,10 @@ test("S10: an untracked file is not checked or rewritten, even when a tracked mo
   write(dir, "core/src/stray.rs", UGLY);
   write(dir, "core/src/loose.rs", UGLY);
 
-  const check = fmt(dir, ["--check", "rust"]);
-  fmt(dir, ["--write", "rust"]);
+  const check = runCheck(dir);
+  runWrite(dir);
 
-  assert.deepEqual(check, { code: 0, err: [""] });
+  assert.deepEqual(check, CLEAN);
   assert.deepEqual(["stray", "loose"].map((name) => readFileSync(join(dir, `core/src/${name}.rs`), "utf8")), [UGLY, UGLY]);
 });
 
@@ -112,13 +120,13 @@ test("S19: a check changes no byte, no mtime and no git status line", () => {
   });
   const before = snapshot();
 
-  fmt(dir, ["--check", "rust"]);
+  runCheck(dir);
 
   assert.deepEqual(snapshot(), before);
 });
 
 test("a tracked file is checked even when no mod line and no workspace reaches it", () => {
-  const run = fmt(repo({ "tools/orphan.rs": UGLY }), ["--check", "rust"]);
+  const run = runCheck(repo({ "tools/orphan.rs": UGLY }));
 
   assert.equal(run.code, 1);
   assert.equal(run.err[1], "  at   tools/orphan.rs");
@@ -127,7 +135,7 @@ test("a tracked file is checked even when no mod line and no workspace reaches i
 test("a file is named once, however many modules name it", () => {
   const shared = { "core/src/shared.rs": UGLY, "core/src/main.rs": "mod shared;\nfn main() {}\n", "core/tests/a.rs": '#[path = "../src/shared.rs"]\nmod shared;\n' };
 
-  const run = fmt(repo(shared), ["--check", "rust"]);
+  const run = runCheck(repo(shared));
 
   assert.deepEqual(run.err.slice(0, 2), ["✗ fmt: 1 file is not formatted", "  at   core/src/shared.rs"]);
 });
@@ -136,8 +144,8 @@ test("the formatter reads the configuration nearest to the file", () => {
   const wide = "fn main() {\n    let v = [aaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbb, cccccccccccccccccccc, dddddddddddddddddddd, eeeeeeeeeeeeee];\n}\n";
   const config = 'max_width = 120\nuse_small_heuristics = "Max"\n';
 
-  const configured = fmt(repo({ "core/rustfmt.toml": config, "core/src/main.rs": wide }), ["--check", "rust"]);
-  const defaults = fmt(repo({ "core/src/main.rs": wide }), ["--check", "rust"]);
+  const configured = runCheck(repo({ "core/rustfmt.toml": config, "core/src/main.rs": wide }));
+  const defaults = runCheck(repo({ "core/src/main.rs": wide }));
 
   assert.deepEqual([configured.code, defaults.code], [0, 1]);
 });
@@ -145,31 +153,26 @@ test("the formatter reads the configuration nearest to the file", () => {
 test("Rust is read as edition 2024, the workspace's edition", () => {
   const asyncBlock = "fn main() {\n    let x = async { 1 };\n    drop(x);\n}\n";
 
-  assert.deepEqual(fmt(repo({ "core/src/main.rs": asyncBlock }), ["--check", "rust"]), { code: 0, err: [""] });
+  assert.deepEqual(runCheck(repo({ "core/src/main.rs": asyncBlock })), CLEAN);
 });
 
 test("outside a git repository the check cannot run", () => {
-  const run = fmt(scratch(), ["--check", "rust"]);
+  const run = runCheck(scratch());
 
   assert.equal(run.code, 2);
   assert.equal(run.err[0], "✗ fmt: not in a git repository");
 });
 
 test("S22: a repository with no file of the language passes and says nothing", () => {
-  const dir = scratch();
-  write(dir, "README.md", "x\n");
-  git(dir, "init", "-q");
-  git(dir, "add", "-A");
-
-  assert.deepEqual(fmt(dir, ["--check", "rust"]), { code: 0, err: [""] });
+  assert.deepEqual(runCheck(repo({ "core/src/main.rs": null, "README.md": "x\n" })), CLEAN);
 });
 
 test("S14: with no formatter on the PATH the check cannot run, and says so", () => {
   const dir = repo({ "core/src/ugly.rs": UGLY });
   const bare = pathWithOnlyGit();
 
-  const check = fmt(dir, ["--check", "rust"], bare);
-  const written = fmt(dir, ["--write", "rust"], bare);
+  const check = runCheck(dir, bare);
+  const written = runWrite(dir, bare);
 
   assert.equal(check.code, 2);
   assert.equal(check.err[0], "✗ fmt: cannot run rustfmt");
@@ -182,8 +185,8 @@ test("S14: with no formatter on the PATH the check cannot run, and says so", () 
 test("S20: a file that does not parse is a check that cannot run, not an unformatted file", () => {
   const dir = repo({ "core/src/bad.rs": "fn x( {\n", "core/src/ugly.rs": UGLY });
 
-  const check = fmt(dir, ["--check", "rust"]);
-  const written = fmt(dir, ["--write", "rust"]);
+  const check = runCheck(dir);
+  const written = runWrite(dir);
 
   assert.equal(check.code, 2);
   assert.equal(check.err[0], "✗ fmt: cannot run rustfmt");

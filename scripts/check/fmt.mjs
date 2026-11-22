@@ -52,6 +52,7 @@ function formatted([command, ...args], cwd, text) {
       else if (error.code === "ENOENT") done({ missing: true });
       else done({ refused: stderr.split("\n").find((line) => /^error/i.test(line)) ?? `exit ${error.code ?? error.signal}` });
     });
+    // A formatter that is missing or stops early closes its stdin; the callback above reports that.
     child.stdin.on("error", () => {});
     child.stdin.end(text);
   });
@@ -112,7 +113,12 @@ async function main([mode, only]) {
   const blocked = done.filter((d) => d.blocked).map((d) => d.blocked);
   const unformatted = done.flatMap((d) => d.unformatted ?? []);
   const text = blocked.join("") + (unformatted.length > 0 ? notFormatted(unformatted) : "");
-  return { code: blocked.length > 0 ? 2 : unformatted.length > 0 ? 1 : 0, text };
+  return { code: exitCode(blocked, unformatted), text };
+}
+
+function exitCode(blocked, unformatted) {
+  if (blocked.length > 0) return 2;
+  return unformatted.length > 0 ? 1 : 0;
 }
 
 if (import.meta.filename === process.argv[1]) {

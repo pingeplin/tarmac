@@ -1,8 +1,6 @@
-// The one place that words a failed check. Every check prints the same four
-// parts, so a person or an agent always finds the rule, the place, the reason
-// and the next command in the same position.
-
-const LABELS = ["at", "why"];
+// The one place that words a failed check, and the format for every new check:
+// the rule, the places, the reason, and the next two commands, always in the
+// same position. (docs-check and dco-check predate it and keep their own.)
 
 /**
  * `at` and `why` are lists of lines and may be empty. `fix` and `then` are
@@ -10,15 +8,22 @@ const LABELS = ["at", "why"];
  * says "failed" leaves the reader with nothing to do.
  */
 export function failure({ rule, summary, at = [], why = [], fix, then }) {
-  if (!fix) throw new Error(`a ${rule} failure needs a fix command`);
-  if (!then) throw new Error(`a ${rule} failure needs a then command`);
-  const parts = { at: [...at].sort(byBytes), why };
-  const lines = [`✗ ${rule}: ${summary}`];
-  for (const label of LABELS) parts[label].forEach((text, i) => lines.push(row(i === 0 ? label : "", text)));
-  lines.push(row("fix", fix), row("then", then), "");
+  for (const [name, command] of Object.entries({ fix, then })) {
+    if (!command) throw new Error(`a ${rule} failure needs a ${name} command`);
+  }
+  const lines = [
+    `✗ ${rule}: ${summary}`,
+    ...rows("at", [...at].sort(byBytes)),
+    ...rows("why", why),
+    row("fix", fix),
+    row("then", then),
+    "",
+  ];
   return lines.join("\n");
 }
 
 const row = (label, text) => `  ${label.padEnd(4)} ${text}`;
+
+const rows = (label, texts) => texts.map((text, i) => row(i === 0 ? label : "", text));
 
 const byBytes = (a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b));
