@@ -10,7 +10,7 @@
 // A check must not exit 1 for a reason that `--write` cannot fix: that case is
 // "could not run".
 
-import { execFile, execFileSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { dirname, join } from "node:path";
@@ -41,7 +41,7 @@ const LANGUAGES = {
     // Rust's formatter version is pinned by rust-toolchain.toml. Swift has no
     // such file, and another minor version lays code out differently, so the
     // version this tree was formatted with is checked here.
-    version: { command: ["swift", "format", "--version"], expect: "6.4" },
+    version: { command: ["swift", "format", "--version"], expect: "6.4", fix: "use a Swift 6.4 toolchain, then run it again" },
     // swift-format 6.4 joins the comment lines under a `#!` line onto that
     // line, and joins one more on every run, so a script is not formatted.
     leaves: (text) => text.startsWith("#!"),
@@ -65,13 +65,16 @@ function formatted([command, ...args], cwd, text) {
     const child = execFile(command, args, { cwd, encoding: "utf8", maxBuffer: 64 << 20 }, (error, stdout, stderr) => {
       if (!error) done({ text: stdout });
       else if (error.code === "ENOENT") done({ missing: true });
-      else done({ refused: stderr.split("\n").find((line) => /^error/i.test(line)) ?? `exit ${error.code ?? error.signal}` });
+      else done({ refused: firstError(stderr) ?? `exit ${error.code ?? error.signal}` });
     });
     // A formatter that is missing or stops early closes its stdin; the callback above reports that.
     child.stdin.on("error", () => {});
     child.stdin.end(text);
   });
 }
+
+/** rustfmt starts the line with `error:`; swift-format puts `<file>:<line>:<column>: ` before it. */
+const firstError = (stderr) => stderr.split("\n").map((line) => line.match(/\berror: .*$/)?.[0]).find(Boolean);
 
 async function each(items, limit, work) {
   const results = new Array(items.length);
@@ -86,21 +89,20 @@ async function each(items, limit, work) {
   return results;
 }
 
+const notOnPath = (language) => ({
+  blocked: cannotRun(`cannot run ${language.tool}`, [`${language.command[0]} is not on the PATH`], language.install),
+});
+
 /** The reason the language's formatter must not run here, if there is one. */
 function unusable(language) {
-  const missing = { blocked: cannotRun(`cannot run ${language.tool}`, [`${language.command[0]} is not on the PATH`], language.install) };
   if (!language.version) return null;
-  const { command, expect } = language.version;
-  let found;
-  try {
-    found = execFileSync(command[0], command.slice(1), { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch (error) {
-    if (error.code === "ENOENT") return missing;
-    found = "of an unknown version";
-  }
-  if (found === expect || found.startsWith(`${expect}.`)) return null;
-  const why = [`${language.tool} ${found} is on the PATH; this tree is formatted with ${expect}`];
-  return { blocked: cannotRun(`cannot run ${language.tool}`, why, `use a Swift ${expect} toolchain, then run it again`) };
+  const { command, expect, fix } = language.version;
+  const asked = spawnSync(command[0], command.slice(1), { encoding: "utf8" });
+  if (asked.error?.code === "ENOENT") return notOnPath(language);
+  const found = asked.status === 0 ? asked.stdout.split("\n")[0].trim() : null;
+  if (found === expect || found?.startsWith(`${expect}.`)) return null;
+  const have = found ? `${language.tool} ${found} is on the PATH` : `${command.join(" ")} did not answer`;
+  return { blocked: cannotRun(`cannot run ${language.tool}`, [`${have}; this tree is formatted with ${expect}`], fix) };
 }
 
 /** Runs one language; returns the report it owes, if any, and the files it found unformatted. */
@@ -117,9 +119,7 @@ async function run(language, root, write) {
     if (language.leaves?.(before)) return { path, file, before, text: before };
     return { path, file, before, ...(await formatted(language.command, dirname(file), before)) };
   });
-  if (results.some((r) => r.missing)) {
-    return { blocked: cannotRun(`cannot run ${language.tool}`, [`${language.command[0]} is not on the PATH`], language.install) };
-  }
+  if (results.some((r) => r.missing)) return notOnPath(language);
   const refused = results.filter((r) => r.refused);
   if (refused.length > 0) {
     const why = refused.map((r) => `${r.path}: ${r.refused}`);

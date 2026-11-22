@@ -11,6 +11,7 @@ const SCRIPT = join(import.meta.dirname, "fmt.mjs");
 const FORMATTED = "fn main() {}\n";
 const UGLY = "pub fn y(){let a=1;let _=a;}\n";
 const UGLY_SWIFT = "let  x=1\n";
+const REAL_SWIFT = execFileSync("which", ["swift"], { encoding: "utf8" }).trim();
 const CLEAN = { code: 0, err: [""] };
 // The fixtures are outside this checkout, so each one carries the pin: a test
 // then runs the same rustfmt as a check of the real tree.
@@ -287,14 +288,57 @@ test("when one language cannot run, the other still reports, and the exit code s
   assert.ok(run.err.includes("✗ fmt: 1 file is not formatted") && run.err.includes("  at   core/src/ugly.rs"));
 });
 
-test("a swift-format of another minor version cannot run the check, and both versions are named", () => {
-  const dir = repo({ "app/A.swift": UGLY_SWIFT });
+/** A `swift` that reports the given version and is the real one for everything else. */
+const swiftReporting = (version) => pathWithOnlyGit({ swift: `[ "$2" = "--version" ] && { ${version}; exit; }\nexec ${REAL_SWIFT} "$@"` });
 
-  const run = fmt(dir, ["--check", "swift"], pathWithOnlyGit({ swift: "echo 5.9.2" }));
+test("a swift-format of another minor version cannot run a check or a write, and both versions are named", () => {
+  const dir = repo({ "app/A.swift": UGLY_SWIFT });
+  const old = swiftReporting("echo 5.9.2");
+
+  const runs = [fmt(dir, ["--check", "swift"], old), fmt(dir, ["--write", "swift"], old)];
+
+  for (const run of runs) {
+    assert.equal(run.code, 2);
+    assert.deepEqual(run.err.slice(0, 2), ["✗ fmt: cannot run swift-format", "  why  swift-format 5.9.2 is on the PATH; this tree is formatted with 6.4"]);
+    assert.ok(!run.err.some((line) => line.startsWith("  at ")));
+  }
+  assert.equal(readFileSync(join(dir, "app/A.swift"), "utf8"), UGLY_SWIFT);
+});
+
+for (const [reported, code] of [["echo 6.4", 1], ["echo 6.4.9", 1], ["echo 6.40.1", 2], ["echo 6.4.4; echo extra", 1], ["echo 5.9.2; echo extra", 2], ["exit 3", 2]]) {
+  test(`a swift-format that answers --version with "${reported}" gives exit ${code}`, () => {
+    const run = fmt(repo({ "app/A.swift": UGLY_SWIFT }), ["--check", "swift"], swiftReporting(reported));
+
+    assert.equal(run.code, code);
+    assert.ok(run.err.every((line) => /^(✗ fmt: |  (at|why|fix|then| {2,4}) |$)/.test(line)), run.err.join("\n"));
+  });
+}
+
+test("a Swift file that does not parse is named with the formatter's own error", () => {
+  const run = fmt(repo({ "app/A.swift": "let x = (\n" }), ["--check", "swift"]);
 
   assert.equal(run.code, 2);
-  assert.deepEqual(run.err.slice(0, 2), ["✗ fmt: cannot run swift-format", "  why  swift-format 5.9.2 is on the PATH; this tree is formatted with 6.4"]);
-  assert.ok(!run.err.some((line) => line.startsWith("  at ")));
+  assert.deepEqual(run.err.slice(0, 3), [
+    "✗ fmt: cannot run swift-format",
+    "  why  app/A.swift: error: expected value and ')' to end tuple",
+    "  fix  see the whole error with: swift format lint app/A.swift",
+  ]);
+});
+
+test("a #! that is not the first two bytes does not exempt a Swift file", () => {
+  const run = fmt(repo({ "app/A.swift": "// see #!/bin/sh\nlet  x=1\n" }), ["--check", "swift"]);
+
+  assert.equal(run.code, 1);
+});
+
+test("S19: a Swift check changes no byte, no mtime and no git status line", () => {
+  const dir = repo({ "app/A.swift": UGLY_SWIFT });
+  const snapshot = () => [git(dir, "status", "--porcelain"), readFileSync(join(dir, "app/A.swift"), "utf8"), statSync(join(dir, "app/A.swift")).mtimeMs];
+  const before = snapshot();
+
+  fmt(dir, ["--check", "swift"]);
+
+  assert.deepEqual(snapshot(), before);
 });
 
 test("a Swift script with a #! line is left alone: swift-format 6.4 corrupts its header", () => {
