@@ -372,9 +372,20 @@ for (const command of [
   "ls # a comment\npkill tarmacd",
   "cat <<-EOF\n\tx\n\tEOF\npkill tarmacd",
   'pkill -f "Tarmac$(echo App)"',
+  'grep x <<< "$v"\npkill tarmacd',
+  "kill $(sudo pgrep tarmacd)",
+  "kill $(sudo -n pgrep tarmacd)",
+  "kill $(command pgrep -f tarmac-app)",
+  "sudo env A=1 nice -n 10 pkill tarmacd",
+  "xargs -n 1 pkill -f tarmac",
+  "echo $'a\\'b'; pkill tarmacd",
+  "function f { pkill tarmacd; }; f",
+  "f() { pkill tarmacd; }; f",
+  'cat <<"END X"\nx\nEND X\npkill tarmacd',
+  `${"$(".repeat(6000)}pkill tarmacd`,
   "echo a\npkill tarmacd",
 ]) {
-  test(`S11/S26: \`${command.replaceAll("\n", "\\n")}\` is refused`, () => {
+  test(`S11/S26: \`${command.replaceAll("\n", "\\n").slice(0, 80)}\` is refused`, () => {
     const run = hook("bash", bashOf(command));
 
     assert.equal(run.code, 2);
@@ -410,12 +421,27 @@ for (const command of [
   "kill 1234; pgrep nginx",
   "pgrep -fl tarmacd; kill -0 $$ 2>/dev/null",
   "echo a#b; ls",
+  "cd tarmac && git ls-files | xargs grep -n pkill",
+  "nice grep -rn pkill tarmac/",
+  "command -v pkill tarmacd",
+  "sudo -u tarmac grep pkill x",
+  "timeout 5 make kill-daemon",
+  `${"$(".repeat(6000)}ls`,
   SENT["PreToolUse.Bash"].tool_input.command,
 ]) {
-  test(`S11/S26: \`${command.replaceAll("\n", "\\n")}\` passes`, () => {
+  test(`S11/S26: \`${command.replaceAll("\n", "\\n").slice(0, 80)}\` passes`, () => {
     assert.deepEqual(hook("bash", bashOf(command)), QUIET);
   });
 }
+
+test("a megabyte of piped commands is read well inside the hook's ten seconds", () => {
+  const started = Date.now();
+
+  const run = hook("bash", bashOf("a|xargs pkill x;".repeat(65536)));
+
+  assert.equal(run.code, 0);
+  assert.ok(Date.now() - started < 5000);
+});
 
 test("an input that is not JSON, and an event the adapter does not know, pass", () => {
   const raw = spawnSync(process.execPath, [HOOK, "stop"], { input: "not json", encoding: "utf8" });
