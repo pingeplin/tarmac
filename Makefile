@@ -1,6 +1,6 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: core ghostty-vt app test docs-check dco-check run qa qa-quit qa-resume kill-daemon bundle dmg release
+.PHONY: core ghostty-vt app test docs-check check-test fmt fmt-check dco-check run qa qa-quit qa-resume kill-daemon bundle dmg release
 
 # The dev channel: one directory that holds this worktree's own daemon socket,
 # state, driver socket and config directory. Everything that launches or drives
@@ -65,7 +65,22 @@ BASE ?= origin/main
 dco-check:
 	node $(ROOT)/scripts/dco-check.mjs --base $(BASE)
 
-test: docs-check ghostty-vt
+# The formatter, one definition for people, hooks and CI (scripts/check/fmt.mjs).
+# `fmt` rewrites every tracked file; `fmt-check` changes nothing and names the
+# files `fmt` would rewrite. ONLY=rust limits a run to one language. The Rust
+# toolchain, and so the rustfmt version, is pinned in rust-toolchain.toml.
+fmt:
+	cd $(ROOT) && node scripts/check/fmt.mjs --write $(ONLY)
+
+fmt-check:
+	cd $(ROOT) && node scripts/check/fmt.mjs --check $(ONLY)
+
+# The unit tests of the check scripts themselves. They make small git
+# repositories in the temp directory and run the real formatter there.
+check-test:
+	node --test '$(ROOT)/scripts/check/*.test.mjs'
+
+test: docs-check check-test ghostty-vt
 	cd $(ROOT)/core && cargo test
 	cd $(ROOT)/app && swift test
 

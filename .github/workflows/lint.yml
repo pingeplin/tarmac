@@ -1,0 +1,57 @@
+# Deterministic checks on the tree itself, apart from the test suites: a layout
+# or lint rule that a tool can decide is decided here, not by a reviewer. Each
+# job calls the same `make` target a contributor runs locally.
+name: lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fmt-rust:
+    name: fmt (rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # rust-toolchain.toml names the version; rustfmt comes with it.
+      - name: install the pinned toolchain
+        run: rustup toolchain install
+
+      # A check that is red here on a tree that is clean locally is a formatter
+      # version mismatch, so the log shows the version first.
+      - name: formatter version
+        run: rustc --version && cargo fmt --version
+
+      - name: make fmt-check
+        run: make fmt-check ONLY=rust
+
+  check-scripts:
+    name: check scripts (node --test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The tests run the real formatter in small temporary repositories, which
+      # are outside this checkout, so there rustup picks its default toolchain.
+      - name: install the pinned toolchain
+        run: rustup toolchain install && rustup default "$(rustup show active-toolchain | cut -d' ' -f1)"
+
+      - name: make check-test
+        run: make check-test
