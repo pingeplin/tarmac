@@ -40,15 +40,25 @@ jobs:
         with:
           node-version: '22'
 
+      # The script's own answer to "is there a Rust change", so that a pull
+      # request with none does not pay for a toolchain and a tool it never
+      # starts. The check below runs in both cases, and is what reports.
+      - name: is there a Rust change
+        id: changed
+        run: echo "rust=$(node scripts/check/mutants.mjs --changed --base origin/${{ github.base_ref }})" >> "$GITHUB_OUTPUT"
+
       - name: install the pinned toolchain
+        if: steps.changed.outputs.rust == 'true'
         run: rustup toolchain install
 
       - uses: Swatinem/rust-cache@v2
+        if: steps.changed.outputs.rust == 'true'
         with:
           workspaces: core
 
       # The version scripts/check/mutants.mjs names; the script refuses another.
       - uses: taiki-e/install-action@v2
+        if: steps.changed.outputs.rust == 'true'
         with:
           tool: cargo-mutants@27.1.0
 

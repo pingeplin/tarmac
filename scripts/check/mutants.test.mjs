@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -27,6 +27,7 @@ function write(dir, files) {
   }
 }
 
+const AS_SOMEONE = ["-c", "user.name=t", "-c", "user.email=t@example.com"];
 const git = (dir, ...args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
 
 /** A repository with one commit on `main` (the base of every run here) and a branch `work` checked out. */
@@ -35,7 +36,7 @@ function repo(files = {}) {
   write(dir, { [SOURCE]: "fn a() -> u8 {\n    1\n}\n", "README.md": "x\n", ...files });
   git(dir, "init", "-q", "-b", "main");
   git(dir, "add", "-A");
-  git(dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "base");
+  git(dir, ...AS_SOMEONE, "commit", "-q", "-m", "base");
   git(dir, "checkout", "-q", "-b", "work");
   return dir;
 }
@@ -43,7 +44,7 @@ function repo(files = {}) {
 function commit(dir, files) {
   write(dir, files);
   git(dir, "add", "-A");
-  git(dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "change");
+  git(dir, ...AS_SOMEONE, "commit", "-q", "-m", "change");
 }
 
 /** A repository whose branch changed the one Rust file under `core/`. */
@@ -58,7 +59,9 @@ function changed() {
 const STAND_IN = `#!/usr/bin/env node
 const { appendFileSync, mkdirSync, readFileSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
-const plan = JSON.parse(readFileSync(join(__dirname, "plan.json"), "utf8"));
+// Each test has a link to this one file in a directory of its own, with its plan beside the link.
+const here = require("node:path").dirname(process.argv[1]);
+const plan = JSON.parse(readFileSync(join(here, "plan.json"), "utf8"));
 const args = process.argv.slice(2);
 if (args[1] === "--version") {
   if (plan.version === null) {
@@ -73,7 +76,7 @@ const outAt = args.indexOf("--output");
 const call = { args, env: process.env, cwd: process.cwd(), diff: diffAt < 0 ? null : readFileSync(args[diffAt + 1], "utf8") };
 call.homeEntries = require("node:fs").readdirSync(process.env.HOME);
 call.temporary = diffAt < 0 ? process.env.HOME : args[diffAt + 1];
-appendFileSync(join(__dirname, "calls.jsonl"), JSON.stringify(call) + "\\n");
+appendFileSync(join(here, "calls.jsonl"), JSON.stringify(call) + "\\n");
 console.log("progress line of the tool");
 const out = join(args[outAt + 1], "mutants.out");
 mkdirSync(out, { recursive: true });
@@ -81,11 +84,28 @@ for (const [name, lines] of Object.entries(plan.files ?? {})) writeFileSync(join
 process.exit(plan.exit ?? 0);
 `;
 
+// macOS takes about a second to start an executable file for the first time,
+// so the stand-in is one file that every test links to.
+let standInFile = null;
+function standIn() {
+  if (standInFile) return standInFile;
+  standInFile = join(scratch("mutants-stand-in-"), "cargo");
+  writeFileSync(standInFile, STAND_IN);
+  chmodSync(standInFile, 0o755);
+  return standInFile;
+}
+
+/** A PATH with git and nothing else, so no cargo of this machine is found. */
+function onlyGit() {
+  const bin = scratch("mutants-bin-");
+  symlinkSync(execFileSync("which", ["git"], { encoding: "utf8" }).trim(), join(bin, "git"));
+  return bin;
+}
+
 /** A directory with the stand-in `cargo`, set to answer as `plan` says. */
 function tool(plan = {}) {
   const dir = scratch("mutants-tool-");
-  writeFileSync(join(dir, "cargo"), STAND_IN);
-  chmodSync(join(dir, "cargo"), 0o755);
+  symlinkSync(standIn(), join(dir, "cargo"));
   writeFileSync(join(dir, "plan.json"), JSON.stringify({ version: VERSION, ...plan }));
   return dir;
 }
@@ -132,7 +152,7 @@ test("S1/S13: with no Rust change against the base the check passes and does not
 
 test("S1: with no Rust change the check passes with no cargo on the PATH at all", () => {
   const dir = repo();
-  const run = spawnSync(process.execPath, [SCRIPT, "--base", "main"], { cwd: dir, encoding: "utf8", env: { PATH: dirname(execFileSync("which", ["git"], { encoding: "utf8" }).trim()), HOME: scratch() } });
+  const run = spawnSync(process.execPath, [SCRIPT, "--base", "main"], { cwd: dir, encoding: "utf8", env: { PATH: onlyGit(), HOME: scratch() } });
 
   assert.equal(run.status, 0);
   assert.match(run.stderr, /no Rust change/);
@@ -328,7 +348,7 @@ test("S14: with no cargo-mutants the check cannot run and gives the install comm
 
 test("S14: with no cargo at all the check cannot run", () => {
   const dir = changed();
-  const run = spawnSync(process.execPath, [SCRIPT, "--base", "main"], { cwd: dir, encoding: "utf8", env: { PATH: dirname(execFileSync("which", ["git"], { encoding: "utf8" }).trim()), HOME: scratch() } });
+  const run = spawnSync(process.execPath, [SCRIPT, "--base", "main"], { cwd: dir, encoding: "utf8", env: { PATH: onlyGit(), HOME: scratch() } });
 
   assert.equal(run.status, 2);
   assert.match(run.stderr, /^✗ mutants: cannot run cargo-mutants$/m);
@@ -361,7 +381,7 @@ test("S17/S32: a base that names no commit, or shares no history, cannot be used
   const cargo = tool();
   const dir = changed();
   git(dir, "checkout", "-q", "--orphan", "apart");
-  git(dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "apart");
+  git(dir, ...AS_SOMEONE, "commit", "-q", "-m", "apart");
   git(dir, "checkout", "-q", "work");
   const unknown = mutants(dir, cargo, ["--base", "no-such-ref"]);
   const unrelated = mutants(dir, cargo, ["--base", "apart"]);
@@ -588,4 +608,33 @@ test("S20: a weekly run is not cancelled by another event on the same branch", (
   const workflow = readFileSync(join(ROOT, ".github/workflows/mutants.yml"), "utf8");
 
   assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
+});
+
+test("S48: --changed answers on stdout whether a run would start the tool, and starts nothing", () => {
+  const cargo = tool();
+  const said = (dir, args = ["--base", "main", "--changed"]) => {
+    const run = mutants(dir, cargo, args);
+    return [run.code, run.out, run.err];
+  };
+  const untracked = repo();
+  write(untracked, { "core/crates/x/src/new.rs": "fn one() {}\n" });
+
+  assert.deepEqual(said(repo()), [0, "false\n", ""]);
+  assert.deepEqual(said(changed()), [0, "true\n", ""]);
+  assert.deepEqual(said(untracked), [0, "true\n", ""]);
+  assert.deepEqual(said(repo(), ["--all", "--changed"]), [0, "true\n", ""]);
+  assert.deepEqual(said(changed(), ["--base", "no-such-ref", "--changed"]).slice(0, 2), [2, ""]);
+  assert.deepEqual(calls(cargo), []);
+});
+
+test("S48: the pull-request job installs the toolchain and the tool only for a Rust change, and always runs the check", () => {
+  const workflow = readFileSync(join(ROOT, ".github/workflows/mutants.yml"), "utf8");
+  const diffJob = workflow.match(/^ {2}in-diff:\n([\s\S]*?)^ {2}all:\n/m)[1];
+  const steps = diffJob.split(/^ {6}- /m).slice(1);
+  const gated = steps.filter((step) => /if: steps\.changed\.outputs\.rust == 'true'/.test(step)).map((step) => step.match(/(rustup toolchain install|rust-cache|install-action)/)?.[1]);
+  const check = steps.find((step) => /run: make mutants/.test(step));
+
+  assert.match(diffJob, /id: changed\n\s+run: echo "rust=\$\(node scripts\/check\/mutants\.mjs --changed --base origin\/\$\{\{ github\.base_ref \}\}\)" >> "\$GITHUB_OUTPUT"/);
+  assert.deepEqual(gated, ["rustup toolchain install", "rust-cache", "install-action"]);
+  assert.doesNotMatch(check, /\bif:/);
 });

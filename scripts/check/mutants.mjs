@@ -20,7 +20,7 @@ export const VERSION = "27.1.0";
 const RULE = "mutants";
 const THEN = "make mutants";
 const INSTALL = `cargo install cargo-mutants --version ${VERSION} --locked`;
-const USAGE = "usage: mutants.mjs [--base <ref>] [--all [--shard <k>/<n>]] [--jobs <n>] [--report]\n";
+const USAGE = "usage: mutants.mjs [--base <ref>] [--all [--shard <k>/<n>]] [--jobs <n>] [--report] [--changed]\n";
 const cannotRun = cannotRunFor(RULE, THEN);
 
 // What the caller may hand to the tool. Every other variable is dropped: one
@@ -32,15 +32,21 @@ const PASSED = ["PATH", "TMPDIR", "LANG", "LC_ALL", "TERM", "USER", "LOGNAME", "
 // A path with a letter outside ASCII is written as it is, not as a quoted escape.
 const DIFF = ["-c", "core.quotePath=false", "diff", "--src-prefix=a/", "--dst-prefix=b/", "--no-ext-diff", "--no-textconv", "--no-color"];
 
-const blocked = (text) => ({ code: 2, text });
+/** A reason this check cannot run. Thrown where it is found, and worded as exit 2 in one place. */
+class Blocked extends Error {
+  constructor(summary, why, fix) {
+    super(summary);
+    this.text = cannotRun(summary, why, fix);
+  }
+}
 
 /** The options of a run, or null for arguments this check does not know. */
 function parse(args) {
-  const options = { base: "origin/main", all: false, shard: null, jobs: "2", report: false };
+  const options = { base: "origin/main", all: false, shard: null, jobs: "2", report: false, changed: false };
+  const flags = { "--all": "all", "--report": "report", "--changed": "changed" };
   const valued = { "--base": ["base", /./], "--shard": ["shard", /^\d+\/[1-9]\d*$/], "--jobs": ["jobs", /^[1-9]\d*$/] };
   for (let at = 0; at < args.length; at++) {
-    if (args[at] === "--all") options.all = true;
-    else if (args[at] === "--report") options.report = true;
+    if (args[at] in flags) options[flags[args[at]]] = true;
     else if (args[at] in valued) {
       const [name, form] = valued[args[at]];
       const value = args[++at];
@@ -51,49 +57,57 @@ function parse(args) {
   return options.shard && !options.all ? null : options;
 }
 
+/** The output of a git command in `cwd`, or null when its exit code is none of `passes`. */
 function git(cwd, args, passes = [0]) {
   const run = spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 256 << 20 });
   return passes.includes(run.status) ? run.stdout : null;
 }
 
-/** The Rust changes under `core/` since the branch left `base`, as a diff with paths from `core/`; `{ text }` or a blocked result. */
+/** As `git`, for a command that must work: a failure is never read as an empty diff, which would be a pass with nothing tested. */
+function read(cwd, args, passes) {
+  const out = git(cwd, args, passes);
+  if (out === null) throw new Blocked("cannot read the changes from git", [`\`git ${args.filter((arg) => arg !== "-z").join(" ")}\` failed in core/`], "git status");
+  return out;
+}
+
+/** The Rust changes under `core/` since the branch left `base`, as a diff with paths from `core/`. */
 function rustDiff(core, base) {
-  if (git(core, ["rev-parse", "--verify", "--quiet", `${base}^{commit}`]) === null) return blocked(cannotRun(`${base} names no commit`, ["the mutants are those in the lines changed since the branch left its base"], `git fetch origin, or name the base: make mutants BASE=<ref>`));
+  const since = ["the mutants are those in the lines changed since the branch left its base"];
+  if (git(core, ["rev-parse", "--verify", "--quiet", `${base}^{commit}`]) === null) throw new Blocked(`${base} names no commit`, since, "git fetch origin, or name the base: make mutants BASE=<ref>");
   const from = git(core, ["merge-base", base, "HEAD"])?.trim();
-  if (!from) return blocked(cannotRun(`${base} and HEAD share no history`, ["the mutants are those in the lines changed since the branch left its base"], "make mutants BASE=<ref>"));
-  const tracked = git(core, [...DIFF, "--relative", from, "--", "*.rs"]);
+  if (!from) throw new Blocked(`${base} and HEAD share no history`, since, "make mutants BASE=<ref>");
+  const tracked = read(core, [...DIFF, "--relative", from, "--", "*.rs"]);
   // A file that is not yet committed is mutated like the rest. `--no-index` exits 1 when the two differ.
-  const untracked = git(core, ["ls-files", "--others", "--exclude-standard", "-z", "--", "*.rs"])
-    ?.split("\0")
+  const untracked = read(core, ["ls-files", "--others", "--exclude-standard", "-z", "--", "*.rs"])
+    .split("\0")
     .filter(Boolean)
-    .map((file) => git(core, [...DIFF, "--no-index", "--", "/dev/null", file], [0, 1]));
-  const parts = [tracked, ...(untracked ?? [null])];
-  // A git command that failed is not an empty diff: that would be a pass with nothing tested.
-  if (parts.includes(null)) return blocked(cannotRun("cannot read the changes from git", ["a `git diff` or `git ls-files` in core/ failed"], "git status"));
-  return { text: parts.join("") };
+    .map((file) => read(core, [...DIFF, "--no-index", "--", "/dev/null", file], [0, 1]));
+  return [tracked, ...untracked].join("");
 }
 
-/** The environment of the tool: the stand-in home, the real cargo and rustup, and the passed names. Null when cargo and rustup cannot be placed. */
+/** The environment of the tool: the stand-in home, the real cargo and rustup, and the passed names. */
 function environment(caller, home) {
-  const placed = (name, directory) => caller[name] ?? (caller.HOME ? join(caller.HOME, directory) : null);
-  const [cargo, rustup] = [placed("CARGO_HOME", ".cargo"), placed("RUSTUP_HOME", ".rustup")];
-  if (!cargo || !rustup) return null;
+  const placed = (name, directory) => {
+    if (caller[name]) return caller[name];
+    if (!caller.HOME) throw new Blocked("HOME is not set", ["cargo and rustup are looked for under the home directory; the tool itself gets another, empty one"], "set HOME, or CARGO_HOME and RUSTUP_HOME");
+    return join(caller.HOME, directory);
+  };
   const kept = Object.fromEntries(PASSED.filter((name) => caller[name] !== undefined).map((name) => [name, caller[name]]));
-  return { ...kept, HOME: home, CARGO_HOME: cargo, RUSTUP_HOME: rustup };
+  return { ...kept, HOME: home, CARGO_HOME: placed("CARGO_HOME", ".cargo"), RUSTUP_HOME: placed("RUSTUP_HOME", ".rustup") };
 }
 
-/** Null when the pinned tool is there, else the "cannot run" text. */
-function toolProblem(core, env) {
+function requireTool(core, env) {
   const run = spawnSync("cargo", ["mutants", "--version"], { cwd: core, env, encoding: "utf8" });
   const found = run.status === 0 ? /^cargo-mutants (\S+)/.exec(run.stdout)?.[1] : null;
-  if (found === VERSION) return null;
-  if (found) return cannotRun("cannot run cargo-mutants", [`cargo-mutants ${found} is installed; this check needs ${VERSION}`, "another version makes other mutants, so a run here and one in CI would not agree"], INSTALL);
-  return cannotRun("cannot run cargo-mutants", [run.error?.code === "ENOENT" ? "cargo is not on the PATH" : "cargo has no `mutants` command"], INSTALL);
+  if (found === VERSION) return;
+  const why = found
+    ? [`cargo-mutants ${found} is installed; this check needs ${VERSION}`, "another version makes other mutants, so a run here and one in CI would not agree"]
+    : [run.error?.code === "ENOENT" ? "cargo is not on the PATH" : "cargo has no `mutants` command"];
+  throw new Blocked("cannot run cargo-mutants", why, INSTALL);
 }
 
 const linesOf = (out, name) => (existsSync(join(out, name)) ? readFileSync(join(out, name), "utf8").split("\n").filter(Boolean) : []);
 
-/** The result of a tool run: the exit code of this check and what to say. */
 function verdict(code, out) {
   const missed = linesOf(out, "missed.txt");
   const timedOut = linesOf(out, "timeout.txt").map((line) => `${line} (the tests did not end)`);
@@ -101,10 +115,10 @@ function verdict(code, out) {
     const unviable = linesOf(out, "unviable.txt").length;
     return { code: 0, text: `mutants: ${linesOf(out, "caught.txt").length} changes to the code tried, each one seen by a test${unviable ? ` (${unviable} more did not compile)` : ""}\n` };
   }
-  if (code === 4) return blocked(cannotRun("the tests fail with no mutation", ["a mutant is judged by a test that fails, so the tests must pass first"], "make test"));
-  if (code === 5 || code === 6) return blocked(cannotRun("the diff does not fit the tree", ["cargo-mutants could not match the changed lines with the files on disk"], "git status"));
-  if (code !== 2 && code !== 3) return blocked(cannotRun(`cargo-mutants ended with exit code ${code}`, ["see its output above"], THEN));
-  if ((code === 2 ? missed : timedOut).length === 0) return blocked(cannotRun("cannot read the result of cargo-mutants", [`it ended with exit code ${code}, and its result files name no such mutant`], THEN));
+  if (code === 4) throw new Blocked("the tests fail with no mutation", ["a mutant is judged by a test that fails, so the tests must pass first"], "make test");
+  if (code === 5 || code === 6) throw new Blocked("the diff does not fit the tree", ["cargo-mutants could not match the changed lines with the files on disk"], "git status");
+  if (code !== 2 && code !== 3) throw new Blocked(`cargo-mutants ended with exit code ${code}`, ["see its output above"], THEN);
+  if ((code === 2 ? missed : timedOut).length === 0) throw new Blocked("cannot read the result of cargo-mutants", [`it ended with exit code ${code}, and its result files name no such mutant`], THEN);
   const at = [...missed, ...timedOut];
   const text = failure({
     rule: RULE,
@@ -120,22 +134,16 @@ function verdict(code, out) {
   return { code: 1, text };
 }
 
-function run(options, root, caller) {
-  const core = join(root, "core");
-  if (!existsSync(core)) return blocked(cannotRun("this repository has no core/ directory", ["the Rust workspace is core/"], "cd to the Tarmac repository"));
-  const diff = options.all ? null : rustDiff(core, options.base);
-  if (diff?.code) return diff;
-  if (diff?.text === "") return { code: 0, text: `mutants: no Rust change against ${options.base}\n` };
-
+/** Starts the tool on the lines of `diff`, or on the whole workspace for no diff. */
+function mutate(core, diff, options, caller) {
   const temporary = mkdtempSync(join(tmpdir(), "tarmac-mutants-"));
   try {
     const env = environment(caller, join(temporary, "home"));
-    if (!env) return blocked(cannotRun("HOME is not set", ["cargo and rustup are looked for under the home directory; the tool itself gets another, empty one"], "set HOME, or CARGO_HOME and RUSTUP_HOME"));
     mkdirSync(env.HOME);
-    const problem = toolProblem(core, env);
-    if (problem) return blocked(problem);
-    const scope = diff ? ["--in-diff", join(temporary, "in.diff")] : options.shard ? ["--shard", options.shard] : [];
-    if (diff) writeFileSync(scope[1], diff.text);
+    requireTool(core, env);
+    const diffFile = join(temporary, "in.diff");
+    if (diff !== null) writeFileSync(diffFile, diff);
+    const scope = diff !== null ? ["--in-diff", diffFile] : options.shard ? ["--shard", options.shard] : [];
     // The tool writes no result when it finds no mutant, and an earlier run's files would be read as this one's.
     rmSync(join(core, "mutants.out"), { recursive: true, force: true });
     // The tool's progress is for the person who waits; stdout stays empty like the other checks'.
@@ -146,9 +154,18 @@ function run(options, root, caller) {
   }
 }
 
-/** With `--report` a survivor is worded and written to the job summary, and fails nothing. */
-function reported(result, caller) {
-  if (result.code !== 1) return result;
+function run(options, cwd, caller) {
+  const root = repoRoot(cwd);
+  if (!root) throw new Blocked("not in a git repository", ["the mutants are those in the lines a branch changed"], "cd to the repository");
+  const core = join(root, "core");
+  if (!existsSync(core)) throw new Blocked("this repository has no core/ directory", ["the Rust workspace is core/"], "cd to the Tarmac repository");
+  const diff = options.all ? null : rustDiff(core, options.base);
+  // `--changed` only answers whether a run would start the tool, so that CI can leave out the install when it would not.
+  if (options.changed) return { code: 0, text: "", out: `${diff !== ""}\n` };
+  if (diff === "") return { code: 0, text: `mutants: no Rust change against ${options.base}\n` };
+  const result = mutate(core, diff, options, caller);
+  if (!options.report || result.code !== 1) return result;
+  // With `--report` a survivor is worded and written to the job summary, and fails nothing.
   if (caller.GITHUB_STEP_SUMMARY) appendFileSync(caller.GITHUB_STEP_SUMMARY, `\`\`\`\n${result.text}\`\`\`\n`);
   return { ...result, code: 0 };
 }
@@ -156,19 +173,17 @@ function reported(result, caller) {
 function main(args, cwd, caller) {
   const options = parse(args);
   if (!options) return { code: 2, text: USAGE };
-  const root = repoRoot(cwd);
-  if (!root) return blocked(cannotRun("not in a git repository", ["the mutants are those in the lines a branch changed"], "cd to the repository"));
-  // An exception here would end node with exit 1, which says "a mutant survived".
   try {
-    const result = run(options, root, caller);
-    return options.report ? reported(result, caller) : result;
+    return run(options, cwd, caller);
   } catch (error) {
-    return blocked(cannotRun("the check itself failed", [String(error?.message ?? error)], THEN));
+    // Any other exception would end node with exit 1, which says "a mutant survived".
+    return { code: 2, text: error instanceof Blocked ? error.text : cannotRun("the check itself failed", [String(error?.message ?? error)], THEN) };
   }
 }
 
 if (startedAs(import.meta)) {
-  const { code, text } = main(process.argv.slice(2), process.cwd(), process.env);
+  const { code, text, out = "" } = main(process.argv.slice(2), process.cwd(), process.env);
+  process.stdout.write(out);
   process.stderr.write(text);
-  process.exit(code);
+  process.exitCode = code;
 }
