@@ -210,6 +210,15 @@ final class DocTemplateTests: XCTestCase {
         XCTAssertTrue(rule.contains("border-top: calc(1px * \(Self.k)) solid var(--line);"))
     }
 
+    /// #455 — the grip's line is a border, never less than one device pixel.
+    func test455TheGripDrawsItsLineAsABorder() throws {
+        let grip = try rule(for: ".doc-side-grip")
+        XCTAssertTrue(grip.contains("border: 0 solid var(--line);"))
+        XCTAssertTrue(grip.contains("border-left-width: calc(1px * var(--zoom));"))
+        XCTAssertFalse(grip.contains("background"))
+        XCTAssertTrue(try rule(for: #"[data-side="overlay"] .doc-side-grip"#).contains("border-style: none;"))
+    }
+
     /// 2611.0022 S30 — the text is laid out in the width the sidebar leaves.
     func test2611_0022S30TheTextIsLaidOutAtTheTextWidth() throws {
         let text = try template()
@@ -261,7 +270,7 @@ final class DocTemplateTests: XCTestCase {
                 "\(right) .doc-side-grip",
                 [
                     "left: auto;", "right: calc((var(--side-panel-start) + var(--side-panel)) * var(--zoom));",
-                    "background-position: 100% 0;",
+                    "border-left-width: 0;", "border-right-width: calc(1px * var(--zoom));",
                 ]
             ),
             ("\(right) .doc-strip", ["padding-right: calc(var(--side-thumb-reach) * \(Self.k));"]),
@@ -282,8 +291,11 @@ final class DocTemplateTests: XCTestCase {
         XCTAssertTrue(
             try rule(for: ".doc-side-grip").contains("left: calc((var(--side-panel-start) + var(--side-panel)) * var(--zoom));")
         )
-        for rule in try rules() where rule.selectors.contains(where: { $0.contains("data-sidebar-side") }) {
-            XCTAssertFalse(rule.body.contains("background:"), "\(rule.selectors)")
+        // A border style here would outrank the overlay grip's `border-style: none`.
+        for rule in try rules()
+        where rule.selectors.contains(where: { $0.contains("data-sidebar-side") && $0.contains(".doc-side-grip") }) {
+            let styled = ["border-style", "border:", "border-left:", "border-right:"].contains(where: rule.body.contains)
+            XCTAssertFalse(styled, "\(rule.selectors)")
         }
         XCTAssertTrue(try rule(for: ".doc-side-strip").contains("left: 0;"))
         XCTAssertTrue(try rule(for: ".doc-scroll").contains("left: calc(var(--side-offset) * var(--zoom));"))
@@ -291,7 +303,6 @@ final class DocTemplateTests: XCTestCase {
             try rule(for: #"[data-side="overlay"] .doc-side-panel"#)
                 .contains("border-right: calc(1px * var(--zoom)) solid var(--line);")
         )
-        XCTAssertTrue(try rule(for: #"[data-side="overlay"] .doc-side-grip"#).contains("background: none;"))
     }
 
     /// 2611.0025 D10 — every sidebar length the template reads is one the
