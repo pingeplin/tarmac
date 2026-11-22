@@ -1,6 +1,6 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: setup core ghostty-vt app test docs-check check-test fmt fmt-check dco-check run qa qa-quit qa-resume kill-daemon bundle dmg release
+.PHONY: setup core ghostty-vt app test docs-check check-test fmt fmt-check lint dco-check run qa qa-quit qa-resume kill-daemon bundle dmg release
 
 # The dev channel: one directory that holds this worktree's own daemon socket,
 # state, driver socket and config directory. Everything that launches or drives
@@ -80,6 +80,12 @@ fmt:
 
 fmt-check:
 	cd $(ROOT) && node scripts/check/fmt.mjs --check $(ONLY)
+
+# The lint check (scripts/check/lint.mjs): clippy over the workspace with the
+# lint table of core/Cargo.toml, where a warning is a failure. Not part of
+# `test`: it compiles the workspace a second way. CI runs it (lint.yml).
+lint:
+	cd $(ROOT) && node scripts/check/lint.mjs
 
 # The unit tests of the check scripts themselves. They make small git
 # repositories in the temp directory and run the real formatter there.

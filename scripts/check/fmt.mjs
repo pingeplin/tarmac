@@ -15,6 +15,7 @@ import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { dirname, join } from "node:path";
 
+import { repoRoot } from "./git.mjs";
 import { failure } from "./report.mjs";
 
 const RULE = "fmt";
@@ -131,20 +132,12 @@ async function run(language, root, write) {
   return { unformatted: write ? [] : changed.map((r) => r.path) };
 }
 
-function gitRoot() {
-  try {
-    return execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch {
-    return null;
-  }
-}
-
 async function main([mode, only]) {
   const names = Object.keys(LANGUAGES);
   const usage = (summary) => cannotRun(summary, [`it knows: ${names.join(", ")}`], `make fmt-check ONLY=${names[0]}`);
   if (mode !== "--check" && mode !== "--write") return { code: 2, text: usage("the mode must be --check or --write") };
   if (only && !names.includes(only)) return { code: 2, text: usage(`${only} is not a language this check knows`) };
-  const root = gitRoot();
+  const root = repoRoot();
   if (!root) return { code: 2, text: cannotRun("not in a git repository", [], "run it from inside the repository") };
 
   const done = await Promise.all((only ? [only] : names).map((name) => run(LANGUAGES[name], root, mode === "--write")));

@@ -1,3 +1,8 @@
+// The daemon's own rules, beside the workspace lint table (core/Cargo.toml):
+// a failure it cannot recover from says why (`.expect("…")`), and it logs
+// with `tracing`, never by printing (docs/coding-style.md §3).
+#![warn(clippy::unwrap_used, clippy::print_stdout, clippy::print_stderr)]
+
 mod bell_scan;
 mod boards;
 mod conn;

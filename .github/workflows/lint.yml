@@ -58,6 +58,28 @@ jobs:
       - name: make fmt-check
         run: make fmt-check ONLY=swift
 
+  lint-rust:
+    name: lint (rust)
+    # macOS: the daemon's unsafe code is behind macOS-only syscalls, so another
+    # platform would not compile it, or lint it.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: install the pinned toolchain
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+
+      - name: make lint
+        run: make lint
+
   check-scripts:
     name: check scripts (node --test)
     # macOS: the tests run both formatters, and swift-format's version matters.

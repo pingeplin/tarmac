@@ -1,0 +1,8 @@
+too-many-lines-threshold = 100
+allow-unwrap-in-tests = true
+allow-dbg-in-tests = true
+allow-print-in-tests = true
+disallowed-methods = [
+    { path = "rmp_serde::to_vec", reason = "the wire is maps with string keys: use to_vec_named" },
+    { path = "rmp_serde::encode::to_vec", reason = "the wire is maps with string keys: use to_vec_named" },
+]
