@@ -178,7 +178,8 @@ back from a rendered bitmap.
   genuinely impossible, say why in a short lowercase string:
   `.expect("active board present")`, `.expect("watcher lock")`. Reserve
   `.unwrap()` for tests. (`clippy::unwrap_used`, on `tarmacd` only; a `#[test]`
-  function and the integration tests are exempt.)
+  function, a `#[cfg(test)]` module and the integration tests are exempt, a
+  `#[cfg(all(test, …))]` module is not.)
 - **`let _ =` only for best-effort work** — a channel send whose receiver may be
   gone, cleanup on the way out. Never to silence a failure that matters.
 - **Ids are `String` aliases, not newtypes** — `pub type BoardId = String;` in

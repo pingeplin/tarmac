@@ -22,6 +22,9 @@ export function failure({ rule, summary, at = [], why = [], fix, then }) {
   return lines.join("\n");
 }
 
+/** The "could not run" failure of one check: its rule and its `then` command are fixed, the rest varies. */
+export const cannotRunFor = (rule, then) => (summary, why, fix) => failure({ rule, summary, why, fix, then });
+
 const row = (label, text) => `  ${label.padEnd(4)} ${text}`;
 
 const rows = (label, texts) => texts.map((text, i) => row(i === 0 ? label : "", text));

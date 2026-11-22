@@ -11,12 +11,13 @@ import { spawnSync } from "node:child_process";
 import { join, relative, resolve } from "node:path";
 
 import { repoRoot } from "./git.mjs";
-import { failure } from "./report.mjs";
+import { cannotRunFor, failure } from "./report.mjs";
 
 const RULE = "lint";
 const THEN = "make lint";
 
-const cannotRun = (summary, why, fix) => ({ code: 2, text: failure({ rule: RULE, summary, why, fix, then: THEN }) });
+const report = cannotRunFor(RULE, THEN);
+const cannotRun = (...parts) => ({ code: 2, text: report(...parts) });
 
 /** The compiler messages of a `--message-format=json` run. */
 const messages = (stdout) =>
@@ -29,13 +30,16 @@ const messages = (stdout) =>
 
 /** `path:line:column` of the message's primary span, with the path relative to the repo. */
 function place(message, workspace, root) {
-  const span = message.spans.find((s) => s.is_primary);
+  let span = message.spans.find((s) => s.is_primary);
+  // Inside a macro the span is in the macro's own source; the call site is ours.
+  while (span?.expansion) span = span.expansion.span;
   return span && `${relative(root, resolve(workspace, span.file_name))}:${span.line_start}:${span.column_start}`;
 }
 
 // A lint has a name; a compile error has an `E####` code or none. A message
 // with no place is a count line ("3 warnings emitted").
-const isCompileError = (message) => message.level === "error" && !/^[a-z]/.test(message.code?.code ?? "");
+const lintName = (message) => (/^[a-z]/.test(message.code?.code ?? "") ? message.code.code : null);
+const isCompileError = (message) => message.level === "error" && !lintName(message);
 
 function main() {
   const root = repoRoot();
@@ -53,7 +57,7 @@ function main() {
   const byPlace = new Map();
   for (const message of messages(run.stdout)) {
     const at = place(message, workspace, root);
-    if (at) byPlace.set(`${at} ${message.code?.code ?? message.message}`, { message, at });
+    if (at) byPlace.set(`${at} ${lintName(message) ?? message.message}`, { message, at });
   }
   const placed = [...byPlace.values()];
   const rendered = placed.map(({ message }) => message.rendered).join("");
@@ -71,10 +75,12 @@ function main() {
   if (placed.length === 0) return { code: 0, text: "" };
   const summary = `${placed.length} ${placed.length === 1 ? "finding" : "findings"} from clippy`;
   const fix = "correct each one above; `cargo clippy --fix` applies the ones clippy marks as fixable";
-  const at = placed.map(({ message, at }) => `${at} ${message.code.code}`);
+  const at = placed.map(({ message, at }) => `${at} ${lintName(message) ?? "warning"}`);
   return { code: 1, text: rendered + failure({ rule: RULE, summary, at, fix, then: THEN }) };
 }
 
-const { code, text } = main();
-process.stderr.write(text);
-process.exitCode = code;
+if (import.meta.filename === process.argv[1]) {
+  const { code, text } = main();
+  process.stderr.write(text);
+  process.exitCode = code;
+}

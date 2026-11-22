@@ -56,15 +56,15 @@ fn state_path() -> PathBuf {
 
 // Per docs/protocol.md: if the socket file exists, try connecting — success
 // means a live daemon (log + exit 1); failure means stale (unlink + bind).
-#[expect(
-    clippy::redundant_pattern_matching,
-    reason = "is_ok() would close the probe connection before the log and the exit"
-)]
 fn claim_socket(path: &PathBuf) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     if path.exists() {
+        #[expect(
+            clippy::redundant_pattern_matching,
+            reason = "is_ok() would close the probe connection before the log and the exit"
+        )]
         if let Ok(_) = std::os::unix::net::UnixStream::connect(path) {
             error!("another tarmacd is already listening on {}", path.display());
             #[expect(clippy::exit, reason = "docs/protocol.md: a live daemon on the socket means log and exit 1")]

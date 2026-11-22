@@ -68,6 +68,7 @@ test("S3: a place that two targets compile is listed once, and places are in byt
 
   const run = lint(dir);
 
+  assert.equal(run.code, 1);
   assert.deepEqual(report(run).slice(0, 3), [
     "✗ lint: 2 findings from clippy",
     "  at   core/src/lib.rs:3:5 clippy::todo",
@@ -75,13 +76,38 @@ test("S3: a place that two targets compile is listed once, and places are in byt
   ]);
 });
 
-test("S4: a workspace that does not compile is a check that cannot run", () => {
-  const run = lint(repo({ "core/src/main.rs": "fn main() {\n    let _n: u8 = missing;\n    todo!()\n}\n" }));
+test("two lints at one place are two findings", () => {
+  const manifest = `${MANIFEST}cast_possible_truncation = "warn"\ncast_sign_loss = "warn"\n`;
+  const source = "fn main() {\n    let wide: i64 = std::env::args().count() as i64;\n    let _narrow = wide as u8;\n}\n";
+
+  const run = lint(repo({ "core/Cargo.toml": manifest, "core/src/main.rs": source }));
+
+  assert.deepEqual(report(run).slice(0, 3), [
+    "✗ lint: 2 findings from clippy",
+    "  at   core/src/main.rs:3:19 clippy::cast_possible_truncation",
+    "       core/src/main.rs:3:19 clippy::cast_sign_loss",
+  ]);
+});
+
+test("a finding inside a macro is placed where the macro is called", () => {
+  const manifest = `${MANIFEST}dbg_macro = "warn"\n`;
+
+  const run = lint(repo({ "core/Cargo.toml": manifest, "core/src/main.rs": "fn main() {\n    dbg!(todo!())\n}\n" }));
+
+  assert.ok(report(run).slice(1, -3).every((line) => /^ {2}(at| {2}) {3}core\/src\/main\.rs:2:/.test(line)), report(run).join("\n"));
+});
+
+test("S4: a workspace that does not compile is a check that cannot run, with each error named", () => {
+  const source = "fn main() {\n    let _n: u8 = missing;\n    let _m: u8 = absent;\n    todo!()\n}\n";
+
+  const run = lint(repo({ "core/src/main.rs": source }));
 
   assert.equal(run.code, 2);
+  assert.ok(run.err.includes("error[E0425]: cannot find value `missing` in this scope"), "the compiler's own text is shown");
   assert.deepEqual(report(run), [
     "✗ lint: cannot run clippy",
     "  why  core/src/main.rs:2:18 error[E0425]: cannot find value `missing` in this scope",
+    "       core/src/main.rs:3:18 error[E0425]: cannot find value `absent` in this scope",
     "  fix  make the workspace compile: cd core && cargo check --all-targets",
     "  then make lint",
     "",
@@ -95,8 +121,30 @@ test("S5: with no cargo on the PATH the check cannot run, and says so", () => {
   const run = lint(repo({ "core/src/main.rs": "fn main() {}\n" }), { ...process.env, PATH: bin });
 
   assert.equal(run.code, 2);
-  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run clippy", "  why  cargo is not on the PATH"]);
-  assert.equal(report(run).at(-2), "  then make lint");
+  assert.deepEqual(report(run), [
+    "✗ lint: cannot run clippy",
+    "  why  cargo is not on the PATH",
+    "  fix  install Rust from https://rustup.rs",
+    "  then make lint",
+    "",
+  ]);
+});
+
+test("S20: a cargo with no clippy cannot run the check, and the fix installs clippy", () => {
+  const bin = scratch();
+  symlinkSync(execFileSync("which", ["git"], { encoding: "utf8" }).trim(), join(bin, "git"));
+  writeFileSync(join(bin, "cargo"), "#!/bin/sh\necho 'error: no such command: `clippy`' >&2\necho 'help: a line that is not an error' >&2\nexit 101\n", { mode: 0o755 });
+
+  const run = lint(repo({ "core/src/main.rs": "fn main() {}\n" }), { ...process.env, PATH: bin });
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run), [
+    "✗ lint: cannot run clippy",
+    "  why  error: no such command: `clippy`",
+    "  fix  rustup component add clippy",
+    "  then make lint",
+    "",
+  ]);
 });
 
 test("S9: a compiler warning that is not in the lint table is a finding too", () => {
@@ -128,6 +176,7 @@ test("S19: a manifest that cargo cannot read is a check that cannot run", () => 
   assert.equal(run.code, 2);
   assert.equal(report(run)[0], "✗ lint: cannot run clippy");
   assert.ok(report(run)[1].startsWith("  why  error: "), report(run)[1]);
+  assert.equal(report(run).at(-3), "  fix  correct the error above");
 });
 
 test("S21: outside a git repository the check cannot run", () => {

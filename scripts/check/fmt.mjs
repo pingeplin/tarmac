@@ -16,7 +16,7 @@ import { availableParallelism } from "node:os";
 import { dirname, join } from "node:path";
 
 import { repoRoot } from "./git.mjs";
-import { failure } from "./report.mjs";
+import { cannotRunFor, failure } from "./report.mjs";
 
 const RULE = "fmt";
 const CHECK = "make fmt-check";
@@ -59,7 +59,7 @@ export const notFormatted = (paths) =>
     then: CHECK,
   });
 
-const cannotRun = (summary, why, fix) => failure({ rule: RULE, summary, why, fix, then: CHECK });
+const cannotRun = cannotRunFor(RULE, CHECK);
 
 /** The formatted text of one file, or the reason the formatter gave none. */
 function formatted([command, ...args], cwd, text) {

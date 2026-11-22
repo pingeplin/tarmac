@@ -10,7 +10,7 @@ use tarmac_protocol::{self as proto, Msg, frame};
 
 #[expect(
     clippy::needless_pass_by_value,
-    reason = "a borrow would also change NoHandshake::failed, which map_err takes by path"
+    reason = "predates the lint; a borrow also changes NoHandshake::failed and its callers, not part of #468"
 )]
 pub(crate) fn lost(e: io::Error) -> String {
     format!("daemon connection lost: {e}")
