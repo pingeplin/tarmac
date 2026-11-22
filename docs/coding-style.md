@@ -233,8 +233,10 @@ back from a rendered bitmap.
   neither sibling. SwiftPM enforces the target graph (`app/Package.swift`), and
   the compiler holds each file to its own imports (`MemberImportVisibility`): a
   file cannot use a member of a module that only another file of the target
-  imported. That no `TarmacKit` file writes `import AppKit`, and that a decision
-  does not stay behind in the shell, is still convention — a reviewer checks it.
+  imported. `make arch-check` refuses an `import` of AppKit, Cocoa, WebKit,
+  SwiftUI or a sibling in a `TarmacKit` file, and of a sibling in a `TarmacTerm`
+  file. That a decision does not stay behind in the shell is still convention —
+  a reviewer checks it.
 - **A file imports what it uses, and a protocol used as a type says `any`.**
   Both are compiler settings of the three product targets (`ExistentialAny` is
   the second). A member whose module the file did not import is an error —
@@ -255,8 +257,13 @@ back from a rendered bitmap.
   methods (`ScrollbackGate`, `QuitGuard`, `CardBorrow`). One main type per file,
   the file named for it; a slice of the controller is an
   `AppController+<Area>.swift` extension. **Every new kit module ships with its
-  paired `<Module>Tests.swift`.** The tree predates this for `CardCull`,
-  `DaemonSocket`, `JavaScriptNumber`, `Messages` and `StrictJSON`; a suite that
+  paired `<Module>Tests.swift`.** `make arch-check` holds this: a module with no
+  test file fails unless `scripts/check/arch-exceptions.json` lists it, and an
+  entry that is no longer needed fails too (a `<Module>+<Part>.swift` slice needs
+  no file of its own; the check sees that a test file exists, not what it
+  tests). The tree predates the rule for `CardCull`, `DaemonSocket`,
+  `JavaScriptNumber` and `StrictJSON`, and `InlineMarks` and `SpawnRequest` came
+  after it with none (#481); a suite that
   spans modules is named for its subject (`ConformanceTests`,
   `RustEncoderParityTests`, `BoardPersistenceTests`).
 - **Access and isolation.** `public` is what the shell calls; tests reach the
@@ -302,7 +309,8 @@ back from a rendered bitmap.
 1. The test you added was **seen failing** before the code that makes it pass —
    or the change is on the exception list and you have discharged what §1.3 owes
    it.
-2. `make test` passes (docs-check, the check scripts' tests and both suites), and
+2. `make test` passes (docs-check, arch-check, the check scripts' tests and both
+   suites), and
    `make fmt-check` and `make lint` (Rust, Swift, and the Swift compiler's
    warnings) report nothing.
 3. Commits are Conventional and carry both trailers named in
