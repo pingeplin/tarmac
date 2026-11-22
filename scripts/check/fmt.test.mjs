@@ -299,13 +299,13 @@ test("a swift-format of another minor version cannot run a check or a write, and
 
   for (const run of runs) {
     assert.equal(run.code, 2);
-    assert.deepEqual(run.err.slice(0, 2), ["✗ fmt: cannot run swift-format", "  why  swift-format 5.9.2 is on the PATH; this tree is formatted with 6.4"]);
+    assert.deepEqual(run.err.slice(0, 2), ["✗ fmt: cannot run swift-format", "  why  swift-format 5.9.2 is on the PATH; this tree is formatted with 6.3 or 6.4"]);
     assert.ok(!run.err.some((line) => line.startsWith("  at ")));
   }
   assert.equal(readFileSync(join(dir, "app/A.swift"), "utf8"), UGLY_SWIFT);
 });
 
-for (const [reported, code] of [["echo 6.4", 1], ["echo 6.4.9", 1], ["echo 6.40.1", 2], ["echo 6.4.4; echo extra", 1], ["echo 5.9.2; echo extra", 2], ["exit 3", 2]]) {
+for (const [reported, code] of [["echo 6.4", 1], ["echo 6.4.9", 1], ["echo 6.3.0", 1], ["echo 6.40.1", 2], ["echo 6.2.9", 2], ["echo 6.4.4; echo extra", 1], ["echo 5.9.2; echo extra", 2], ["exit 3", 2]]) {
   test(`a swift-format that answers --version with "${reported}" gives exit ${code}`, () => {
     const run = fmt(repo({ "app/A.swift": UGLY_SWIFT }), ["--check", "swift"], swiftReporting(reported));
 

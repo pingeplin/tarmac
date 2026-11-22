@@ -39,9 +39,10 @@ const LANGUAGES = {
     explain: (path) => `swift format lint ${path}`,
     install: "install Xcode, or a Swift toolchain from https://swift.org/install",
     // Rust's formatter version is pinned by rust-toolchain.toml. Swift has no
-    // such file, and another minor version lays code out differently, so the
-    // version this tree was formatted with is checked here.
-    version: { command: ["swift", "format", "--version"], expect: "6.4", fix: "use a Swift 6.4 toolchain, then run it again" },
+    // such file, and a minor version can lay code out differently, so only the
+    // versions seen to give this tree the same bytes are let through: 6.4.4
+    // formatted it, and 6.3.0 (the CI image's) accepts every file of it.
+    version: { command: ["swift", "format", "--version"], expect: ["6.3", "6.4"], fix: "use a Swift 6.3 or 6.4 toolchain, then run it again" },
     // swift-format 6.4 joins the comment lines under a `#!` line onto that
     // line, and joins one more on every run, so a script is not formatted.
     leaves: (text) => text.startsWith("#!"),
@@ -100,9 +101,9 @@ function unusable(language) {
   const asked = spawnSync(command[0], command.slice(1), { encoding: "utf8" });
   if (asked.error?.code === "ENOENT") return notOnPath(language);
   const found = asked.status === 0 ? asked.stdout.split("\n")[0].trim() : null;
-  if (found === expect || found?.startsWith(`${expect}.`)) return null;
+  if (expect.some((minor) => found === minor || found?.startsWith(`${minor}.`))) return null;
   const have = found ? `${language.tool} ${found} is on the PATH` : `${command.join(" ")} did not answer`;
-  return { blocked: cannotRun(`cannot run ${language.tool}`, [`${have}; this tree is formatted with ${expect}`], fix) };
+  return { blocked: cannotRun(`cannot run ${language.tool}`, [`${have}; this tree is formatted with ${expect.join(" or ")}`], fix) };
 }
 
 /** Runs one language; returns the report it owes, if any, and the files it found unformatted. */
