@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -10,6 +10,7 @@ import { notFormatted } from "./fmt.mjs";
 const SCRIPT = join(import.meta.dirname, "fmt.mjs");
 const FORMATTED = "fn main() {}\n";
 const UGLY = "pub fn y(){let a=1;let _=a;}\n";
+const UGLY_SWIFT = "let  x=1\n";
 const CLEAN = { code: 0, err: [""] };
 // The fixtures are outside this checkout, so each one carries the pin: a test
 // then runs the same rustfmt as a check of the real tree.
@@ -33,10 +34,14 @@ function repo(files = {}) {
   return dir;
 }
 
-/** An environment whose PATH holds git and nothing else. */
-function pathWithOnlyGit() {
+/** An environment whose PATH holds git, the given stand-in programs, and nothing else. */
+function pathWithOnlyGit(standIns = {}) {
   const bin = scratch();
   symlinkSync(execFileSync("which", ["git"], { encoding: "utf8" }).trim(), join(bin, "git"));
+  for (const [name, script] of Object.entries(standIns)) {
+    writeFileSync(join(bin, name), `#!/bin/sh\n${script}\n`);
+    chmodSync(join(bin, name), 0o755);
+  }
   return { ...process.env, PATH: bin };
 }
 
@@ -211,7 +216,7 @@ test("S15: a name that is not a language is refused with the names that are", ()
 
   assert.equal(run.code, 2);
   assert.equal(run.err[0], "✗ fmt: cobol is not a language this check knows");
-  assert.ok(run.err.includes("  why  it knows: rust"));
+  assert.ok(run.err.includes("  why  it knows: rust, swift"));
   assert.ok(run.err.some((line) => line.startsWith("  fix  ")) && run.err.some((line) => line.startsWith("  then ")));
 });
 
@@ -224,4 +229,80 @@ test("S12: three unformatted files are counted and listed in byte order", () => 
     "       core/a.rs",
     "       core/b.rs",
   ]);
+});
+
+test("S7: a formatted Swift tree passes; an unformatted file is named; a write fixes it", () => {
+  const dir = repo({ "app/Sources/A.swift": UGLY_SWIFT, "app/Sources/B.swift": "let x = 1\n" });
+
+  const before = fmt(dir, ["--check", "swift"]);
+  const written = fmt(dir, ["--write", "swift"]);
+
+  assert.equal(before.code, 1);
+  assert.deepEqual(before.err.slice(0, 2), ["✗ fmt: 1 file is not formatted", "  at   app/Sources/A.swift"]);
+  assert.deepEqual([written, fmt(dir, ["--check", "swift"])], [CLEAN, CLEAN]);
+  assert.equal(readFileSync(join(dir, "app/Sources/A.swift"), "utf8"), "let x = 1\n");
+});
+
+test("S7: with no swift on the PATH the Swift check cannot run, and says so", () => {
+  const run = fmt(repo({ "app/Sources/A.swift": UGLY_SWIFT }), ["--check", "swift"], pathWithOnlyGit());
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(run.err.slice(0, 2), ["✗ fmt: cannot run swift-format", "  why  swift is not on the PATH"]);
+  assert.ok(!run.err.some((line) => line.startsWith("  at ")));
+});
+
+test("S11: every tracked Swift file is in scope wherever it is, and an untracked one never is", () => {
+  const dir = repo({ "app/Package.swift": UGLY_SWIFT, "scripts/qa/probe.swift": UGLY_SWIFT });
+  write(dir, "app/Vendor/Lib.swift", UGLY_SWIFT);
+
+  const run = fmt(dir, ["--check", "swift"]);
+
+  assert.deepEqual(run.err.slice(0, 3), ["✗ fmt: 2 files are not formatted", "  at   app/Package.swift", "       scripts/qa/probe.swift"]);
+});
+
+test("the Swift formatter reads the configuration nearest to the file", () => {
+  const fourSpaces = "func f() {\n    g()\n}\n";
+
+  const configured = fmt(repo({ ".swift-format": '{"version": 1, "indentation": {"spaces": 4}}\n', "app/A.swift": fourSpaces }), ["--check", "swift"]);
+  const defaults = fmt(repo({ "app/A.swift": fourSpaces }), ["--check", "swift"]);
+
+  assert.deepEqual([configured.code, defaults.code], [0, 1]);
+});
+
+test("S18: with no language named, the files of both languages are in one list", () => {
+  const run = fmt(repo({ "core/src/ugly.rs": UGLY, "app/A.swift": UGLY_SWIFT }), ["--check"]);
+
+  assert.equal(run.code, 1);
+  assert.deepEqual(run.err.slice(0, 3), ["✗ fmt: 2 files are not formatted", "  at   app/A.swift", "       core/src/ugly.rs"]);
+});
+
+test("when one language cannot run, the other still reports, and the exit code says cannot run", () => {
+  const dir = repo({ "core/src/ugly.rs": UGLY, "app/A.swift": "let x = (\n" });
+
+  const run = fmt(dir, ["--check"]);
+
+  assert.equal(run.code, 2);
+  assert.ok(run.err.includes("✗ fmt: cannot run swift-format"));
+  assert.ok(run.err.includes("  fix  see the whole error with: swift format lint app/A.swift"));
+  assert.ok(run.err.includes("✗ fmt: 1 file is not formatted") && run.err.includes("  at   core/src/ugly.rs"));
+});
+
+test("a swift-format of another minor version cannot run the check, and both versions are named", () => {
+  const dir = repo({ "app/A.swift": UGLY_SWIFT });
+
+  const run = fmt(dir, ["--check", "swift"], pathWithOnlyGit({ swift: "echo 5.9.2" }));
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(run.err.slice(0, 2), ["✗ fmt: cannot run swift-format", "  why  swift-format 5.9.2 is on the PATH; this tree is formatted with 6.4"]);
+  assert.ok(!run.err.some((line) => line.startsWith("  at ")));
+});
+
+test("a Swift script with a #! line is left alone: swift-format 6.4 corrupts its header", () => {
+  const script = "#!/usr/bin/env swift\n// What the script does,\n// on two lines.\nlet  x=1\n";
+  const dir = repo({ "tools/run.swift": script });
+
+  const runs = [fmt(dir, ["--check", "swift"]), fmt(dir, ["--write", "swift"])];
+
+  assert.deepEqual(runs, [CLEAN, CLEAN]);
+  assert.equal(readFileSync(join(dir, "tools/run.swift"), "utf8"), script);
 });

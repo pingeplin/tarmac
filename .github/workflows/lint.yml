@@ -38,9 +38,30 @@ jobs:
       - name: make fmt-check
         run: make fmt-check ONLY=rust
 
+  fmt-swift:
+    name: fmt (swift)
+    # swift-format comes with the Swift toolchain, and the package needs the
+    # macOS 26 image's one (see test.yml).
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The check refuses a swift-format of another minor version than the one
+      # this tree was formatted with, so the log shows the version first.
+      - name: formatter version
+        run: swift --version && swift format --version
+
+      - name: make fmt-check
+        run: make fmt-check ONLY=swift
+
   check-scripts:
     name: check scripts (node --test)
-    runs-on: ubuntu-latest
+    # macOS: the tests run both formatters, and swift-format's version matters.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 

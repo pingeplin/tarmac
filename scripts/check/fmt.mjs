@@ -29,7 +29,22 @@ const LANGUAGES = {
     glob: "*.rs",
     // A bare rustfmt takes edition 2015; the workspace is edition 2024 (core/Cargo.toml).
     command: ["rustfmt", "--edition", "2024"],
+    explain: (path) => `rustfmt --edition 2024 --check ${path}`,
     install: "rustup component add rustfmt",
+  },
+  swift: {
+    tool: "swift-format",
+    glob: "*.swift",
+    command: ["swift", "format", "format", "-"],
+    explain: (path) => `swift format lint ${path}`,
+    install: "install Xcode, or a Swift toolchain from https://swift.org/install",
+    // Rust's formatter version is pinned by rust-toolchain.toml. Swift has no
+    // such file, and another minor version lays code out differently, so the
+    // version this tree was formatted with is checked here.
+    version: { command: ["swift", "format", "--version"], expect: "6.4" },
+    // swift-format 6.4 joins the comment lines under a `#!` line onto that
+    // line, and joins one more on every run, so a script is not formatted.
+    leaves: (text) => text.startsWith("#!"),
   },
 };
 
@@ -71,14 +86,35 @@ async function each(items, limit, work) {
   return results;
 }
 
+/** The reason the language's formatter must not run here, if there is one. */
+function unusable(language) {
+  const missing = { blocked: cannotRun(`cannot run ${language.tool}`, [`${language.command[0]} is not on the PATH`], language.install) };
+  if (!language.version) return null;
+  const { command, expect } = language.version;
+  let found;
+  try {
+    found = execFileSync(command[0], command.slice(1), { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch (error) {
+    if (error.code === "ENOENT") return missing;
+    found = "of an unknown version";
+  }
+  if (found === expect || found.startsWith(`${expect}.`)) return null;
+  const why = [`${language.tool} ${found} is on the PATH; this tree is formatted with ${expect}`];
+  return { blocked: cannotRun(`cannot run ${language.tool}`, why, `use a Swift ${expect} toolchain, then run it again`) };
+}
+
 /** Runs one language; returns the report it owes, if any, and the files it found unformatted. */
 async function run(language, root, write) {
   const listed = execFileSync("git", ["ls-files", "-z", "--", language.glob], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
   // A tracked path that is no longer a file (deleted or replaced, not yet staged) has no text to format.
   const paths = listed.filter((path) => statSync(join(root, path), { throwIfNoEntry: false })?.isFile());
+  if (paths.length === 0) return {};
+  const reason = unusable(language);
+  if (reason) return reason;
   const results = await each(paths, availableParallelism(), async (path) => {
     const file = join(root, path);
     const before = readFileSync(file, "utf8");
+    if (language.leaves?.(before)) return { path, file, before, text: before };
     return { path, file, before, ...(await formatted(language.command, dirname(file), before)) };
   });
   if (results.some((r) => r.missing)) {
@@ -87,8 +123,7 @@ async function run(language, root, write) {
   const refused = results.filter((r) => r.refused);
   if (refused.length > 0) {
     const why = refused.map((r) => `${r.path}: ${r.refused}`);
-    const again = `${language.command.join(" ")} --check ${refused[0].path}`;
-    return { blocked: cannotRun(`cannot run ${language.tool}`, why, `see the whole error with: ${again}`) };
+    return { blocked: cannotRun(`cannot run ${language.tool}`, why, `see the whole error with: ${language.explain(refused[0].path)}`) };
   }
   const changed = results.filter((r) => r.text !== r.before);
   if (write) changed.forEach((r) => writeFileSync(r.file, r.text));
@@ -111,8 +146,7 @@ async function main([mode, only]) {
   const root = gitRoot();
   if (!root) return { code: 2, text: cannotRun("not in a git repository", [], "run it from inside the repository") };
 
-  const done = [];
-  for (const name of only ? [only] : names) done.push(await run(LANGUAGES[name], root, mode === "--write"));
+  const done = await Promise.all((only ? [only] : names).map((name) => run(LANGUAGES[name], root, mode === "--write")));
   const blocked = done.filter((d) => d.blocked).map((d) => d.blocked);
   const unformatted = done.flatMap((d) => d.unformatted ?? []);
   const text = blocked.join("") + (unformatted.length > 0 ? notFormatted(unformatted) : "");
