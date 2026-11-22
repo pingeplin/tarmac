@@ -451,3 +451,141 @@ test("S29: the result files of an earlier run are not read as this run's", () =>
   assert.equal(run.code, 0);
   assert.equal(run.err.split("\n").at(-2), "mutants: 0 changes to the code tried, each one seen by a test");
 });
+
+test("S42: a git command that fails is not read as no Rust change", () => {
+  const cargo = tool();
+  const dir = changed();
+  const broken = scratch("mutants-git-");
+  const real = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+  writeFileSync(join(broken, "git"), `#!/bin/sh\nfor arg in "$@"; do [ "$arg" = "--relative" ] && exit 128; done\nexec ${real} "$@"\n`);
+  chmodSync(join(broken, "git"), 0o755);
+  const run = mutants(dir, cargo, ["--base", "main"], { PATH: [broken, cargo, process.env.PATH].join(delimiter) });
+
+  assert.equal(run.code, 2);
+  assert.match(run.err, /^✗ mutants: cannot read the changes from git$/m);
+  assert.deepEqual(calls(cargo), []);
+});
+
+test("S43: the changes are those since the branch left the base, not those against the base as it is now", () => {
+  const cargo = tool();
+  const dir = changed();
+  git(dir, "checkout", "-q", "main");
+  commit(dir, { "core/crates/x/src/b.rs": "fn only_on_main() {}\n" });
+  git(dir, "checkout", "-q", "work");
+  mutants(dir, cargo);
+
+  assert.doesNotMatch(calls(cargo)[0].diff, /only_on_main/);
+});
+
+test("S12/S27: the result file that the exit code points at decides, not the other one", () => {
+  const missedButTimeoutCode = mutants(changed(), tool({ exit: 3, files: { "missed.txt": MISSED, "timeout.txt": [] } }));
+  const timedOutButMissedCode = mutants(changed(), tool({ exit: 2, files: { "missed.txt": [], "timeout.txt": [TIMED_OUT] } }));
+
+  assert.equal(missedButTimeoutCode.code, 2);
+  assert.equal(timedOutButMissedCode.code, 2);
+});
+
+test("S37: --report with no job summary to write still words the survivor and passes", () => {
+  const run = mutants(changed(), tool({ exit: 2, files: { "missed.txt": MISSED } }), ["--base", "main", "--report"]);
+
+  assert.equal(run.code, 0);
+  assert.deepEqual(atRows(run.err), MISSED);
+});
+
+test("S44: with no --base the base is origin/main", () => {
+  const cargo = tool();
+  const dir = changed();
+  const noSuchRef = mutants(dir, cargo, []);
+  git(dir, "update-ref", "refs/remotes/origin/main", "main");
+  const found = mutants(dir, cargo, []);
+
+  assert.match(noSuchRef.err, /^✗ mutants: origin\/main names no commit$/m);
+  assert.equal(found.code, 0);
+  assert.equal(calls(cargo).length, 1);
+});
+
+test("S7: each name on the list reaches the tool with the caller's value", () => {
+  const cargo = tool();
+  const passed = { LANG: "a", LC_ALL: "b", TERM: "c", USER: "d", LOGNAME: "e", SHELL: "f", CARGO_TERM_COLOR: "g", NO_COLOR: "h", CI: "i", GITHUB_ACTIONS: "j", RUNNER_OS: "k", RUNNER_TEMP: "l" };
+  mutants(changed(), cargo, ["--base", "main"], passed);
+  const [{ env }] = calls(cargo);
+
+  assert.deepEqual(Object.fromEntries(Object.keys(passed).map((name) => [name, env[name]])), passed);
+  assert.equal(env.TMPDIR, tmpdir());
+});
+
+test("S45: with no HOME of the caller the check cannot place cargo and rustup, and does not start the tool", () => {
+  const cargo = tool();
+  const dir = changed();
+  const run = spawnSync(process.execPath, [SCRIPT, "--base", "main"], { cwd: dir, encoding: "utf8", env: { PATH: [cargo, process.env.PATH].join(delimiter) } });
+
+  assert.equal(run.status, 2);
+  assert.match(run.stderr, /^✗ mutants: HOME is not set$/m);
+  assert.deepEqual(calls(cargo), []);
+});
+
+test("S45: with CARGO_HOME and RUSTUP_HOME named, no HOME is needed", () => {
+  const cargo = tool();
+  const dir = changed();
+  const run = spawnSync(process.execPath, [SCRIPT, "--base", "main"], { cwd: dir, encoding: "utf8", env: { PATH: [cargo, process.env.PATH].join(delimiter), CARGO_HOME: "/elsewhere/cargo", RUSTUP_HOME: "/elsewhere/rustup" } });
+
+  assert.equal(run.status, 0);
+});
+
+test("S46: a repository with no core/ directory is named as that", () => {
+  const dir = scratch();
+  write(dir, { "README.md": "x\n" });
+  git(dir, "init", "-q", "-b", "main");
+  const said = (args) => mutants(dir, tool(), args).err.split("\n").find((line) => line.startsWith("✗ "));
+
+  assert.equal(said(["--base", "main"]), "✗ mutants: this repository has no core/ directory");
+  assert.equal(said(["--all"]), "✗ mutants: this repository has no core/ directory");
+});
+
+test("S47: a failure of the check itself is cannot run, not a finding", () => {
+  const dir = changed();
+  const run = mutants(dir, tool({ exit: 2, files: { "missed.txt": MISSED } }), ["--base", "main", "--report"], { GITHUB_STEP_SUMMARY: join(dir, "no-such-directory/summary.md") });
+
+  assert.equal(run.code, 2);
+  assert.match(run.err, /^✗ mutants: the check itself failed$/m);
+});
+
+test("S36: an untracked file of another kind is no Rust change", () => {
+  const cargo = tool();
+  const dir = repo();
+  write(dir, { "core/notes.md": "x\n" });
+
+  assert.match(mutants(dir, cargo).err, /no Rust change/);
+  assert.deepEqual(calls(cargo), []);
+});
+
+test("S38: an external diff program, colour and quoted paths in the user's git config do not reach the diff", () => {
+  const cargo = tool();
+  const dir = changed();
+  git(dir, "config", "diff.external", "false");
+  git(dir, "config", "color.diff", "always");
+  write(dir, { [SOURCE]: "fn a() -> u8 {\n    4\n}\n", "core/crates/x/src/naïve é.rs": "fn n() {}\n" });
+  mutants(dir, cargo);
+  const [{ diff }] = calls(cargo);
+
+  assert.match(diff, /^\+ {4}4$/m);
+  assert.doesNotMatch(diff, /\x1b\[/);
+  assert.match(diff, /^\+\+\+ b\/crates\/x\/src\/naïve é\.rs\t?$/m);
+});
+
+test("S22: the three documents name the command, and the workflow document its CI job", () => {
+  const read = (path) => readFileSync(join(ROOT, path), "utf8");
+  const claude = read("CLAUDE.md").split("\n## ").find((section) => section.startsWith("Build, run, test"));
+
+  assert.match(claude, /^- `make mutants` — /m);
+  assert.match(claude, new RegExp(`cargo-mutants --version ${VERSION.replaceAll(".", "\\.")} `));
+  assert.match(read("docs/workflow.md"), /`make mutants`/);
+  assert.match(read("CONTRIBUTING.md"), /`mutants \(rust, in diff\)`[\s\S]*`make mutants`/);
+  assert.match(read("CONTRIBUTING.md"), new RegExp(`\`cargo-mutants\` ${VERSION.replaceAll(".", "\\.")}`));
+});
+
+test("S20: a weekly run is not cancelled by another event on the same branch", () => {
+  const workflow = readFileSync(join(ROOT, ".github/workflows/mutants.yml"), "utf8");
+
+  assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
+});

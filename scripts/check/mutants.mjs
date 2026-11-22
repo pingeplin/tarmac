@@ -29,12 +29,13 @@ const cannotRun = cannotRunFor(RULE, THEN);
 const PASSED = ["PATH", "TMPDIR", "LANG", "LC_ALL", "TERM", "USER", "LOGNAME", "SHELL", "CARGO_TERM_COLOR", "NO_COLOR", "CI", "GITHUB_ACTIONS", "RUNNER_OS", "RUNNER_TEMP"];
 // The diff must look the same whatever the user's git config says: the tool
 // reads only a `b/` prefix, and a diff it cannot match tests nothing and passes.
-const DIFF = ["diff", "--src-prefix=a/", "--dst-prefix=b/", "--no-ext-diff", "--no-textconv", "--no-color"];
+// A path with a letter outside ASCII is written as it is, not as a quoted escape.
+const DIFF = ["-c", "core.quotePath=false", "diff", "--src-prefix=a/", "--dst-prefix=b/", "--no-ext-diff", "--no-textconv", "--no-color"];
 
 const blocked = (text) => ({ code: 2, text });
 
 /** The options of a run, or null for arguments this check does not know. */
-export function parse(args) {
+function parse(args) {
   const options = { base: "origin/main", all: false, shard: null, jobs: "2", report: false };
   const valued = { "--base": ["base", /./], "--shard": ["shard", /^\d+\/[1-9]\d*$/], "--jobs": ["jobs", /^[1-9]\d*$/] };
   for (let at = 0; at < args.length; at++) {
@@ -60,20 +61,25 @@ function rustDiff(core, base) {
   if (git(core, ["rev-parse", "--verify", "--quiet", `${base}^{commit}`]) === null) return blocked(cannotRun(`${base} names no commit`, ["the mutants are those in the lines changed since the branch left its base"], `git fetch origin, or name the base: make mutants BASE=<ref>`));
   const from = git(core, ["merge-base", base, "HEAD"])?.trim();
   if (!from) return blocked(cannotRun(`${base} and HEAD share no history`, ["the mutants are those in the lines changed since the branch left its base"], "make mutants BASE=<ref>"));
-  const tracked = git(core, [...DIFF, "--relative", from, "--", "*.rs"]) ?? "";
+  const tracked = git(core, [...DIFF, "--relative", from, "--", "*.rs"]);
   // A file that is not yet committed is mutated like the rest. `--no-index` exits 1 when the two differ.
-  const untracked = (git(core, ["ls-files", "--others", "--exclude-standard", "-z", "--", "*.rs"]) ?? "")
-    .split("\0")
+  const untracked = git(core, ["ls-files", "--others", "--exclude-standard", "-z", "--", "*.rs"])
+    ?.split("\0")
     .filter(Boolean)
-    .map((file) => git(core, [...DIFF, "--no-index", "--", "/dev/null", file], [0, 1]) ?? "");
-  return { text: [tracked, ...untracked].join("") };
+    .map((file) => git(core, [...DIFF, "--no-index", "--", "/dev/null", file], [0, 1]));
+  const parts = [tracked, ...(untracked ?? [null])];
+  // A git command that failed is not an empty diff: that would be a pass with nothing tested.
+  if (parts.includes(null)) return blocked(cannotRun("cannot read the changes from git", ["a `git diff` or `git ls-files` in core/ failed"], "git status"));
+  return { text: parts.join("") };
 }
 
-/** The environment of the tool: the stand-in home, the real cargo and rustup, and the passed names. */
-export function environment(caller, home) {
-  const real = caller.HOME ?? "";
+/** The environment of the tool: the stand-in home, the real cargo and rustup, and the passed names. Null when cargo and rustup cannot be placed. */
+function environment(caller, home) {
+  const placed = (name, directory) => caller[name] ?? (caller.HOME ? join(caller.HOME, directory) : null);
+  const [cargo, rustup] = [placed("CARGO_HOME", ".cargo"), placed("RUSTUP_HOME", ".rustup")];
+  if (!cargo || !rustup) return null;
   const kept = Object.fromEntries(PASSED.filter((name) => caller[name] !== undefined).map((name) => [name, caller[name]]));
-  return { ...kept, HOME: home, CARGO_HOME: caller.CARGO_HOME ?? join(real, ".cargo"), RUSTUP_HOME: caller.RUSTUP_HOME ?? join(real, ".rustup") };
+  return { ...kept, HOME: home, CARGO_HOME: cargo, RUSTUP_HOME: rustup };
 }
 
 /** Null when the pinned tool is there, else the "cannot run" text. */
@@ -88,7 +94,7 @@ function toolProblem(core, env) {
 const linesOf = (out, name) => (existsSync(join(out, name)) ? readFileSync(join(out, name), "utf8").split("\n").filter(Boolean) : []);
 
 /** The result of a tool run: the exit code of this check and what to say. */
-export function verdict(code, out) {
+function verdict(code, out) {
   const missed = linesOf(out, "missed.txt");
   const timedOut = linesOf(out, "timeout.txt").map((line) => `${line} (the tests did not end)`);
   if (code === 0) {
@@ -116,6 +122,7 @@ export function verdict(code, out) {
 
 function run(options, root, caller) {
   const core = join(root, "core");
+  if (!existsSync(core)) return blocked(cannotRun("this repository has no core/ directory", ["the Rust workspace is core/"], "cd to the Tarmac repository"));
   const diff = options.all ? null : rustDiff(core, options.base);
   if (diff?.code) return diff;
   if (diff?.text === "") return { code: 0, text: `mutants: no Rust change against ${options.base}\n` };
@@ -123,6 +130,7 @@ function run(options, root, caller) {
   const temporary = mkdtempSync(join(tmpdir(), "tarmac-mutants-"));
   try {
     const env = environment(caller, join(temporary, "home"));
+    if (!env) return blocked(cannotRun("HOME is not set", ["cargo and rustup are looked for under the home directory; the tool itself gets another, empty one"], "set HOME, or CARGO_HOME and RUSTUP_HOME"));
     mkdirSync(env.HOME);
     const problem = toolProblem(core, env);
     if (problem) return blocked(problem);
@@ -145,13 +153,18 @@ function reported(result, caller) {
   return { ...result, code: 0 };
 }
 
-export function main(args, cwd, caller) {
+function main(args, cwd, caller) {
   const options = parse(args);
   if (!options) return { code: 2, text: USAGE };
   const root = repoRoot(cwd);
   if (!root) return blocked(cannotRun("not in a git repository", ["the mutants are those in the lines a branch changed"], "cd to the repository"));
-  const result = run(options, root, caller);
-  return options.report ? reported(result, caller) : result;
+  // An exception here would end node with exit 1, which says "a mutant survived".
+  try {
+    const result = run(options, root, caller);
+    return options.report ? reported(result, caller) : result;
+  } catch (error) {
+    return blocked(cannotRun("the check itself failed", [String(error?.message ?? error)], THEN));
+  }
 }
 
 if (startedAs(import.meta)) {
