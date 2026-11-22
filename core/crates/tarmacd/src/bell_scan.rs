@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn bels_inside_dcs_apc_pm_or_sos_do_not_ring() {
-        for intro in [b'P', b'_', b'^', b'X'] {
+        for intro in *b"P_^X" {
             let mut scan = BellScan::default();
             assert!(!scan.feed(&[0x1b, intro, b'a', 0x07, b'b', 0x07, b'c', 0x1b, b'\\']), "{}", intro as char);
             assert!(scan.feed(b"\x07"), "lone BEL after the {} string", intro as char);

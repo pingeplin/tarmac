@@ -105,9 +105,10 @@ impl Daemon {
     /// group when it is live.
     pub async fn close_term(&self, term_id: &str) {
         self.forget_record(term_id).await;
-        match self.term(term_id).await {
-            Some(h) => h.kill(),
-            None => tracing::debug!("term_close for unknown term {term_id}"),
+        if let Some(h) = self.term(term_id).await {
+            h.kill();
+        } else {
+            tracing::debug!("term_close for unknown term {term_id}");
         }
     }
 

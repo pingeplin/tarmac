@@ -222,7 +222,7 @@ fn board_delete_kills_terms_fixes_active_and_refuses_last() {
         match app.recv(deadline, "post-delete frames") {
             Msg::Exit { term_id, .. } if term_id == "tdel" => saw_exit = true,
             Msg::BoardList { boards, active } if board_ids(&boards) == vec!["board-0"] && active == "board-0" => {
-                saw_final_list = true
+                saw_final_list = true;
             }
             _ => {}
         }

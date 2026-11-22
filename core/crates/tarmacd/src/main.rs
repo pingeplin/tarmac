@@ -61,15 +61,12 @@ fn claim_socket(path: &PathBuf) -> anyhow::Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     if path.exists() {
-        match std::os::unix::net::UnixStream::connect(path) {
-            Ok(_) => {
-                error!("another tarmacd is already listening on {}", path.display());
-                std::process::exit(1);
-            }
-            Err(_) => {
-                warn!("removing stale socket {}", path.display());
-                std::fs::remove_file(path)?;
-            }
+        if let Ok(_) = std::os::unix::net::UnixStream::connect(path) {
+            error!("another tarmacd is already listening on {}", path.display());
+            std::process::exit(1);
+        } else {
+            warn!("removing stale socket {}", path.display());
+            std::fs::remove_file(path)?;
         }
     }
     Ok(())

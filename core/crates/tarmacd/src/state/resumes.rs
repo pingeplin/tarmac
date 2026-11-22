@@ -120,9 +120,10 @@ impl Daemon {
     /// a command an agent set since the restore (`Held`) is never undone. An
     /// unknown terminal is a no-op: app-session frames have no reply.
     pub async fn skip_resume(&self, term_id: &str) {
-        match self.term(term_id).await {
-            Some(handle) => self.claim_resume(term_id, &handle).await,
-            None => tracing::debug!("resume skip for unknown term {term_id}"),
+        if let Some(handle) = self.term(term_id).await {
+            self.claim_resume(term_id, &handle).await;
+        } else {
+            tracing::debug!("resume skip for unknown term {term_id}");
         }
     }
 }

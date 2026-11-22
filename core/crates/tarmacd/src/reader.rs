@@ -407,7 +407,7 @@ mod tests {
 
         let read = paths.clone();
         let now = answers(async move { reader.stamps(read).await }).await;
-        let others = paths[1..].iter().map(|p| (p.clone(), crate::reader::stamp(p)));
+        let others = paths[1..].iter().map(|p| (p.clone(), stamp(p)));
         assert_eq!(now, HashMap::from_iter(others));
 
         let _ = std::fs::remove_dir_all(&tmp);
@@ -424,7 +424,7 @@ mod tests {
 
         let paths = vec![write_doc(tmp.join("gone/a.md")), write_doc(tmp.join("gone/b.md")), doc.clone()];
         let now = answers(async move { reader.stamps(paths).await }).await;
-        assert_eq!(now, HashMap::from([(doc.clone(), crate::reader::stamp(&doc))]));
+        assert_eq!(now, HashMap::from([(doc.clone(), stamp(&doc))]));
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

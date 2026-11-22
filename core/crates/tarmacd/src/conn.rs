@@ -293,26 +293,28 @@ async fn dispatch_app_msg(daemon: &Arc<Daemon>, conn: &mut AppConn, msg: Msg) {
         Msg::SpawnTerm { term_id, cols, rows, cwd, cmd, board_id, inherit_cwd_from, succeeds } => {
             spawn_requested(daemon, term_id, (cols, rows), cwd, cmd, board_id, inherit_cwd_from, succeeds).await;
         }
-        Msg::Input { term_id, bytes, typed, hold } => match daemon.term(&term_id).await {
-            Some(h) => {
+        Msg::Input { term_id, bytes, typed, hold } => {
+            if let Some(h) = daemon.term(&term_id).await {
                 let _ = h.input_tx.send(term::Input { bytes, hold }).await;
                 if typed {
                     daemon.typed_input(&term_id, &h).await;
                 }
+            } else {
+                debug!("input for unknown term {term_id}");
             }
-            None => debug!("input for unknown term {term_id}"),
-        },
+        }
         Msg::Resume { term_id, cmd: None } => daemon.skip_resume(&term_id).await,
         // Only a cli caller can be tied to a process, so only the cli sets one.
         Msg::Resume { term_id, cmd: Some(_) } => debug!("app resume with a cmd for {term_id} ignored"),
-        Msg::Resize { term_id, cols, rows } => match daemon.term(&term_id).await {
-            Some(h) => {
+        Msg::Resize { term_id, cols, rows } => {
+            if let Some(h) = daemon.term(&term_id).await {
                 if let Err(e) = h.resize(cols, rows) {
                     warn!("{e}");
                 }
+            } else {
+                debug!("resize for unknown term {term_id}");
             }
-            None => debug!("resize for unknown term {term_id}"),
-        },
+        }
         // Deletes the terminal's record, and kills its process group (SIGHUP)
         // so a single card can close. The handle is cloned and the terms lock
         // dropped before kill(), as in board delete; the pump's wait thread then

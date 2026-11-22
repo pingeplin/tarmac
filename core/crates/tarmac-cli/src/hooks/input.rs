@@ -331,7 +331,7 @@ mod tests {
     fn s18_the_cap_counts_the_text_after_the_fold() {
         let text = format!("a{}", "   \n b".repeat(200));
         let folded = format!("a{}", " b".repeat(200));
-        assert_eq!(done_text(json!(text)), Some(tarmac_protocol::cap_report_text(&folded)));
+        assert_eq!(done_text(json!(text)), Some(cap_report_text(&folded)));
         assert_eq!(done_text(json!(text)).unwrap().chars().count(), REPORT_TEXT_MAX);
     }
 

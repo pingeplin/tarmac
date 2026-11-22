@@ -190,7 +190,7 @@ mod tests {
     }
 
     fn names(names: &[&str]) -> Option<Vec<String>> {
-        Some(names.iter().map(|n| n.to_string()).collect())
+        Some(names.iter().map(ToString::to_string).collect())
     }
 
     fn admitted(filter: &Filter, msgs: &[Msg]) -> Vec<Msg> {

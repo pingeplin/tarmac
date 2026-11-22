@@ -21,7 +21,7 @@ use crate::{current_channel, env_override, home_or_root};
 /// an expired wait is reported by the side that observed it. A fixed 5 s would
 /// make `--timeout 10000` die client-side and blame a healthy app.
 pub fn read_deadline_ms(timeout_ms: Option<u32>) -> u64 {
-    timeout_ms.unwrap_or(0) as u64 + 3_000
+    u64::from(timeout_ms.unwrap_or(0)) + 3_000
 }
 
 /// Every form of the family, written once: `FORMS` for `--help`, and `USAGE`
@@ -546,6 +546,6 @@ mod tests {
     /// outside.
     #[test]
     fn the_dev_family_resolves_the_dev_channel() {
-        assert_eq!(crate::current_channel(), proto::Channel::Dev);
+        assert_eq!(current_channel(), proto::Channel::Dev);
     }
 }

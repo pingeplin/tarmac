@@ -204,10 +204,8 @@ async fn the_poll_drops_a_gone_holders_command_with_no_leader() {
     daemon.term_boards.lock().await.insert("T".into(), "board-0".into());
     {
         let mut boards = daemon.boards.lock().await;
-        let record = tarmac_protocol::TermRecord {
-            last_cwd: None,
-            resume: Some(tarmac_protocol::ResumeRecord { cmd: "echo HI".into() }),
-        };
+        let record =
+            TermRecord { last_cwd: None, resume: Some(tarmac_protocol::ResumeRecord { cmd: "echo HI".into() }) };
         boards.known_registry_mut("board-0").unwrap().term_records.insert("T".into(), record);
         handle.hold_resume(crate::holder::StartedPid { pid: std::process::id() as Pid, started: 1 });
     }

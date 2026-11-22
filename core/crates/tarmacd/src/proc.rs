@@ -104,7 +104,7 @@ pub fn process_name(_pid: libc::pid_t) -> Option<String> {
 #[cfg(target_os = "macos")]
 pub fn pid_cwd(pid: libc::pid_t) -> Option<String> {
     let mut info: libc::proc_vnodepathinfo = unsafe { std::mem::zeroed() };
-    let size = std::mem::size_of::<libc::proc_vnodepathinfo>() as libc::c_int;
+    let size = size_of::<libc::proc_vnodepathinfo>() as libc::c_int;
     // SAFETY: `info` is a valid, zeroed, exactly-sized buffer; proc_pidinfo
     // writes at most `size` bytes and returns <=0 on error.
     let ret = unsafe {
@@ -119,7 +119,7 @@ pub fn pid_cwd(pid: libc::pid_t) -> Option<String> {
     let vip_path = &info.pvi_cdir.vip_path;
     // SAFETY: vip_path is a field of `info`, alive for this call; the length is
     // its exact byte size (path is c_char == u8-sized on this target).
-    let bytes = unsafe { std::slice::from_raw_parts(vip_path.as_ptr() as *const u8, std::mem::size_of_val(vip_path)) };
+    let bytes = unsafe { std::slice::from_raw_parts(vip_path.as_ptr() as *const u8, size_of_val(vip_path)) };
     let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
     let cwd = String::from_utf8_lossy(&bytes[..end]).into_owned();
     (!cwd.is_empty()).then_some(cwd)

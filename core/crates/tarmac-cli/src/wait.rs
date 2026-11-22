@@ -75,7 +75,7 @@ enum Outcome {
 /// The wait on terminal `term_id` for `kinds`, which a bell or report wait
 /// extends with the exit.
 fn from_daemon(mode: &Mode, kinds: &[&str], term_id: &str, deadline: Option<Instant>) -> Outcome {
-    let kinds = kinds.iter().map(|k| k.to_string()).collect();
+    let kinds = kinds.iter().map(ToString::to_string).collect();
     let (mut stream, snapshot) = match events::subscribe(Some(kinds), Some(term_id.to_owned()), deadline) {
         Ok(opened) => opened,
         Err(Stop::Late) => {

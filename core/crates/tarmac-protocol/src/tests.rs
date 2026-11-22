@@ -2,8 +2,8 @@ use super::*;
 use std::collections::BTreeMap;
 
 fn unhex(s: &str) -> Vec<u8> {
-    let digits: Vec<u8> = s.chars().filter(|c| c.is_ascii_hexdigit()).map(|c| c.to_digit(16).unwrap() as u8).collect();
-    assert!(digits.len() % 2 == 0);
+    let digits: Vec<u8> = s.chars().filter(char::is_ascii_hexdigit).map(|c| c.to_digit(16).unwrap() as u8).collect();
+    assert!(digits.len().is_multiple_of(2));
     digits.chunks(2).map(|p| (p[0] << 4) | p[1]).collect()
 }
 
@@ -30,7 +30,7 @@ fn doc_tile(path: &str) -> Tile {
 }
 
 fn layout(dock: &[&str], tiles: Vec<Tile>) -> Msg {
-    Msg::Layout { dock: dock.iter().map(|p| p.to_string()).collect(), tiles, board: None, board_id: None }
+    Msg::Layout { dock: dock.iter().map(ToString::to_string).collect(), tiles, board: None, board_id: None }
 }
 
 /// An 80x24 spawn with no cwd and no cmd.
@@ -458,7 +458,7 @@ fn a_bell_and_an_exit_with_no_board_encode_as_before() {
 // Spec 2611.0012: the facts for scripts.
 fn subscribe(kinds: Option<&[&str]>, term_id: Option<&str>) -> Msg {
     Msg::Subscribe {
-        kinds: kinds.map(|k| k.iter().map(|s| s.to_string()).collect()),
+        kinds: kinds.map(|k| k.iter().map(ToString::to_string).collect()),
         term_id: term_id.map(str::to_string),
     }
 }

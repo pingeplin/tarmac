@@ -19,7 +19,7 @@ use common::{
 const NOT_ANSWERED: &str = "tarmac: wait: timed out before the daemon answered\n";
 
 fn subscribe(kinds: &[&str]) -> Msg {
-    Msg::Subscribe { kinds: Some(kinds.iter().map(|k| k.to_string()).collect()), term_id: Some("t9".into()) }
+    Msg::Subscribe { kinds: Some(kinds.iter().map(ToString::to_string).collect()), term_id: Some("t9".into()) }
 }
 
 // S9
@@ -373,7 +373,7 @@ fn a_change_of_the_size_alone_or_of_the_mtime_below_a_second_ends_the_wait() {
         (
             "nsec",
             Box::new(|f, mtime| {
-                File::options().write(true).open(f).unwrap().set_modified(mtime + Duration::from_micros(1)).unwrap()
+                File::options().write(true).open(f).unwrap().set_modified(mtime + Duration::from_micros(1)).unwrap();
             }),
         ),
     ];

@@ -118,7 +118,7 @@ async fn subscribers_and_the_terms_list_make_no_watch() {
 
     let mut subscribers = Vec::new();
     for (kinds, term_id) in shapes {
-        let kinds = kinds.map(|k| k.iter().map(|s| s.to_string()).collect());
+        let kinds = kinds.map(|k| k.iter().map(ToString::to_string).collect());
         subscribers.push(daemon.subscribe(kinds, term_id.map(str::to_string)).await);
     }
     daemon.terms_list().await;

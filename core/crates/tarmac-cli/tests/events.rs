@@ -20,7 +20,7 @@ fn now_ms() -> u64 {
 /// is the last key.
 fn split_received(line: &str) -> (String, u64) {
     let mut v: serde_json::Map<String, serde_json::Value> = serde_json::from_str(line).unwrap();
-    assert_eq!(v.keys().last().map(String::as_str), Some("received_ms"), "{line}");
+    assert_eq!(v.keys().next_back().map(String::as_str), Some("received_ms"), "{line}");
     let ms = v.remove("received_ms").unwrap().as_u64().unwrap();
     (serde_json::to_string(&v).unwrap(), ms)
 }

@@ -10,13 +10,13 @@ fn too_large(n: u64) -> io::Error {
 fn payload_len(header: [u8; 4]) -> io::Result<usize> {
     let n = u32::from_be_bytes(header);
     if n > MAX_FRAME_LEN {
-        return Err(too_large(n as u64));
+        return Err(too_large(u64::from(n)));
     }
     Ok(n as usize)
 }
 
 fn header(payload: &[u8]) -> io::Result<[u8; 4]> {
-    if payload.len() as u64 > MAX_FRAME_LEN as u64 {
+    if payload.len() as u64 > u64::from(MAX_FRAME_LEN) {
         return Err(too_large(payload.len() as u64));
     }
     Ok((payload.len() as u32).to_be_bytes())
@@ -70,13 +70,13 @@ mod tests {
         let mut buf = Vec::new();
         write_sync(&mut buf, &payload).unwrap();
         assert_eq!(&buf[..4], &(payload.len() as u32).to_be_bytes());
-        let mut cursor = std::io::Cursor::new(buf);
+        let mut cursor = io::Cursor::new(buf);
         assert_eq!(read_sync(&mut cursor).unwrap(), payload);
 
         let mut oversize = Vec::new();
         oversize.extend_from_slice(&(MAX_FRAME_LEN + 1).to_be_bytes());
-        let mut cursor = std::io::Cursor::new(oversize);
+        let mut cursor = io::Cursor::new(oversize);
         let err = read_sync(&mut cursor).unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 }

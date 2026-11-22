@@ -440,7 +440,7 @@ mod tests {
     /// TARMAC_DEV_SOCKET wins verbatim in both channels; empty means unset.
     #[test]
     fn dev_socket_override_wins_and_empty_means_unset() {
-        let home = std::ffi::OsStr::new("/Users/x");
+        let home = OsStr::new("/Users/x");
         for channel in [Channel::Release, Channel::Dev] {
             assert_eq!(
                 resolve_dev_socket_path(Some(OsString::from("/tmp/x.sock")), home, channel),
@@ -457,7 +457,7 @@ mod tests {
     /// `dev` path literal cannot drift into a second definition.
     #[test]
     fn dev_socket_shares_the_channel_dir() {
-        let home = std::ffi::OsStr::new("/Users/x");
+        let home = OsStr::new("/Users/x");
         for channel in [Channel::Release, Channel::Dev] {
             let dev = resolve_dev_socket_path(None, home, channel);
             assert_eq!(dev.parent().unwrap(), channel_dir(Path::new(home), channel));

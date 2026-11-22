@@ -423,7 +423,7 @@ pub(crate) async fn spawn_holding(daemon: Arc<Daemon>, plan: SpawnPlan, hold_dea
                 if status.signal().is_some() {
                     None
                 } else {
-                    Some(status.exit_code() as i64)
+                    Some(i64::from(status.exit_code()))
                 }
             }
             Err(_) => None,
@@ -470,12 +470,9 @@ async fn pump(
             }
         } else {
             tokio::select! {
-                maybe = out_rx.recv() => match maybe {
-                    Some(chunk) => forward_chunk(&daemon, &term_id, &handle, &mut bells, chunk).await,
-                    None => {
-                        exit_code = Some((&mut exit_rx).await.unwrap_or(None));
-                        break;
-                    }
+                maybe = out_rx.recv() => if let Some(chunk) = maybe { forward_chunk(&daemon, &term_id, &handle, &mut bells, chunk).await } else {
+                    exit_code = Some((&mut exit_rx).await.unwrap_or(None));
+                    break;
                 },
                 code = &mut exit_rx => {
                     exit_code = Some(code.unwrap_or(None));
@@ -517,7 +514,7 @@ pub(crate) async fn proc_loop(daemon: Arc<Daemon>, term_id: String, handle: Arc<
             && last_name.as_deref() != Some(name.as_str())
         {
             last_name = Some(name.clone());
-            daemon.push(Msg::TermProc { term_id: term_id.clone(), name, pid: Some(pid as i64) }).await;
+            daemon.push(Msg::TermProc { term_id: term_id.clone(), name, pid: Some(i64::from(pid)) }).await;
         }
         if last_pid != Some(pid) {
             last_pid = Some(pid);
@@ -533,7 +530,7 @@ mod tests {
 
     fn decide(pairs: &[(&str, &str)]) -> bool {
         let env: HashMap<&str, &str> = pairs.iter().copied().collect();
-        force_utf8_ctype_decision(|k| env.get(k).map(|v| v.to_string()))
+        force_utf8_ctype_decision(|k| env.get(k).map(ToString::to_string))
     }
 
     #[test]
@@ -653,7 +650,7 @@ mod tests {
     /// slots are free, and fails at the third so the loop ends.
     struct SlotsAtWrite {
         tx: mpsc::Sender<Input>,
-        free: std::sync::Arc<std::sync::Mutex<Vec<usize>>>,
+        free: Arc<std::sync::Mutex<Vec<usize>>>,
     }
 
     impl Write for SlotsAtWrite {
@@ -676,7 +673,7 @@ mod tests {
         for byte in [b"a", b"b", b"c"] {
             tx.try_send(Input { bytes: byte.to_vec(), hold: false }).unwrap();
         }
-        let free = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let free = Arc::new(std::sync::Mutex::new(Vec::new()));
         let writer = SlotsAtWrite { tx, free: free.clone() };
 
         write_inputs(rx, writer, HOLD_DEADLINE, || Keys::Taken, || {});

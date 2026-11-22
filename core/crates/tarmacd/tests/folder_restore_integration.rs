@@ -71,7 +71,7 @@ fn proc_pid(app: &mut Conn, term_id: &str, what: &str, pred: impl Fn(&str, i64) 
 /// first pid and the newest connection.
 fn job_shell_recorded(daemon: &TestDaemon, a: &str) -> (Conn, i64) {
     let mut app = daemon.connect_app_drained();
-    let argv: Vec<String> = JOB_SHELL.iter().map(|s| s.to_string()).collect();
+    let argv: Vec<String> = JOB_SHELL.iter().map(ToString::to_string).collect();
     spawn(&mut app, "T", &argv, in_dir(a));
     let first = proc_pid(&mut app, "T", "T's first term_proc", |_, _| true);
     (probe_until_cwd(daemon, "T", a), first)

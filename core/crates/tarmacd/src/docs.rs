@@ -93,13 +93,12 @@ pub async fn handle_push(
         return Err(format!("path is not absolute: {raw_path}"));
     }
     let open = daemon.boards.lock().await.doc_key(given).cloned();
-    let key = match open {
-        Some(key) => key,
-        None => {
-            let path = cached_resolve(daemon.gate(), resolved, raw_path).await?;
-            let open = daemon.boards.lock().await.doc_key(&path).cloned();
-            open.ok_or_else(|| format!("not an open doc: {raw_path}"))?
-        }
+    let key = if let Some(key) = open {
+        key
+    } else {
+        let path = cached_resolve(daemon.gate(), resolved, raw_path).await?;
+        let open = daemon.boards.lock().await.doc_key(&path).cloned();
+        open.ok_or_else(|| format!("not an open doc: {raw_path}"))?
     };
     let event = Msg::DocEvent { path: key.to_string_lossy().into_owned(), value };
     // A frame over the limit would end the app's connection when it is
@@ -151,42 +150,39 @@ pub fn upsert_doc(
     seen: Option<FileStamp>,
     repo: Option<RepoInfo>,
 ) -> bool {
-    match reg.docs.get_mut(path) {
-        Some(info) => {
-            info.via = via.to_owned();
-            info.last_opened_ms = epoch_ms(SystemTime::now());
-            // Only cli opens may clear read; a user re-open leaves it. The
-            // dock slot never moves on re-open. A re-open carrying a term_id
-            // updates the provenance owner; one without keeps the prior owner.
-            if via == "cli" {
-                info.read = false;
-            }
-            if term_id.is_some() {
-                info.term_id = term_id;
-            }
-            false
+    if let Some(info) = reg.docs.get_mut(path) {
+        info.via = via.to_owned();
+        info.last_opened_ms = epoch_ms(SystemTime::now());
+        // Only cli opens may clear read; a user re-open leaves it. The
+        // dock slot never moves on re-open. A re-open carrying a term_id
+        // updates the provenance owner; one without keeps the prior owner.
+        if via == "cli" {
+            info.read = false;
         }
-        None => {
-            reg.docs.insert(
-                path.to_owned(),
-                DocInfo {
-                    via: via.to_owned(),
-                    read: via != "cli",
-                    repo: repo.as_ref().map(|r| r.name.clone()),
-                    repo_root: repo.as_ref().map(|r| r.root.clone()),
-                    repo_color: repo.as_ref().map(|r| r.color),
-                    last_changed_ms: None,
-                    seen,
-                    untold: false,
-                    unread: false,
-                    last_opened_ms: epoch_ms(SystemTime::now()),
-                    term_id,
-                    data: None,
-                },
-            );
-            reg.dock.push(path.to_owned());
-            true
+        if term_id.is_some() {
+            info.term_id = term_id;
         }
+        false
+    } else {
+        reg.docs.insert(
+            path.to_owned(),
+            DocInfo {
+                via: via.to_owned(),
+                read: via != "cli",
+                repo: repo.as_ref().map(|r| r.name.clone()),
+                repo_root: repo.as_ref().map(|r| r.root.clone()),
+                repo_color: repo.as_ref().map(|r| r.color),
+                last_changed_ms: None,
+                seen,
+                untold: false,
+                unread: false,
+                last_opened_ms: epoch_ms(SystemTime::now()),
+                term_id,
+                data: None,
+            },
+        );
+        reg.dock.push(path.to_owned());
+        true
     }
 }
 
