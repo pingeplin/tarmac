@@ -3,6 +3,7 @@
 //
 //   node scripts/check/fmt.mjs --check [<language>]   exit 0 clean, 1 unformatted, 2 could not run
 //   node scripts/check/fmt.mjs --write [<language>]   exit 0 done, 2 could not run
+//   … --paths <file>…                                 only these files, tracked or new
 //
 // Scope is the files git tracks, each one handed to the formatter by itself on
 // stdin. So an untracked or ignored file is never reported or rewritten, and a
@@ -16,7 +17,7 @@ import { availableParallelism } from "node:os";
 import { dirname } from "node:path";
 
 import { repoRoot, startedAs } from "./git.mjs";
-import { LANGUAGES, notOnPath, sources, unusable } from "./languages.mjs";
+import { LANGUAGES, namedFiles, namedSources, notOnPath, sources, unusable } from "./languages.mjs";
 import { cannotRunFor, failure } from "./report.mjs";
 
 const RULE = "fmt";
@@ -63,9 +64,8 @@ async function each(items, limit, work) {
   return results;
 }
 
-/** Runs one language; returns the report it owes, if any, and the files it found unformatted. */
-async function run(language, root, write) {
-  const files = sources(language, root);
+/** Runs one language over its files; returns the report it owes, if any, and the files it found unformatted. */
+async function run(language, files, write) {
   if (files.length === 0) return {};
   const blocked = (parts) => ({ blocked: cannotRun(parts.summary, parts.why, parts.fix) });
   const reason = unusable(language);
@@ -85,15 +85,25 @@ async function run(language, root, write) {
   return { unformatted: write ? [] : changed.map((r) => r.path) };
 }
 
-async function main([mode, only]) {
+/** Each language with the files it is to format: the tracked files of the repository, or the named ones wherever they are. */
+function work(only, paths) {
+  const languages = Object.entries(LANGUAGES).filter(([name]) => !only || name === only).map(([, language]) => language);
+  if (paths) return namedFiles(paths).flatMap(({ root, paths }) => languages.map((language) => ({ language, files: namedSources(language, root, paths) })));
+  const root = repoRoot();
+  return root && languages.map((language) => ({ language, files: sources(language, root) }));
+}
+
+async function main([mode, ...rest]) {
   const names = Object.keys(LANGUAGES);
   const usage = (summary) => cannotRun(summary, [`it knows: ${names.join(", ")}`], `make fmt-check ONLY=${names[0]}`);
   if (mode !== "--check" && mode !== "--write") return { code: 2, text: usage("the mode must be --check or --write") };
+  const flag = rest.indexOf("--paths");
+  const [only] = flag === -1 ? rest : rest.slice(0, flag);
   if (only && !names.includes(only)) return { code: 2, text: usage(`${only} is not a language this check knows`) };
-  const root = repoRoot();
-  if (!root) return { code: 2, text: cannotRun("not in a git repository", [], "run it from inside the repository") };
+  const todo = work(only, flag === -1 ? null : rest.slice(flag + 1));
+  if (!todo) return { code: 2, text: cannotRun("not in a git repository", [], "run it from inside the repository") };
 
-  const done = await Promise.all((only ? [only] : names).map((name) => run(LANGUAGES[name], root, mode === "--write")));
+  const done = await Promise.all(todo.map(({ language, files }) => run(language, files, mode === "--write")));
   const blocked = done.filter((d) => d.blocked).map((d) => d.blocked);
   const unformatted = done.flatMap((d) => d.unformatted ?? []);
   const text = blocked.join("") + (unformatted.length > 0 ? notFormatted(unformatted) : "");

@@ -3,8 +3,8 @@
 // was written with. One table, so the two checks cannot disagree about scope.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, realpathSync, statSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 
 // `command` reads one file on stdin and writes the formatted text to stdout.
 // It runs in the file's directory, which is where the formatter looks for its
@@ -51,6 +51,35 @@ export function sources(language, root) {
     .map((source) => ({ ...source, text: readFileSync(source.file, "utf8") }))
     .filter(({ text }) => !language.leaves?.(text));
 }
+
+/**
+ * Files that a caller names (a hook names whatever was just edited), grouped by
+ * the repository each one is in: `[{ root, paths }]`, the paths relative to the
+ * root. A named file need not be tracked: a new file is checked from its first
+ * save. Left out, with no message: a path outside any repository, one that git
+ * ignores, and one that is not a file.
+ */
+export function namedFiles(paths, cwd = process.cwd()) {
+  const byRoot = new Map();
+  for (const file of paths.map((path) => resolve(cwd, path))) {
+    if (!statSync(file, { throwIfNoEntry: false })?.isFile()) continue;
+    const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: dirname(file), encoding: "utf8" });
+    if (top.status !== 0) continue;
+    const root = top.stdout.trim();
+    // `--show-toplevel` gives the path with links resolved; the named one may not be.
+    const path = relative(root, realpathSync(file));
+    if (spawnSync("git", ["check-ignore", "-q", "--", path], { cwd: root }).status === 0) continue;
+    byRoot.set(root, [...(byRoot.get(root) ?? []), path]);
+  }
+  return [...byRoot].map(([root, paths]) => ({ root, paths }));
+}
+
+/** The sources of a language among repo-relative paths that were named. */
+export const namedSources = (language, root, paths) =>
+  paths
+    .filter((path) => path.endsWith(language.glob.slice(1)))
+    .map((path) => ({ path, file: join(root, path), text: readFileSync(join(root, path), "utf8") }))
+    .filter(({ text }) => !language.leaves?.(text));
 
 /** The parts of a "cannot run" report for a tool that is not installed. */
 export const notOnPath = (language) => ({

@@ -626,3 +626,26 @@ test("swiftc: a build that fails with no place named has not run the check", () 
   assert.equal(run.code, 2);
   assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swiftc", "  why  error: the package manifest is broken"]);
 });
+
+// ------------------------------------------------------------ named files
+
+const lintNamed = (dir, paths, cwd = dir) => {
+  const run = spawnSync(process.execPath, [SCRIPT, "--paths", ...paths], { cwd, encoding: "utf8" });
+  return { code: run.status, out: run.stdout, err: run.stderr.split("\n") };
+};
+
+test("named files: a new Swift file is linted, also from another directory", () => {
+  const dir = swiftRepo({ "app/Tracked.swift": UNWRAP });
+  writeFileSync(join(dir, "app/Fresh.swift"), UNWRAP);
+
+  const run = lintNamed(dir, [join(dir, "app/Fresh.swift")], scratch());
+
+  assert.equal(run.code, 1);
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: 1 finding from swift-format", "  at   app/Fresh.swift:2:13 NeverForceUnwrap"]);
+});
+
+test("named files: a Rust file is not linted one by one, and a file of no language passes", () => {
+  const dir = swiftRepo({ "core/Cargo.toml": MANIFEST, "core/src/main.rs": "fn main() {\n    todo!()\n}\n", "notes.md": "x\n" });
+
+  assert.deepEqual(lintNamed(dir, ["core/src/main.rs", "notes.md"]), { code: 0, out: "", err: [""] });
+});
