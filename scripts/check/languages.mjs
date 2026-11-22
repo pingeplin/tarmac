@@ -35,14 +35,17 @@ export const LANGUAGES = {
   },
 };
 
+/** The paths git tracks that match the glob. */
+export const tracked = (root, glob) =>
+  execFileSync("git", ["ls-files", "-z", "--", glob], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
+
 /**
  * The tracked files of a language that a check reads: `{ path, file, text }`.
  * A tracked path that is no longer a file (deleted or replaced, not yet
  * staged) has no text, and a file the language leaves alone is not read on.
  */
 export function sources(language, root) {
-  const listed = execFileSync("git", ["ls-files", "-z", "--", language.glob], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
-  return listed
+  return tracked(root, language.glob)
     .map((path) => ({ path, file: join(root, path) }))
     .filter(({ file }) => statSync(file, { throwIfNoEntry: false })?.isFile())
     .map((source) => ({ ...source, text: readFileSync(source.file, "utf8") }))
@@ -65,10 +68,9 @@ export function toolVersion(language) {
 }
 
 /** The parts of a "cannot run" report when the language's tool must not run here, else null. */
-export function unusable(language) {
+export function unusable(language, { missing, found } = language.version ? toolVersion(language) : {}) {
   if (!language.version) return null;
   const { command, expect, fix } = language.version;
-  const { missing, found } = toolVersion(language);
   if (missing) return notOnPath(language);
   if (expect.some((minor) => found === minor || found?.startsWith(`${minor}.`))) return null;
   const have = found ? `${language.tool} ${found} is on the PATH` : `${command.join(" ")} did not answer`;

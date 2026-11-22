@@ -137,14 +137,19 @@ back from a rendered bitmap.
   `make lint ONLY=swift`) runs `swift format lint` over the tracked Swift files
   with the rules of `.swift-format`, and fails on any finding; CI runs it. It
   refuses a force unwrap (`x!`), a `try!` and an implicitly unwrapped optional
-  (`T!`) in the sources. These three rules say nothing in a test file: the
-  same code in a file under `app/Tests` that imports XCTest is not reported.
+  (`T!`). These three rules say nothing in a file that imports `XCTest` or
+  `Testing`, wherever the file is; a test fixture with no such import is
+  checked like any source. A script that starts with `#!` is not linted.
   Clear a finding by fixing it. Where the fix would change what the app does,
-  keep it under two lines, directly before the statement or declaration:
-  a `//` comment that says why, then `// swift-format-ignore: <Rule>`. The check
+  keep it under two lines, before the statement or declaration and above its
+  `///` doc comment if it has one (a `//` line between a doc comment and its
+  declaration hides the comment from the tool): a `//` comment that says why,
+  then `// swift-format-ignore: <Rule>`. The check
   refuses every other form of that comment — no rule name, a name that is not a
-  rule, the file-wide form, no reason line above, or the comment at the end of
-  a code line, where the tool does not honour it. It **cannot** tell when such a
+  rule, the file-wide form, no reason line above (a `///` line is not one), or
+  the comment at the end of a code line, where the tool does not honour it. It
+  also refuses a second `.swift-format` below the root, which could turn a
+  rule off for the files under it. It **cannot** tell when such a
   comment is stale: when you remove the code, remove the comment with it.
 - **Rust rules that a tool can decide are lints.** `make lint` runs clippy with
   the table in `core/Cargo.toml` and fails on any finding; CI runs it. §3 names

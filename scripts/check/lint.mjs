@@ -12,7 +12,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 import { repoRoot, startedAs } from "./git.mjs";
-import { LANGUAGES, sources, toolVersion, unusable } from "./languages.mjs";
+import { LANGUAGES, sources, toolVersion, tracked, unusable } from "./languages.mjs";
 import { cannotRunFor, failure } from "./report.mjs";
 
 const RULE = "lint";
@@ -49,7 +49,7 @@ const lintName = (message) => (/^[a-z]/.test(message.code?.code ?? "") ? message
 const isCompileError = (message) => message.level === "error" && !lintName(message);
 
 function lintRust(root) {
-  if (sources(LANGUAGES.rust, root).length === 0) return CLEAN;
+  if (tracked(root, LANGUAGES.rust.glob).length === 0) return CLEAN;
   const workspace = join(root, "core");
   const run = spawnSync("cargo", ["clippy", "--workspace", "--all-targets", "--message-format=json"], {
     cwd: workspace,
@@ -90,20 +90,32 @@ function lintRust(root) {
 const SWIFT_FIX =
   "correct each one above; `make fmt` clears a layout finding; to keep one, put the reason in a comment and `// swift-format-ignore: <Rule>` on the next line";
 
-/** The rules `.swift-format` knows by name and the ones it turns on; empty when there is no such file. */
-function configuredRules(root) {
-  const file = join(root, ".swift-format");
-  const rules = existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")).rules ?? {}) : {};
-  return { known: new Set(Object.keys(rules)), on: Object.keys(rules).filter((name) => rules[name]) };
+const CONFIG = ".swift-format";
+
+/**
+ * The rules the configuration knows by name and the ones it turns on, or the
+ * parts of a "cannot run" report. Only the root file is read, so a second one
+ * lower down, which the tool would obey for the files under it, is refused.
+ */
+function configuredRules(root, language) {
+  const blocked = (why) => ({ blocked: { summary: `cannot run ${language.tool}`, why: [why], fix: `correct ${CONFIG} at the repository root` } });
+  const nested = tracked(root, `*${CONFIG}`).find((path) => path !== CONFIG);
+  if (nested) return blocked(`${nested}: only the configuration at the repository root is read`);
+  if (!existsSync(join(root, CONFIG))) return { known: new Set(), on: [] };
+  try {
+    const rules = JSON.parse(readFileSync(join(root, CONFIG), "utf8")).rules ?? {};
+    return { known: new Set(Object.keys(rules)), on: Object.keys(rules).filter((name) => rules[name]) };
+  } catch {
+    return blocked(`${CONFIG} is not valid JSON`);
+  }
 }
 
 /** A rule that is on in the configuration and unknown to the running tool would be off without a word. */
-function missingRules(language, on) {
+function missingRules(language, on, version) {
   const dumped = spawnSync("swift", ["format", "dump-configuration"], { encoding: "utf8" });
   const has = new Set(Object.keys(JSON.parse(dumped.stdout).rules));
   const missing = on.filter((name) => !has.has(name));
   if (missing.length === 0) return null;
-  const version = toolVersion(language).found;
   return {
     summary: `cannot run ${language.tool}`,
     why: missing.map((name) => `${name} is not a rule of ${language.tool} ${version}`),
@@ -112,7 +124,8 @@ function missingRules(language, on) {
 }
 
 const DIRECTIVE = /\/\/\s*swift-format-ignore(-file)?\b(?::\s*(.*?))?\s*$/;
-const isReason = (line) => /^\/\/\s*\S/.test(line) && !DIRECTIVE.test(line);
+// A `///` line belongs to a declaration's documentation, so it is not a reason.
+const isReason = (line) => /^\/\/(?!\/)\s*\S/.test(line) && !DIRECTIVE.test(line);
 
 /**
  * swift-format's ignore comment has no reason and never goes stale, and three
@@ -139,8 +152,9 @@ function lintSwift(root) {
   const language = LANGUAGES.swift;
   const files = sources(language, root);
   if (files.length === 0) return CLEAN;
-  const { known, on } = configuredRules(root);
-  const reason = unusable(language) ?? missingRules(language, on);
+  const version = toolVersion(language);
+  const { known, on, blocked: badConfig } = configuredRules(root, language);
+  const reason = unusable(language, version) ?? badConfig ?? missingRules(language, on, version.found);
   if (reason) return cannotRun(reason.summary, reason.why, reason.fix);
 
   const run = spawnSync("swift", ["format", "lint", "--parallel", ...files.map(({ path }) => path)], { cwd: root, encoding: "utf8", maxBuffer: 64 << 20 });
@@ -154,6 +168,11 @@ function lintSwift(root) {
     return { ...blocked, text: run.stderr + blocked.text };
   }
   const at = [...said.map(({ at, rule }) => `${at} ${rule ?? "warning"}`), ...files.flatMap((source) => directiveFindings(source, known))];
+  // The tool can stop with a message that names no place (a configuration it cannot read).
+  if (said.length === 0 && run.status !== 0) {
+    const why = run.stderr.split("\n").filter((line) => /\berror\b/.test(line));
+    return cannotRun(`cannot run ${language.tool}`, why.slice(0, 3), "correct the error above");
+  }
   if (at.length === 0) return CLEAN;
   return { code: 1, text: run.stderr + failure({ rule: RULE, summary: findings(at.length, language.tool), at, fix: SWIFT_FIX, then: THEN }) };
 }

@@ -358,3 +358,51 @@ test("Swift S20: a directive as a trailing comment has no effect, and is named s
     "       app/A.swift:2:17 ignore-has-no-effect",
   ]);
 });
+
+test("Swift: a directive may name two rules", () => {
+  const config = '{"version": 1, "indentation": {"spaces": 4}, "rules": {"NeverForceUnwrap": true, "NeverUseForceTry": true}}\n';
+  const kept = "func f(_ x: Int?) -> Int {\n    // The caller checked it.\n    // swift-format-ignore: NeverForceUnwrap, NeverUseForceTry\n    let y = x!\n    return y\n}\n";
+
+  assert.equal(lintSwift(swiftRepo({ ".swift-format": config, "app/A.swift": kept })).code, 0);
+});
+
+test("Swift: a doc comment line is not a reason", () => {
+  const source = "func f(_ x: Int?) -> Int {\n    /// Not a reason.\n    // swift-format-ignore: NeverForceUnwrap\n    let y = x!\n    return y\n}\n";
+
+  const run = lintSwift(swiftRepo({ "app/A.swift": source }));
+
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: 1 finding from swift-format", "  at   app/A.swift:3:5 ignore-without-reason"]);
+});
+
+test("with no language named, a repository with no Rust file lints only its Swift", () => {
+  const run = lint(swiftRepo({ "app/A.swift": UNWRAP }), process.env, null);
+
+  assert.equal(run.code, 1);
+  assert.deepEqual(run.err.filter((line) => line.startsWith("✗ ")), ["✗ lint: 1 finding from swift-format"]);
+});
+
+test("Swift: a configuration that is not JSON cannot run the check", () => {
+  const run = lintSwift(swiftRepo({ ".swift-format": "{ not json\n", "app/A.swift": "let x = 1\n" }));
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swift-format", "  why  .swift-format is not valid JSON"]);
+});
+
+test("Swift: a second configuration below the root cannot run the check, because it could turn rules off", () => {
+  const run = lintSwift(swiftRepo({ "app/.swift-format": '{"version": 1, "rules": {"NeverForceUnwrap": false}}\n', "app/A.swift": UNWRAP }));
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swift-format", "  why  app/.swift-format: only the configuration at the repository root is read"]);
+});
+
+test("Swift: when the tool fails without a finding, the check has not run", () => {
+  const bin = scratch();
+  const real = execFileSync("which", ["swift"], { encoding: "utf8" }).trim();
+  const script = `#!/bin/sh\n[ "$2" = "lint" ] && { echo '<unknown>: error: Unable to read configuration' >&2; exit 1; }\nexec ${real} "$@"\n`;
+  writeFileSync(join(bin, "swift"), script, { mode: 0o755 });
+
+  const run = lintSwift(swiftRepo({ "app/A.swift": "let x = 1\n" }), { ...process.env, PATH: `${bin}:${process.env.PATH}` });
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swift-format", "  why  <unknown>: error: Unable to read configuration"]);
+});

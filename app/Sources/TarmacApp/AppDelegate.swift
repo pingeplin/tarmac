@@ -9,13 +9,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // predates the lint; decided in #476
     // swift-format-ignore: NeverUseImplicitlyUnwrappedOptionals
     private(set) var controller: AppController!
+    // predates the lint; decided in #476
+    // swift-format-ignore: NeverUseImplicitlyUnwrappedOptionals
     /// The Quit item holds its target weakly; this is what keeps it alive.
-    // predates the lint; decided in #476
-    // swift-format-ignore: NeverUseImplicitlyUnwrappedOptionals
     private(set) var quitGuard: QuitGuardController!
-    /// The Settings item holds its target weakly too.
     // predates the lint; decided in #476
     // swift-format-ignore: NeverUseImplicitlyUnwrappedOptionals
+    /// The Settings item holds its target weakly too.
     private var settings: SettingsWindowController!
     private let closeHider = WindowCloseHider()
     #if DEBUG
