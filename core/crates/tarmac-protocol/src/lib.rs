@@ -600,8 +600,3 @@ pub fn decode(bytes: &[u8]) -> Result<Msg, rmp_serde::decode::Error> {
 
 #[cfg(test)]
 mod tests;
-
-/// A plant to show the `mutants (rust, in diff)` job red; the next commit reverts it.
-pub fn planted(n: u8) -> u8 {
-    if n > 3 { n + 1 } else { n }
-}
