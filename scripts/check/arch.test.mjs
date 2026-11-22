@@ -223,7 +223,7 @@ test("S8/S19: a kit module needs its test file or an entry; a slice needs neithe
   );
 
   assert.deepEqual(summaries(run), [KIT_TESTS]);
-  assert.deepEqual(places(run), [`${KIT}/Bare.swift:1`]);
+  assert.deepEqual(places(run), [`${KIT}/Bare.swift:1`, `${KIT}/Nested/Deep.swift:1`], "a module in a subfolder is a module too");
 });
 
 test("S8/S19: an entry that is no longer needed is reported at the line of its module", () => {

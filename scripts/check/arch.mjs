@@ -101,14 +101,16 @@ function exceptions(tree) {
 }
 
 function untested(tree, list) {
-  const modules = tree.paths
-    .filter((path) => path.startsWith(KIT) && !path.slice(KIT.length).includes("/") && path.endsWith(".swift"))
-    .map((path) => path.slice(KIT.length, -".swift".length))
-    // `<Module>+<Part>.swift` is a slice of a module, tested with it.
-    .filter((module) => !module.includes("+"));
+  // A module is a Swift file at any depth under TarmacKit, named for its type.
+  // `<Module>+<Part>.swift` is a slice of a module, tested with it.
+  const sources = tree.paths
+    .filter((path) => path.startsWith(KIT) && path.endsWith(".swift"))
+    .map((path) => ({ path, module: path.slice(path.lastIndexOf("/") + 1, -".swift".length) }))
+    .filter(({ module }) => !module.includes("+"));
+  const modules = sources.map(({ module }) => module);
   const tested = (module) => tree.has(`${KIT_TESTS}${module}Tests.swift`);
   const excepted = new Set(list.map(({ module }) => module));
-  const bare = modules.filter((module) => !tested(module) && !excepted.has(module)).map((module) => `${KIT}${module}.swift:1`);
+  const bare = sources.filter(({ module }) => !tested(module) && !excepted.has(module)).map(({ path }) => `${path}:1`);
   // The line that holds the module's name as JSON writes it; line 1 if a formatter split it past recognition.
   const lineOf = (module) => Math.max(1, tree.lines(LIST).findIndex((line) => line.includes(JSON.stringify(module))) + 1);
   const stale = list.filter(({ module }) => tested(module) || !modules.includes(module)).map(({ module }) => `${LIST}:${lineOf(module)}`);
