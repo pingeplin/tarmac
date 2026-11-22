@@ -1,3 +1,5 @@
+import Foundation
+
 /// The sizes a font role can be set in (spec 2610.0006): a range in half
 /// steps, and the size with nothing saved.
 ///

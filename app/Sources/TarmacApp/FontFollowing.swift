@@ -1,4 +1,5 @@
 import AppKit
+import TarmacKit
 import TarmacTerm
 
 /// A view that draws with a chosen font (`Theme.fontFamilies`,
@@ -19,7 +20,7 @@ extension NSView {
     }
 
     func broadcastFontsChanged() {
-        tellTree { ($0 as? FontFollowing)?.fontsChanged() }
+        tellTree { ($0 as? any FontFollowing)?.fontsChanged() }
     }
 }
 

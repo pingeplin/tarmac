@@ -879,7 +879,7 @@ public final class TerminalView: NSView {
 }
 
 extension TerminalView: NSUserInterfaceValidations {
-    public func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+    public func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
         switch item.action {
         case #selector(copy(_:)): hasSelection
         case #selector(paste(_:)): NSPasteboard.general.string(forType: .string) != nil

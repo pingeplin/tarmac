@@ -9,6 +9,6 @@ protocol DocSidebarSideFollowing: NSView {
 
 extension NSView {
     func broadcastDocSidebarSideChanged() {
-        tellTree { ($0 as? DocSidebarSideFollowing)?.docSidebarSideChanged() }
+        tellTree { ($0 as? any DocSidebarSideFollowing)?.docSidebarSideChanged() }
     }
 }

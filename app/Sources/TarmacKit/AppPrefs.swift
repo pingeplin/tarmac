@@ -70,7 +70,7 @@ public enum AppPrefs {
             init?(intValue: Int) { nil }
         }
 
-        init(from decoder: Decoder) throws {
+        init(from decoder: any Decoder) throws {
             let object = try decoder.container(keyedBy: Key.self)
             var values = Values(
                 warnBeforeQuit: (try? object.decode(Bool.self, forKey: Key("warn_before_quit"))) ?? true)
