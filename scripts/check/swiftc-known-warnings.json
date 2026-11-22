@@ -1,0 +1,20 @@
+[
+  {
+    "file": "app/Sources/TarmacTerm/FrameReader.swift",
+    "message": "forming 'UnsafeMutableRawPointer' to a variable of type 'Value'; this is likely incorrect because 'Value' may contain an object reference.",
+    "issue": "#478",
+    "reason": "a raw pointer to a generic value handed to libghostty-vt; the fix changes unsafe code on the terminal's path"
+  },
+  {
+    "file": "app/Sources/TarmacTerm/TerminalEngine.swift",
+    "message": "forming 'UnsafeMutableRawPointer' to a variable of type 'Value'; this is likely incorrect because 'Value' may contain an object reference.",
+    "issue": "#478",
+    "reason": "a raw pointer to a generic value handed to libghostty-vt; the fix changes unsafe code on the terminal's path"
+  },
+  {
+    "file": "app/Sources/TarmacTerm/TerminalSelection.swift",
+    "message": "forming 'UnsafeRawPointer' to a variable of type 'Value'; this is likely incorrect because 'Value' may contain an object reference.",
+    "issue": "#478",
+    "reason": "a raw pointer to a generic value handed to libghostty-vt; the fix changes unsafe code on the terminal's path"
+  }
+]

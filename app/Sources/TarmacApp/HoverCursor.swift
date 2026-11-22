@@ -68,7 +68,7 @@ final class HoverCursorRouter {
     private func route(_ event: NSEvent) -> Bool {
         let hit = window.flatMap { event.window === $0 ? $0.contentView?.hitTest(event.locationInWindow) : nil }
         onMove?(hit)
-        guard let provider = hit as? HoverCursorProviding else {
+        guard let provider = hit as? any HoverCursorProviding else {
             release()
             return false
         }

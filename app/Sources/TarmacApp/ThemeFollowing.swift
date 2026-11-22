@@ -12,7 +12,7 @@ protocol ThemeFollowing: NSView {
 
 extension NSView {
     func broadcastThemeChanged() {
-        tellTree { ($0 as? ThemeFollowing)?.themeChanged() }
+        tellTree { ($0 as? any ThemeFollowing)?.themeChanged() }
     }
 }
 

@@ -1,3 +1,5 @@
+import Foundation
+
 /// One item of a list: its marker as written (`•` for `-`, `*` or `+`; an
 /// ordered one keeps its number) and its text.
 public struct ListItem: Equatable, Sendable {
