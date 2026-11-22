@@ -80,6 +80,11 @@ name. `CLAUDE.md` has the details.
 `make test` must pass first; see [`coding-style.md`](coding-style.md) for the TDD
 workflow it gates.
 
+For a change to Rust, run `make mutants` before the review: it changes the lines
+you changed, one expression at a time, and names each change that no test saw.
+The `mutants (rust, in diff)` CI job runs the same command on every PR and fails
+on a survivor. No hook runs it, because it takes minutes.
+
 ## PRs
 
 - Open with `gh pr create`; body includes `Closes #N` so the merge closes the

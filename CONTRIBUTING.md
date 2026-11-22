@@ -118,7 +118,10 @@ editor/IDE may show stale SourceKit diagnostics — `make` is the source of trut
    squash merge), so the hooks only tell you sooner. If you work with Claude
    Code, `.claude/settings.json` runs the format and lint checks after each
    edit and at the end of a turn, and refuses a command that kills a Tarmac
-   process by name (see `CLAUDE.md`); these hooks do not run clippy.
+   process by name (see `CLAUDE.md`); these hooks do not run clippy. One CI job
+   has no hook: `mutants (rust, in diff)` changes the Rust lines of your pull
+   request, one expression at a time, and fails when the tests still pass. Run
+   it yourself with `make mutants` (it needs `cargo-mutants` 27.1.0).
 2. Make your change, keeping it focused. Format it with `make fmt` (rustfmt and
    swift-format); do not lay code out by hand.
 3. **Work test-first.** Tarmac requires TDD: write the failing test, watch it
