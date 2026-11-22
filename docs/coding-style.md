@@ -25,7 +25,7 @@ Test-first fails to *compile* or resolve before it ever fails an assertion, and
 that is not yet red. Introduce the symbol under test as a stub — `todo!()` in
 Rust, a function returning a placeholder in Swift — then observe the assertion
 fail. The stub is for the red phase only: `cargo test` runs it, and `make lint`
-(`clippy::todo`) refuses a commit that still holds one. Run just the test you
+and CI (`clippy::todo`) fail while one is left. Run just the test you
 are driving:
 
 | Suite | Command (from the repo root) |

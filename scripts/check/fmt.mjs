@@ -15,7 +15,7 @@ import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { dirname, join } from "node:path";
 
-import { repoRoot } from "./git.mjs";
+import { repoRoot, startedAs } from "./git.mjs";
 import { cannotRunFor, failure } from "./report.mjs";
 
 const RULE = "fmt";
@@ -152,7 +152,7 @@ function exitCode(blocked, unformatted) {
   return unformatted.length > 0 ? 1 : 0;
 }
 
-if (import.meta.filename === process.argv[1]) {
+if (startedAs(import.meta)) {
   const { code, text } = await main(process.argv.slice(2));
   process.stderr.write(text);
   process.exitCode = code;

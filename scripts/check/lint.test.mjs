@@ -185,3 +185,13 @@ test("S21: outside a git repository the check cannot run", () => {
   assert.equal(run.code, 2);
   assert.equal(report(run)[0], "✗ lint: not in a git repository");
 });
+
+test("the script still runs when it is started through a symlinked path", () => {
+  const link = join(scratch(), "check");
+  symlinkSync(import.meta.dirname, link);
+  const dir = repo({ "core/src/main.rs": "fn main() {\n    todo!()\n}\n" });
+
+  const run = spawnSync(process.execPath, [join(link, "lint.mjs")], { cwd: dir, encoding: "utf8" });
+
+  assert.equal(run.status, 1);
+});

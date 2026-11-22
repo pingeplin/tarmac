@@ -10,7 +10,7 @@
 import { spawnSync } from "node:child_process";
 import { join, relative, resolve } from "node:path";
 
-import { repoRoot } from "./git.mjs";
+import { repoRoot, startedAs } from "./git.mjs";
 import { cannotRunFor, failure } from "./report.mjs";
 
 const RULE = "lint";
@@ -79,7 +79,7 @@ function main() {
   return { code: 1, text: rendered + failure({ rule: RULE, summary, at, fix, then: THEN }) };
 }
 
-if (import.meta.filename === process.argv[1]) {
+if (startedAs(import.meta)) {
   const { code, text } = main();
   process.stderr.write(text);
   process.exitCode = code;
