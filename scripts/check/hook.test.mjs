@@ -121,6 +121,24 @@ test("S5: a Rust file that does not parse is said to be so, and is not changed",
   assert.equal(readFileSync(join(dir, "core/src/bad.rs"), "utf8"), "fn x( {\n");
 });
 
+test("a worktree from before the hooks is not judged: its check scripts do not take a file list", () => {
+  const dir = repo({ "app/Sources/TarmacKit/A.swift": "import AppKit\n", "app/Tests/TarmacKitTests/ATests.swift": "" });
+  rmSync(join(dir, "scripts/check/hook.mjs"));
+  write(dir, { "app/New.swift": UNWRAP.replace("let y", "let  y") });
+
+  assert.deepEqual(hook("edit", editOf(join(dir, "app/New.swift"))), QUIET);
+  assert.deepEqual(hook("stop", stopIn(dir)), QUIET);
+  assert.equal(readFileSync(join(dir, "app/New.swift"), "utf8"), UNWRAP.replace("let y", "let  y"));
+});
+
+test("an event about another repository is judged by that repository's own adapter", () => {
+  const dir = repo();
+  write(dir, { "scripts/check/hook.mjs": 'process.stderr.write(`theirs ${process.argv[2]}\\n`);\nprocess.exitCode = 2;\n', "app/New.swift": "let x = 1\n" });
+
+  assert.deepEqual(hook("edit", editOf(join(dir, "app/New.swift"))), { code: 2, out: "", err: "theirs edit\n" });
+  assert.deepEqual(hook("stop", stopIn(dir)), { code: 2, out: "", err: "theirs stop\n" });
+});
+
 test("a repository with no check scripts is not judged", () => {
   const dir = scratch();
   execFileSync("git", ["init", "-q"], { cwd: dir });
@@ -277,6 +295,16 @@ for (const command of [
   "ps aux | killall -9 TARMACD",
   "FOO=1 pkill -f tarmac",
   "true || pkill tarmacd",
+  "/usr/bin/pkill tarmacd",
+  "sleep 1 & pkill tarmacd",
+  "(pkill tarmacd)",
+  "{ pkill tarmacd; }",
+  "if true; then pkill tarmacd; fi",
+  "while true; do killall tarmacd; done",
+  "env pkill tarmacd",
+  "sudo env X=1 /usr/bin/killall TarmacApp",
+  "pgrep tarmacd | xargs pkill -f tarmac",
+  "nohup pkill tarmacd",
   "echo a\npkill tarmacd",
 ]) {
   test(`S11/S26: \`${command.replace("\n", "\\n")}\` is refused`, () => {
@@ -296,6 +324,9 @@ for (const command of [
   "git log --grep pkill",
   "grep pkill notes.txt",
   "pkill -f nginx && echo tarmac",
+  "pgrep -fl tarmacd",
+  "cat tarmac.log | grep killall",
+  "make kill-daemon DEV_DIR=.dev2 & wait",
   SENT["PreToolUse.Bash"].tool_input.command,
 ]) {
   test(`S11/S26: \`${command}\` passes`, () => {

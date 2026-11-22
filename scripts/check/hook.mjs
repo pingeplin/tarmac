@@ -5,13 +5,15 @@
 //
 //   node scripts/check/hook.mjs edit|stop|bash   < the hook's JSON
 //
-// The checks run are the ones under the target repository's scripts/check/, so
-// a worktree on an older branch is judged by its own rules, and a repository
-// with no such scripts is not judged at all.
+// Claude Code starts the adapter of the session's root. When the event is
+// about another repository (a worktree, most often), this one hands the event
+// to that repository's own adapter, so a branch is judged by its own rules. A
+// repository with no adapter is from before the hooks, or is not this project:
+// it is not judged at all.
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { startedAs } from "./git.mjs";
@@ -37,11 +39,10 @@ const said = (checks, code) => checks.filter((done) => done.code === code).map((
 // ------------------------------------------------------------------ edit
 
 /** After an edit: format the file, lint it where one file can be judged, and check the tree's rules. The edit stays. */
-function edit(input) {
-  const file = input.tool_input?.file_path;
-  if (typeof file !== "string" || !/\.(rs|swift)$/.test(file) || !statSync(file, { throwIfNoEntry: false })?.isFile()) return pass;
-  const root = rootOf(dirname(file));
-  if (!root || git(root, "check-ignore", "-q", "--", file).status === 0) return pass;
+function edit(input, root) {
+  const file = input.tool_input.file_path;
+  if (!/\.(rs|swift)$/.test(file) || !statSync(file, { throwIfNoEntry: false })?.isFile()) return pass;
+  if (git(root, "check-ignore", "-q", "--", file).status === 0) return pass;
   const checks = ran([
     check(root, "scripts/check/fmt.mjs", ["--write", "--paths", file]),
     check(root, "scripts/check/lint.mjs", ["--paths", file]),
@@ -92,9 +93,7 @@ const attempt = (work) => {
  * unfinished files in the same tree). A check that could not run is said, and
  * does not block.
  */
-function stop(input) {
-  const root = rootOf(input.cwd ?? process.cwd());
-  if (!root) return pass;
+function stop(input, root) {
   const files = changedFiles(root);
   const named = files.length > 0 ? ["--paths", ...files] : null;
   const checks = ran([
@@ -132,16 +131,20 @@ function docs(root) {
 // ------------------------------------------------------------------ bash
 
 /** True for a simple command that kills by name a process whose name holds "tarmac". */
+// Words that come before the command a shell runs: grouping, keywords, and programs that run their arguments.
+const LEADS = new Set(["sudo", "env", "command", "exec", "time", "nohup", "xargs", "then", "do", "else", "!", "{", "("]);
+
 function killsTarmacByName(simple) {
-  const words = simple.trim().split(/\s+/);
-  while (words[0] === "sudo" || /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0] ?? "")) words.shift();
-  return ["pkill", "killall"].includes(words[0]) && words.slice(1).some((word) => /tarmac/i.test(word));
+  const words = simple.replace(/^[\s({]+/, "").split(/\s+/);
+  while (LEADS.has(words[0]) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0] ?? "")) words.shift();
+  const program = (words[0] ?? "").split("/").pop();
+  return ["pkill", "killall"].includes(program) && words.slice(1).some((word) => /tarmac/i.test(word));
 }
 
 /** Before a Bash call. A kill by name can end the installed app and every terminal it owns. */
 function bash(input) {
   const command = input.tool_input?.command;
-  if (typeof command !== "string" || !command.split(/;|&&|\|\||\||\n/).some(killsTarmacByName)) return pass;
+  if (typeof command !== "string" || !command.split(/[;&|\n]/).some(killsTarmacByName)) return pass;
   return {
     code: 2,
     text: failure({
@@ -157,18 +160,31 @@ function bash(input) {
 // ------------------------------------------------------------------ main
 
 const pass = { code: 0, text: "" };
-const EVENTS = { edit, stop, bash };
+const CHECKS = { edit, stop };
+const SELF = realpathSync(import.meta.filename);
+
+/** The directory an event is about: the edited file's, or the one the turn ended in. */
+function placeOf(event, input) {
+  if (event === "stop") return input.cwd ?? process.cwd();
+  const file = input.tool_input?.file_path;
+  return typeof file === "string" ? dirname(file) : null;
+}
 
 function main(event, raw) {
-  const handle = EVENTS[event];
-  if (!handle) return { code: 0, text: "" };
   let input;
   try {
-    input = JSON.parse(raw);
+    input = JSON.parse(raw) ?? {};
   } catch {
     return pass;
   }
-  return handle(input ?? {});
+  if (event === "bash") return bash(input);
+  const place = CHECKS[event] && placeOf(event, input);
+  const root = place && rootOf(place);
+  const adapter = root && join(root, "scripts/check/hook.mjs");
+  if (!adapter || !existsSync(adapter)) return pass;
+  if (realpathSync(adapter) === SELF) return CHECKS[event](input, root);
+  const run = spawnSync(process.execPath, [adapter, event], { input: raw, encoding: "utf8" });
+  return { code: run.status ?? 0, text: run.stderr };
 }
 
 if (startedAs(import.meta)) {
