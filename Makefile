@@ -1,6 +1,6 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: core ghostty-vt app test docs-check check-test fmt fmt-check dco-check run qa qa-quit qa-resume kill-daemon bundle dmg release
+.PHONY: setup core ghostty-vt app test docs-check check-test fmt fmt-check dco-check run qa qa-quit qa-resume kill-daemon bundle dmg release
 
 # The dev channel: one directory that holds this worktree's own daemon socket,
 # state, driver socket and config directory. Everything that launches or drives
@@ -38,6 +38,12 @@ SHELL_GATE_FILE := $(DEV_DIR)/shell-gate
 GATE_ENV := $(if $(filter 1,$(SHELL_GATE)),TARMAC_QA_SHELL="$${TARMAC_QA_SHELL:-$$SHELL}" \
 	TARMAC_QA_SHELL_GATE="$(SHELL_GATE_FILE)" \
 	SHELL="$(ROOT)/scripts/qa/gate-shell.sh")
+
+# Once per clone: settings git keeps outside the tree, so a checkout cannot
+# carry them. Worktrees share the clone's configuration. `git blame` then skips
+# the commits in .git-blame-ignore-revs (the formatter baselines).
+setup:
+	git -C $(ROOT) config blame.ignoreRevsFile .git-blame-ignore-revs
 
 core:
 	cd $(ROOT)/core && cargo build

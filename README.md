@@ -150,6 +150,7 @@ toolchain (Xcode). Node.js is needed only for the repo's own checks
 through the `Makefile`:
 
 ```sh
+make setup   # once per clone: git settings a checkout cannot carry (blame skips the reformat commits)
 make core    # cargo build the daemon, CLI, and protocol crate
 make app     # stage the pinned libghostty-vt, then swift build the native app
 make test    # docs-check + check-script tests + cargo test (core) + swift test (app)

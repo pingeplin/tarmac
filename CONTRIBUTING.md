@@ -105,7 +105,9 @@ editor/IDE may show stale SourceKit diagnostics — `make` is the source of trut
 
 ## Submitting changes
 
-1. Fork the repository and create a topic branch from `main`.
+1. Fork the repository and create a topic branch from `main`. Run `make setup`
+   once in a new clone: it makes `git blame` skip the commits that only
+   reformatted the tree (`.git-blame-ignore-revs`).
 2. Make your change, keeping it focused. Format it with `make fmt` (rustfmt and
    swift-format); do not lay code out by hand.
 3. **Work test-first.** Tarmac requires TDD: write the failing test, watch it
