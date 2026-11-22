@@ -1,5 +1,6 @@
 .DS_Store
 /core/target/
+/core/mutants.out*/
 /app/.build/
 /dist/
 *.sock

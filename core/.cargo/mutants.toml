@@ -1,0 +1,4 @@
+# The one place that sends a signal. Its mutants signal less, not more, but a
+# mutant here runs with a real pid: it is never tried. arch-check keeps
+# libc::kill in this file.
+exclude_re = ["TermHandle::kill\\b"]
