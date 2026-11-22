@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The adapter between Claude Code's hooks and the checks. It holds no rule of
-// its own: it finds the repository an event is about, runs that repository's
+// its own (the Bash rule is kill-guard.mjs): it finds the repository an event is about, runs that repository's
 // own check scripts, and maps their exit codes to what a hook may say.
 //
 //   node scripts/check/hook.mjs edit|stop|bash   < the hook's JSON
@@ -17,6 +17,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, wr
 import { dirname, join } from "node:path";
 
 import { startedAs } from "./git.mjs";
+import { killsTarmacByName } from "./kill-guard.mjs";
 import { failure } from "./report.mjs";
 
 const git = (cwd, ...args) => spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -131,20 +132,10 @@ function docs(root) {
 // ------------------------------------------------------------------ bash
 
 /** True for a simple command that kills by name a process whose name holds "tarmac". */
-// Words that come before the command a shell runs: grouping, keywords, and programs that run their arguments.
-const LEADS = new Set(["sudo", "env", "command", "exec", "time", "nohup", "xargs", "then", "do", "else", "!", "{", "("]);
-
-function killsTarmacByName(simple) {
-  const words = simple.replace(/^[\s({]+/, "").split(/\s+/);
-  while (LEADS.has(words[0]) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0] ?? "")) words.shift();
-  const program = (words[0] ?? "").split("/").pop();
-  return ["pkill", "killall"].includes(program) && words.slice(1).some((word) => /tarmac/i.test(word));
-}
-
 /** Before a Bash call. A kill by name can end the installed app and every terminal it owns. */
 function bash(input) {
   const command = input.tool_input?.command;
-  if (typeof command !== "string" || !command.split(/[;&|\n]/).some(killsTarmacByName)) return pass;
+  if (typeof command !== "string" || !killsTarmacByName(command)) return pass;
   return {
     code: 2,
     text: failure({

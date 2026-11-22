@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -80,7 +80,8 @@ test("S2: a force unwrap in the edited file is shown to the model, and the file 
 });
 
 test("S3/S29: a file the checks do not own is left alone, with no output", () => {
-  const dir = repo({ ".gitignore": "build/\n" });
+  // The tree has a finding, so a check that ran for one of these files would be heard.
+  const dir = repo({ ".gitignore": "build/\n", "app/Sources/TarmacKit/A.swift": "import AppKit\n", "app/Tests/TarmacKitTests/ATests.swift": "" });
   write(dir, { "build/Gen.swift": "let  x=1\n", "notes.md": "#  x\n" });
   const outside = scratch();
   write(outside, { "Loose.swift": "let  x=1\n" });
@@ -202,6 +203,31 @@ test("a failed docs-check is a finding of the stop hook, in its own words", () =
   assert.deepEqual([run.code, run.err], [2, "docs-check: 1 problem(s)\n"]);
 });
 
+test("a repository with no commit yet has its staged files checked", () => {
+  const dir = repo();
+  rmSync(join(dir, ".git"), { recursive: true });
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  write(dir, { "app/New.swift": UNWRAP });
+  execFileSync("git", ["add", "-A"], { cwd: dir });
+
+  const run = hook("stop", stopIn(dir));
+
+  assert.equal(run.code, 2);
+  assert.match(run.err, /app\/New\.swift:2:13 NeverForceUnwrap/);
+});
+
+test("a file named through a symlink to its directory is the same file", () => {
+  const dir = repo();
+  const link = join(scratch(), "link");
+  symlinkSync(dir, link);
+  write(dir, { "app/New.swift": UNWRAP });
+
+  const run = hook("edit", editOf(join(link, "app/New.swift")));
+
+  assert.equal(run.code, 2);
+  assert.match(run.err, /^ {2}at {3}app\/New\.swift:2:13 NeverForceUnwrap$/m);
+});
+
 test("S22: stop_hook_active does not let other findings through", () => {
   const dir = repo();
   write(dir, { "app/New.swift": UNWRAP });
@@ -305,6 +331,22 @@ for (const command of [
   "sudo env X=1 /usr/bin/killall TarmacApp",
   "pgrep tarmacd | xargs pkill -f tarmac",
   "nohup pkill tarmacd",
+  "if pkill tarmacd; then echo x; fi",
+  "while killall tarmacd; do :; done",
+  "sudo -u root pkill tarmacd",
+  "env -i pkill tarmacd",
+  "time -p pkill tarmacd",
+  "timeout 5 pkill tarmacd",
+  "nice pkill tarmacd",
+  "echo tarmacd | xargs pkill",
+  "echo $(pkill tarmacd)",
+  "echo `pkill tarmacd`",
+  'echo "now $(pkill tarmacd)"',
+  'bash -c "pkill tarmacd"',
+  "sh -c 'cd x && killall TarmacApp'",
+  "pkill -f 't[a]rmac'",
+  'pkill "tarmacd"',
+  "pkill tar\\macd",
   "echo a\npkill tarmacd",
 ]) {
   test(`S11/S26: \`${command.replace("\n", "\\n")}\` is refused`, () => {
@@ -327,6 +369,13 @@ for (const command of [
   "pgrep -fl tarmacd",
   "cat tarmac.log | grep killall",
   "make kill-daemon DEV_DIR=.dev2 & wait",
+  'git commit -m "docs: never; pkill tarmacd"',
+  "grep -E 'x|pkill tarmac' notes",
+  'echo "a & killall Tarmac"',
+  "echo nginx | xargs pkill",
+  "sudo -u tarmac ls",
+  "bash -c 'echo pkill tarmacd'",
+  "pkill -f nginx; ls tarmac",
   SENT["PreToolUse.Bash"].tool_input.command,
 ]) {
   test(`S11/S26: \`${command}\` passes`, () => {

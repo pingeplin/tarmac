@@ -27,7 +27,7 @@ for (const subject of [
   });
 }
 
-for (const subject of ["fix the thing", "Fix(board): x", "fix(board) x", "fix: ", "fix(board):x", "ci: probe", "fix(): x", "fix(a b): x", ""]) {
+for (const subject of ["fix the thing", "Fix(board): x", "fix(board) x", "fix: ", "fix(board):x", "ci: probe", "fix(): x", "fix(a b): x", "Revert x", "Merged it", "fixup!fix: y", ""]) {
   test(`S12: "${subject}" is not a subject`, () => {
     const report = judge(signed(subject), [ME]);
 
