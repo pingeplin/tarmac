@@ -131,3 +131,59 @@ test("an `eval` is followed 20 deep; one more and the words alone decide", () =>
   assert.equal(killsTarmacByName(said(20)), false);
   assert.equal(killsTarmacByName(said(21)), true);
 });
+
+// Decision 8's table: each wrapper's flags that take a value in the next word.
+const VALUED = {
+  sudo: ["-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-U", "-r", "-t", "--user", "--group", "--host", "--prompt", "--chdir"],
+  doas: ["-u", "-C"],
+  env: ["-u", "-C", "-P", "--unset", "--chdir"],
+  nice: ["-n", "--adjustment"],
+  timeout: ["-s", "-k", "--signal", "--kill-after"],
+  caffeinate: ["-t", "-w"],
+  xargs: ["-n", "-I", "-L", "-P", "-s", "-E", "-d", "-a", "-J", "-R", "-S", "--max-args", "--max-procs", "--replace", "--delimiter"],
+  time: ["-o", "-f"],
+  exec: ["-a"],
+};
+
+test("the value of each flag in the table is not taken for the program", () => {
+  const prefixes = Object.entries(VALUED).flatMap(([wrapper, flags]) => flags.map((flag) => `${wrapper} ${flag} ls${wrapper === "timeout" ? " 5" : ""}`));
+
+  assert.deepEqual(prefixes.filter((prefix) => !killsTarmacByName(`${prefix} pkill tarmacd`)), []);
+  assert.deepEqual(prefixes.filter((prefix) => killsTarmacByName(`${prefix} grep pkill tarmac/`)), []);
+});
+
+test("a redirection or an assignment after the duration of `timeout` is passed over", () => {
+  const lines = ["timeout 5 2>/dev/null pkill tarmacd", "timeout 5 >/dev/null pkill tarmacd", "timeout 5 2> /dev/null pkill tarmacd", "timeout 5 A=1 pkill tarmacd"];
+
+  assert.deepEqual(lines.filter((line) => !killsTarmacByName(line)), []);
+  assert.equal(killsTarmacByName("timeout 5 2>/dev/null grep pkill tarmac/"), false);
+});
+
+test("each keyword and each shell before a kill by name is refused", () => {
+  const lines = [
+    "if pkill tarmacd; then :; fi",
+    "if :; then pkill tarmacd; fi",
+    "if :; then :; elif pkill tarmacd; then :; fi",
+    "if :; then :; else pkill tarmacd; fi",
+    "while pkill tarmacd; do :; done",
+    "until pkill tarmacd; do :; done",
+    "while :; do pkill tarmacd; done",
+    "! pkill tarmacd",
+    "{ pkill tarmacd; }",
+    ...["sh", "bash", "zsh", "dash", "/bin/zsh"].map((shell) => `${shell} -c 'pkill tarmacd'`),
+  ];
+
+  assert.deepEqual(lines.filter((line) => !killsTarmacByName(line)), []);
+});
+
+test("`&>`, `>&` and `2>&1` end no command, and a `#` inside a word starts no comment", () => {
+  assert.deepEqual(["echo x &>/dev/null pkill tarmacd", "echo x 2>&1 pkill tarmacd", "echo x >& /dev/null pkill tarmacd"].filter(killsTarmacByName), []);
+  assert.deepEqual([">& /dev/null pkill tarmacd", "&>/dev/null pkill tarmacd", "echo a#b; pkill tarmacd"].filter((line) => !killsTarmacByName(line)), []);
+});
+
+test("text too deep to read is refused only when it holds a word of such a kill and the name", () => {
+  const deep = (tail) => `${"eval ".repeat(25)}${tail}`;
+
+  assert.deepEqual(["pkill tarmacd", "killall tarmacd", "PKILL TARMACD", "kill $(pgrep tarmacd)", "kill $(pidof tarmacd)"].filter((tail) => !killsTarmacByName(deep(tail))), []);
+  assert.deepEqual(["pkill nginx", "ls tarmac", "kill 123"].filter((tail) => killsTarmacByName(deep(tail))), []);
+});

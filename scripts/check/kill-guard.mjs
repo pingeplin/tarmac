@@ -31,14 +31,14 @@ const WRAPPERS = new Map(
   }).map(([name, { valued = [], ...rest }]) => [name, { valued: new Set(valued), ...rest }]),
 );
 // Programs that run one argument as a whole command line.
-const SHELLS = new Set(["sh", "bash", "zsh", "dash", "eval"]);
+const SHELLS = new Set(["sh", "bash", "zsh", "dash"]);
 const KEYWORDS = new Set(["if", "elif", "then", "else", "while", "until", "do", "!", "{"]);
 // Programs that give the pids of processes found by name.
 const FINDERS = new Set(["pgrep", "pidof"]);
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-// `2>/dev/null` and `>out` may stand before the program; `2>` has its target in the next word.
-const REDIRECTION = /^\d*[<>]/;
-const BARE_REDIRECTION = /^\d*[<>]+&?$/;
+// `2>/dev/null`, `>out` and `&>out` may stand before the program; `2>` has its target in the next word.
+const REDIRECTION = /^(\d*|&)[<>]/;
+const BARE_REDIRECTION = /^(\d*|&)[<>]+&?$/;
 // How deep `eval` and `sh -c` are followed before the text alone decides.
 const DEPTH = 20;
 
@@ -176,7 +176,7 @@ function fromProgram(words) {
     if (wrapper === "command" && words.slice(flagsFrom, at).some((flag) => /^-[pvV]*[vV][pvV]*$/.test(flag))) return { rest: [], wrapper };
     if (words[at] === "--") at++;
     passLeads();
-    if (first) at++;
+    if (first) (at++, passLeads());
   }
   return { rest: words.slice(at), wrapper };
 }
