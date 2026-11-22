@@ -11,4 +11,11 @@ export function repoRoot() {
 }
 
 /** True in the module that node was started on, also when it was named through a symlink. */
-export const startedAs = (meta) => meta.filename === realpathSync(process.argv[1]);
+export function startedAs(meta) {
+  try {
+    return meta.filename === realpathSync(process.argv[1]);
+  } catch {
+    // `node -e` and the REPL start no file.
+    return false;
+  }
+}
