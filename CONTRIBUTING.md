@@ -35,8 +35,8 @@ The easiest way is to let git add it automatically:
 git commit -s -m "your message"
 ```
 
-The name and email must match your real identity (matching your git
-`user.name` and `user.email`).
+Use your real name. The checks compare the email: it must be the commit's
+author or committer email (your git `user.email`).
 
 `.github/workflows/dco.yml` checks every commit in a pull request; run
 `make dco-check` to check your branch before pushing (for a branch stacked on
@@ -89,7 +89,8 @@ By making a contribution to this project, I certify that:
 ## Development setup
 
 Tarmac builds on macOS 26+ with a Rust toolchain and a Swift 6.2+ toolchain
-(Xcode); `make test` and `make dco-check` also need Node.js (plain `node`, no
+(Xcode; the format and lint checks, and so `make test`, need a `swift format` of
+6.3 or 6.4); `make test` and `make dco-check` also need Node.js (plain `node`, no
 packages). Build the daemon, the CLI and the app with:
 
 ```sh
@@ -107,21 +108,18 @@ editor/IDE may show stale SourceKit diagnostics — `make` is the source of trut
 
 1. Fork the repository and create a topic branch from `main`. Run `make setup`
    once in a new clone (it needs [lefthook](https://lefthook.dev):
-   `brew install lefthook`). It installs the git hooks of `lefthook.yml`, which
-   run the format check, the lints and the commit-message rule on a commit and
-   `make test` on a push, and it makes `git blame` skip the commits that only
-   reformatted the tree (`.git-blame-ignore-revs`). A commit is refused on a
+   `brew install lefthook`). It installs git hooks that refuse a commit on a
    format, lint, `arch-check` or `docs-check` finding in what is staged, or on
-   a message that is not `type(scope): summary` with your sign-off; a push is
-   refused when `make test` fails. `git commit --no-verify` skips them. CI runs
+   a message that is not `type(scope): summary` with your sign-off, and refuse
+   a push when `make test` fails. `git commit --no-verify` skips them. CI runs
    the same checks (all but the subject's form, which a maintainer sets at the
-   squash merge), so the hooks only tell you sooner. If you work with Claude
-   Code, `.claude/settings.json` runs the format and lint checks after each
-   edit and at the end of a turn, and refuses a command that kills a Tarmac
-   process by name (see `CLAUDE.md`); these hooks do not run clippy. One CI job
-   that no hook runs is `mutants (rust, in diff)`: it changes the Rust lines of your pull
+   squash merge), so the hooks only tell you sooner; a failed format, lint
+   or tree check names the rule, the place and the command to run next. One CI job that no hook runs
+   is `mutants (rust, in diff)`: it changes the Rust lines of your pull
    request, one expression at a time, and fails when the tests still pass. Run
    it yourself with `make mutants` (it needs `cargo-mutants` 27.1.0).
+   `CLAUDE.md` (*Build, run, test*) describes every check, and the hooks an
+   agent in Claude Code gets.
 2. Make your change, keeping it focused. Format it with `make fmt` (rustfmt and
    swift-format); do not lay code out by hand.
 3. **Work test-first.** Tarmac requires TDD: write the failing test, watch it
