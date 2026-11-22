@@ -121,43 +121,33 @@ back from a rendered bitmap.
 
 - **Smallest correct diff.** Prefer the narrow change to the thorough one. Do not
   reformat, rename, or reorganise code you are not otherwise changing.
-- **Rust layout belongs to rustfmt.** `make fmt` formats every tracked Rust file
-  (`core/rustfmt.toml`: lines to 120, and a literal or a call stays on one line
-  while it fits); `make fmt-check` and CI fail on a file it would rewrite. Do not
-  lay Rust out by hand, and do not add `#[rustfmt::skip]` without a reason in a
-  comment beside it.
-- **Swift layout belongs to swift-format.** `make fmt` formats every tracked
-  Swift file (`.swift-format`: four spaces, lines to 120, the toolchain's other
-  defaults); `make fmt-check` and CI fail on a file it would rewrite. It keeps a
-  line break you wrote inside a literal, so a table laid out in rows stays in
-  rows. It also rewrites a few constructs to one form — the order of imports,
-  `case let`, the access level of an extension's members — so expect more than
-  white space in its diff. A script that starts with `#!` is left alone.
-- **Swift rules that a tool can decide are lints.** `make lint` (or
-  `make lint ONLY=swift`) runs `swift format lint` over the tracked Swift files
-  with the rules of `.swift-format`, and fails on any finding; CI runs it. It
-  refuses a force unwrap (`x!`), a `try!` and an implicitly unwrapped optional
-  (`T!`). These three rules say nothing in a file that imports `XCTest` or
-  `Testing`, wherever the file is; a test fixture with no such import is
-  checked like any source. A script that starts with `#!` is not linted.
-  Clear a finding by fixing it. Where the fix would change what the app does,
-  keep it under two lines, before the statement or declaration and above its
-  `///` doc comment if it has one (a `//` line between a doc comment and its
-  declaration hides the comment from the tool): a `//` comment that says why,
-  then `// swift-format-ignore: <Rule>`. The check
-  refuses every other form of that comment — no rule name, a name that is not a
-  rule, the file-wide form, no reason line above (a `///` line is not one), or
-  the comment at the end of a code line, where the tool does not honour it. It
-  also refuses a second `.swift-format` in a directory above a linted file,
-  tracked or not: the tool would obey it and could turn a rule off there. It **cannot** tell when such a
-  comment is stale: when you remove the code, remove the comment with it.
-- **Rust rules that a tool can decide are lints.** `make lint` runs clippy with
-  the table in `core/Cargo.toml` and fails on any finding; CI runs it. §3 names
-  the lint beside each rule it holds. Clear a finding by fixing it. Where the
-  fix would change what the program does, or is a design change, put
-  `#[expect(lint, reason = "…")]` on the narrowest item — never `#[allow]`: a
-  stale `expect` fails by itself — and state a bound in the reason only when
-  the code beside it shows the bound.
+- **Layout belongs to the formatters.** `make fmt` formats every tracked Rust
+  file with rustfmt (`core/rustfmt.toml`) and every tracked Swift file with
+  swift-format (`.swift-format`); the edit hook does it as an agent writes a
+  file, and `make fmt-check` and CI fail on a file it would rewrite. Do not lay
+  code out by hand. swift-format also rewrites a few constructs to one form
+  (the order of imports, `case let`, the access level of an extension's
+  members), so expect more than white space in its diff; it keeps a line break
+  you wrote inside a literal. Do not add `#[rustfmt::skip]` without a reason in
+  a comment beside it.
+- **Rules that a tool can decide are lints.** `make lint` fails on any finding,
+  and CI runs it. The rules are the lint table of `core/Cargo.toml` (§3 names
+  the lint beside each rule it holds) and the rules of `.swift-format`; they
+  are not repeated here. Clear a finding by fixing it. Where the fix would
+  change what the program does, or is a design change, keep the code with its
+  reason, in the one form the check accepts:
+  - Rust: `#[expect(lint, reason = "…")]` on the narrowest item, never
+    `#[allow]`. A stale `expect` fails by itself. State a bound in the reason
+    only when the code beside it shows the bound.
+  - Swift: a `//` comment that says why, then `// swift-format-ignore: <Rule>`,
+    on the two lines before the statement or declaration and above its `///`
+    doc comment. The check refuses every other form and says which. It
+    **cannot** tell when such a comment is stale: when you remove the code,
+    remove the comment with it.
+
+  Three Swift rules (force unwrap, `try!`, implicitly unwrapped optional) say
+  nothing in a file that imports `XCTest` or `Testing`; a test fixture with no
+  such import is checked like any source.
 - **One responsibility per module.** Depend on the narrow contract — the `Msg`
   enum, a pure function signature — rather than reaching across a layer.
 - **A comment earns its place by explaining a non-obvious *why***: a constraint,
@@ -230,20 +220,14 @@ back from a rendered bitmap.
 
 - **The layering is one-way.** `TarmacApp` imports `TarmacKit` and `TarmacTerm`;
   `TarmacTerm` imports neither; `TarmacKit` imports no AppKit, no WebKit and
-  neither sibling. SwiftPM enforces the target graph (`app/Package.swift`), and
-  the compiler holds each file to its own imports (`MemberImportVisibility`): a
-  file cannot use a member of a module that only another file of the target
-  imported. `make arch-check` refuses an `import` of AppKit, Cocoa, WebKit,
-  SwiftUI or a sibling in a `TarmacKit` file, and of a sibling in a `TarmacTerm`
-  file. That a decision does not stay behind in the shell is still convention —
-  a reviewer checks it.
-- **A file imports what it uses, and a protocol used as a type says `any`.**
-  Both are compiler settings of the three product targets (`ExistentialAny` is
-  the second). A member whose module the file did not import is an error —
-  unless a module the file can see has a member of the same name that fits, and
-  then the call takes that one with no message (it happened once; see the
-  comment in `app/Package.swift`). A missing `any` is a warning on Swift 6.4,
-  and `make lint ONLY=swiftc` fails on a warning.
+  neither sibling. Tools hold all of it: the SwiftPM target graph, the compiler
+  settings of `app/Package.swift` (a file uses only what it imports itself, and
+  a protocol used as a type says `any`), and `make arch-check`. One trap stays:
+  a member whose module the file did not import is an error — unless a module
+  the file can see has a member of the same name that fits, and then the call
+  takes that one with no message (it happened once; see the comment in
+  `app/Package.swift`). That a decision does not stay behind in the shell is
+  still convention — a reviewer checks it.
 - **`TarmacKit` takes its world by argument.** No ambient clock, no environment,
   no timer: `app/Sources/TarmacKit/ScrollbackGate.swift` and
   `app/Sources/TarmacKit/PendingPersists.swift` hand out a generation or a token
@@ -261,9 +245,8 @@ back from a rendered bitmap.
   test file fails unless `scripts/check/arch-exceptions.json` lists it, and an
   entry that is no longer needed fails too (a `<Module>+<Part>.swift` slice needs
   no file of its own; the check sees that a test file exists, not what it
-  tests). The tree predates the rule for `CardCull`, `DaemonSocket`,
-  `JavaScriptNumber` and `StrictJSON`, and `InlineMarks` and `SpawnRequest` came
-  after it with none (#481); a suite that
+  tests). The modules that have none today are the entries of that file (#481);
+  a suite that
   spans modules is named for its subject (`ConformanceTests`,
   `RustEncoderParityTests`, `BoardPersistenceTests`).
 - **Access and isolation.** `public` is what the shell calls; tests reach the

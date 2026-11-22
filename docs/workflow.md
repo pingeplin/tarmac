@@ -12,8 +12,9 @@ below is derivable from the issue, so most of it is automatable (see
 An issue is the unit of work. Title mirrors Conventional Commits so one
 vocabulary spans issues, commits, and PRs.
 
-- **Title:** `type(scope): summary` — same `type`/`scope` set as commits
-  (`feat`, `fix`, `refactor`, `perf`, `docs`, `chore`). Scope optional.
+- **Title:** `type(scope): summary` — the `type` and `scope` set of commits
+  (`feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `chore`; `release` is for
+  a version bump only). Scope optional.
   - `fix(board): close button on doc card is a no-op`
   - `feat: editable doc cards`
 - **Labels:** keep the default `bug` / `enhancement` / `documentation` set for
@@ -57,33 +58,26 @@ stays clean — this is the parallel-agent workflow Tarmac is built for.
 
 ## Commits
 
-Conventional Commits (whole history conforms). End the message with **two
-trailers**: the DCO `Signed-off-by:` that `CONTRIBUTING.md` requires
-(`git commit -s`, enforced on PRs by `.github/workflows/dco.yml` — check locally
-with `make dco-check`), and the `Co-Authored-By:` the repo uses for attribution.
-The `commit-msg` hook (`make setup` installs it) refuses a subject that is not
-`type(scope): summary` with one of the types in use, and a message with no
-sign-off of the author or committer; `pre-commit` runs the format check, the
-lints and the tree checks on what is staged, and `pre-push` runs `make test`.
-A hook can be skipped (`git commit --no-verify`, a clone with no `make setup`).
-CI cannot: it runs the same checks, all but the subject's form, which the
-squash merge sets.
+Conventional Commits (whole history conforms): `type(scope): summary`, with the
+DCO `Signed-off-by:` that `CONTRIBUTING.md` requires (`git commit -s`). An agent
+also adds the `Co-Authored-By:` the history uses for attribution.
 
-An agent in Claude Code gets the same checks sooner, from `.claude/settings.json`:
-after each edit of a Rust or Swift file (format in place, Swift lint,
-`arch-check`; Rust is not linted there, because clippy needs the whole build), and
-at the end of a turn (format check and Swift lint on the changed files,
-`arch-check`, `docs-check`; no clippy, because a red test starts with a
-`todo!()`). A set of findings blocks the end of a turn once; the same set again is
-reported only. A third hook refuses a Bash command that kills a Tarmac process by
-name. `CLAUDE.md` has the details.
+Checks hold the form, so it is not reviewed by reading. The `commit-msg` hook
+(`make setup` installs it) refuses a subject of another form and a message with
+no sign-off of its author or committer; `.github/workflows/dco.yml` refuses an
+unsigned commit on a PR (`make dco-check` locally). `pre-commit` runs the format
+check, the lints and the tree checks on what is staged, and `pre-push` runs
+`make test`. A hook can be skipped (`git commit --no-verify`, a clone with no
+`make setup`); CI cannot, but CI does not check the subject's form, which the
+squash merge sets. An agent in Claude Code gets the same checks sooner, after
+each edit and at the end of a turn. `CLAUDE.md` (*Build, run, test*) is the one
+description of what each hook runs.
+
 `make test` must pass first; see [`coding-style.md`](coding-style.md) for the TDD
-workflow it gates.
-
-For a change to Rust, run `make mutants` before the review: it changes the lines
-you changed, one expression at a time, and names each change that no test saw.
-The `mutants (rust, in diff)` CI job runs the same command on every PR and fails
-on a survivor. No hook runs it, because it takes minutes.
+workflow it gates. For a change to Rust, run `make mutants` before the review:
+it changes the lines you changed, one expression at a time, and names each
+change that no test saw. The `mutants (rust, in diff)` CI job runs the same
+command on every PR. No hook runs it, because it takes minutes.
 
 ## PRs
 
