@@ -16,15 +16,12 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { startedAs } from "./git.mjs";
+import { repoRoot, startedAs } from "./git.mjs";
 import { killsTarmacByName } from "./kill-guard.mjs";
+import { languageOf } from "./languages.mjs";
 import { failure } from "./report.mjs";
 
 const git = (cwd, ...args) => spawnSync("git", args, { cwd, encoding: "utf8" });
-const rootOf = (directory) => {
-  const top = existsSync(directory) ? git(directory, "rev-parse", "--show-toplevel") : { status: 1 };
-  return top.status === 0 ? top.stdout.trim() : null;
-};
 
 /** Runs one check script of the repository; null when that repository has no such script. */
 function check(root, script, args = []) {
@@ -42,7 +39,7 @@ const said = (checks, code) => checks.filter((done) => done.code === code).map((
 /** After an edit: format the file, lint it where one file can be judged, and check the tree's rules. The edit stays. */
 function edit(input, root) {
   const file = input.tool_input.file_path;
-  if (!/\.(rs|swift)$/.test(file) || !statSync(file, { throwIfNoEntry: false })?.isFile()) return pass;
+  if (!languageOf(file) || !statSync(file, { throwIfNoEntry: false })?.isFile()) return pass;
   if (git(root, "check-ignore", "-q", "--", file).status === 0) return pass;
   const checks = ran([
     check(root, "scripts/check/fmt.mjs", ["--write", "--paths", file]),
@@ -121,17 +118,14 @@ function stop(input, root) {
   return { code: 2, text: findings + cannot };
 }
 
-/** docs-check predates the shared reporter and writes its own text; a failure of it is a finding. */
+/** docs-check predates the shared reporter and its exit codes: a failure of it is a finding. */
 function docs(root) {
-  const path = join(root, "scripts/docs-check.mjs");
-  if (!existsSync(path)) return null;
-  const run = spawnSync(process.execPath, [path], { cwd: root, encoding: "utf8" });
-  return { code: run.status === 0 ? 0 : 1, text: run.stderr };
+  const done = check(root, "scripts/docs-check.mjs");
+  return done && { ...done, code: done.code === 0 ? 0 : 1 };
 }
 
 // ------------------------------------------------------------------ bash
 
-/** True for a simple command that kills by name a process whose name holds "tarmac". */
 /** Before a Bash call. A kill by name can end the installed app and every terminal it owns. */
 function bash(input) {
   const command = input.tool_input?.command;
@@ -170,7 +164,7 @@ function main(event, raw) {
   }
   if (event === "bash") return bash(input);
   const place = CHECKS[event] && placeOf(event, input);
-  const root = place && rootOf(place);
+  const root = place && repoRoot(place);
   const adapter = root && join(root, "scripts/check/hook.mjs");
   if (!adapter || !existsSync(adapter)) return pass;
   if (realpathSync(adapter) === SELF) return CHECKS[event](input, root);

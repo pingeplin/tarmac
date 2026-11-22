@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 
-/** The root of the git repository that holds the current directory, or null outside one. */
-export function repoRoot() {
+/** The root of the git repository that holds a directory (the current one by default), or null outside one. */
+export function repoRoot(directory = process.cwd()) {
   try {
-    return execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    return execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd: directory, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   } catch {
     return null;
   }

@@ -392,6 +392,8 @@ test("an input that is not JSON, and an event the adapter does not know, pass", 
 
 // ---------------------------------------------------------------- staged
 
+// A one-crate workspace whose lint table refuses a `todo!()`.
+const PROBE = `[package]\nname = "probe"\nversion = "0.1.0"\nedition = "2024"\n\n[lints.clippy]\ntodo = "warn"\n\n${CARGO}`;
 const stagedIn = (dir, env = process.env) => {
   const run = spawnSync(process.execPath, [join(dir, "scripts/check/staged.mjs")], { cwd: dir, encoding: "utf8", env });
   return { code: run.status, err: run.stderr };
@@ -414,8 +416,7 @@ test("S13: a staged file with a finding is named; an unstaged one is not", () =>
 });
 
 test("S13: a staged Rust file brings clippy in, with the workspace's lint table", () => {
-  const manifest = '[package]\nname = "probe"\nversion = "0.1.0"\nedition = "2024"\n\n[lints.clippy]\ntodo = "warn"\n\n[workspace.dependencies]\nserde = "=1.0.228"\nrmp-serde = "=1.3.1"\nserde_bytes = "=0.11.19"\n';
-  const dir = repo({ "core/Cargo.toml": manifest, "core/src/main.rs": "fn main() {}\n" });
+  const dir = repo({ "core/Cargo.toml": PROBE, "core/src/main.rs": "fn main() {}\n" });
   write(dir, { "core/src/main.rs": "fn main() {\n    todo!()\n}\n" });
   stage(dir, "core/src/main.rs");
 
@@ -426,8 +427,7 @@ test("S13: a staged Rust file brings clippy in, with the workspace's lint table"
 });
 
 test("S13: a staged Swift file alone does not start clippy", () => {
-  const manifest = '[package]\nname = "probe"\nversion = "0.1.0"\nedition = "2024"\n\n[lints.clippy]\ntodo = "warn"\n\n[workspace.dependencies]\nserde = "=1.0.228"\nrmp-serde = "=1.3.1"\nserde_bytes = "=0.11.19"\n';
-  const dir = repo({ "core/Cargo.toml": manifest, "core/src/main.rs": "fn main() {\n    todo!()\n}\n" });
+  const dir = repo({ "core/Cargo.toml": PROBE, "core/src/main.rs": "fn main() {\n    todo!()\n}\n" });
   write(dir, { "app/A.swift": "let x = 1\n" });
   stage(dir, "app/A.swift");
 

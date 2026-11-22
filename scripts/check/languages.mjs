@@ -74,6 +74,9 @@ export function namedFiles(paths, cwd = process.cwd()) {
   return [...byRoot].map(([root, paths]) => ({ root, paths }));
 }
 
+/** The name of the language that owns a path, or undefined. */
+export const languageOf = (path) => Object.keys(LANGUAGES).find((name) => path.endsWith(LANGUAGES[name].glob.slice(1)));
+
 /** The sources of a language among repo-relative paths that were named. */
 export const namedSources = (language, root, paths) =>
   paths

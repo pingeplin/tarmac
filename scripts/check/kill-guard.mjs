@@ -19,7 +19,7 @@ const KEYWORDS = new Set(["if", "elif", "then", "else", "while", "until", "do", 
  * backtick; text in quotes starts none, except a `$(` or a backtick in double
  * quotes, which the shell runs.
  */
-export function simpleCommands(line) {
+function simpleCommands(line) {
   const commands = [[]];
   let word = null;
   let quote = null;

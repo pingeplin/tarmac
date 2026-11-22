@@ -10,6 +10,7 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
 import { repoRoot, startedAs } from "./git.mjs";
+import { languageOf } from "./languages.mjs";
 
 function main() {
   const root = repoRoot();
@@ -19,7 +20,7 @@ function main() {
   const runs = [
     ...(staged.length > 0 ? [node("scripts/check/fmt.mjs", "--check", "--paths", ...staged), node("scripts/check/lint.mjs", "--paths", ...staged)] : []),
     // clippy judges the whole workspace, so it runs when any Rust file is staged.
-    ...(staged.some((path) => path.endsWith(".rs")) ? [node("scripts/check/lint.mjs", "rust")] : []),
+    ...(staged.some((path) => languageOf(path) === "rust") ? [node("scripts/check/lint.mjs", "rust")] : []),
     node("scripts/check/arch.mjs"),
     node("scripts/docs-check.mjs"),
   ];

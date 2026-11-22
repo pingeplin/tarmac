@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 
 import { startedAs } from "./git.mjs";
 import { failure } from "./report.mjs";
+import { signedBy, signers } from "./signoff.mjs";
 
 export const TYPES = ["feat", "fix", "refactor", "perf", "test", "docs", "chore", "release"];
 const SUBJECT = new RegExp(`^(${TYPES.join("|")})(\\([^()\\s]+\\))?!?: \\S`);
@@ -29,8 +30,8 @@ export function judge(message, emails) {
     return refuse("the subject is not `type(scope): summary`", [subject || "(no subject)"], why, "write the subject as, for example, `fix(board): close a doc card on ⌘W`");
   }
   if (isMerge(subject)) return "";
-  const signed = lines.map((line) => line.match(/^Signed-off-by: .*<([^<>]+)>\s*$/)?.[1]).filter(Boolean);
-  if (signed.some((email) => emails.includes(email))) return "";
+  const signed = signers(lines.join("\n"));
+  if (signedBy(signed, emails)) return "";
   const why = ["CONTRIBUTING.md asks for a DCO sign-off, and CI refuses a commit without one that matches its author"];
   return refuse(
     signed.length > 0 ? "the Signed-off-by line is not the author's or the committer's" : "the message has no Signed-off-by line",

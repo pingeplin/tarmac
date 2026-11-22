@@ -51,6 +51,10 @@ test("the sign-off must be the author's or the committer's, as CI requires", () 
   assert.equal(judge(`${signed("fix: y", "x@example.invalid")}Signed-off-by: Me <${ME}>\n`, [ME]), "");
 });
 
+test("the sign-off is read as CI reads it: any letter case of the key and of the email", () => {
+  assert.equal(judge(`fix: y\n\nSigned-Off-By: Me <ME@Example.invalid>\n`, [ME]), "");
+});
+
 test("a sign-off counts only as a line of its own, from the first column", () => {
   assert.notEqual(judge(`fix: y\n\nsee Signed-off-by: Me <${ME}>\n`, [ME]), "");
   assert.notEqual(judge(`fix: y\n\n  Signed-off-by: Me <${ME}>\n`, [ME]), "");
