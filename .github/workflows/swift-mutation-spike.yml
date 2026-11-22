@@ -15,7 +15,7 @@ jobs:
   spike:
     name: swift mutation spike
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,13 +46,25 @@ jobs:
             start=$(date +%s)
             "$RUNNER_TEMP/smt/swift-mutation-testing" "$PWD/app" "$@" \
               --testing-framework xctest --operator-tier experimental --concurrency 1 \
-              --timeout 600 --build-timeout 1500 --timing \
+              --timeout 300 --build-timeout 1500 --timing \
               --output "$RUNNER_TEMP/report-$name.json" --markdown-output "$RUNNER_TEMP/report-$name.md"
             echo "== $name: exit code $?; seconds $(( $(date +%s) - start ))"
             [ -f "$RUNNER_TEMP/report-$name.md" ] && cat "$RUNNER_TEMP/report-$name.md" | tee -a "$GITHUB_STEP_SUMMARY"
           }
-          go plants --sources-path "$PWD/app/Sources/TarmacKit/Spike"
-          go channelpaths --sources-path "$PWD/app/Sources/TarmacKit/ChannelPaths.swift"
+          SPIKE="$PWD/app/Sources/TarmacKit/Spike"
+          echo "#### gate 1: write a baseline"
+          go base --sources-path "$SPIKE" --write-baseline spike-baseline.json
+          ls -la app/spike-baseline.json && head -c 1500 app/spike-baseline.json; echo
+          echo "#### gate 2: nothing changed, expect exit 0"
+          go same --sources-path "$SPIKE" --baseline spike-baseline.json --max-new-survivors 0
+          echo "#### gate 3: lines moved by a comment above, expect exit 0 if a mutant is known by more than its line"
+          printf '// a line\n// another line\n%s\n' "$(cat "$SPIKE/SpikeUnheld.swift")" > "$SPIKE/SpikeUnheld.swift"
+          go moved --sources-path "$SPIKE" --baseline spike-baseline.json --max-new-survivors 0
+          echo "#### gate 4: a new unheld function, expect exit 2"
+          printf '\npublic enum SpikeNew {\n    public static func fresh(_ n: Int) -> Bool {\n        return n < 7\n    }\n}\n' >> "$SPIKE/SpikeHeld.swift"
+          go added --sources-path "$SPIKE" --baseline spike-baseline.json --max-new-survivors 0
+          echo "#### the kit, without the two files that send a signal"
+          go kit --sources-path "$PWD/app/Sources/TarmacKit" --exclude "**/DaemonClient.swift" --exclude "**/DaemonLaunch.swift" --exclude "**/Spike/**"
           exit 0
 
       - uses: actions/upload-artifact@v4
