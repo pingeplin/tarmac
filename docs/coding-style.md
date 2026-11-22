@@ -237,7 +237,10 @@ back from a rendered bitmap.
   does not stay behind in the shell, is still convention — a reviewer checks it.
 - **A file imports what it uses, and a protocol used as a type says `any`.**
   Both are compiler settings of the three product targets (`ExistentialAny` is
-  the second). A missing import does not build; a missing `any` is a warning,
+  the second). A member whose module the file did not import is an error —
+  unless a module the file can see has a member of the same name that fits, and
+  then the call takes that one with no message (it happened once; see the
+  comment in `app/Package.swift`). A missing `any` is a warning on Swift 6.4,
   and `make lint ONLY=swiftc` fails on a warning.
 - **`TarmacKit` takes its world by argument.** No ambient clock, no environment,
   no timer: `app/Sources/TarmacKit/ScrollbackGate.swift` and

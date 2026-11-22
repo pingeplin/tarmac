@@ -6,9 +6,10 @@ import PackageDescription
 // importing a module. It can also change which overload a call picks in a file
 // that leaned on another file's import (it did in MarkdownBlocks.swift, which
 // now imports Foundation itself), so compare the built objects when a target
-// is added to this list. ExistentialAny: a protocol used as a type says `any`. Warnings as errors are NOT set here: the
-// compiler is not pinned, and a new warning from an Xcode update must not stop
-// `make run`, `make bundle` or the test job. `make lint ONLY=swiftc` holds them.
+// is added to this list. ExistentialAny: a protocol used as a type says `any`.
+// Warnings as errors are NOT set here: the compiler is not pinned, and a new
+// warning from an Xcode update must not stop `make run`, `make bundle` or the
+// test job. `make lint ONLY=swiftc` holds them.
 let strict: [SwiftSetting] = [
     .enableUpcomingFeature("MemberImportVisibility"),
     .enableUpcomingFeature("ExistentialAny"),
