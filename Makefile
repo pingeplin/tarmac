@@ -110,6 +110,13 @@ arch-check:
 # workspace (hours; SHARD=k/n takes one part), JOBS=n sets the parallel runs
 # (default 2), REPORT=1 words a survivor and passes. Not part of `test`: a
 # mutant costs a build and a test run. CI runs it on every PR (mutants.yml).
+# Set here so that a variable of the same name in the environment (CI sets
+# some) cannot turn a failing survivor into a report, or start the whole run.
+# A value on the command line still wins.
+ALL =
+SHARD =
+JOBS =
+REPORT =
 mutants:
 	cd $(ROOT) && node scripts/check/mutants.mjs --base $(BASE)$(if $(ALL), --all)$(if $(SHARD), --shard $(SHARD))$(if $(JOBS), --jobs $(JOBS))$(if $(REPORT), --report)
 

@@ -729,3 +729,10 @@ test("S38: a Rust file that git takes for binary still gives its changed lines",
   assert.match(diff, /^\+fn with_nul\(\) \{\} \/\/ \0$/m);
   assert.doesNotMatch(diff, /^Binary files /m);
 });
+
+test("S21: a variable of the same name in the environment does not change what make mutants runs", () => {
+  const env = { ...process.env, ALL: "1", SHARD: "3/8", JOBS: "9", REPORT: "1" };
+  const said = execFileSync("make", ["-n", "mutants"], { cwd: ROOT, encoding: "utf8", env }).trim().split("scripts/check/mutants.mjs ")[1];
+
+  assert.equal(said, "--base origin/main");
+});
