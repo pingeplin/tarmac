@@ -18,6 +18,8 @@ const FINDERS = new Set(["pgrep", "pidof"]);
 // What the guard looks for after a wrapper, whatever stands between.
 const RUN = new Set([...KILLERS, ...SHELLS, ...FINDERS, ...WRAPPERS, "kill"]);
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+// `2>/dev/null` and `>out` may stand before the program.
+const REDIRECTION = /^\d*[<>]/;
 
 /**
  * The simple commands of a command line, each with its words (quotes removed)
@@ -56,7 +58,8 @@ function simpleCommands(line) {
     const quoted = () => {
       word ??= "";
       for (; at < line.length && line[at] !== '"'; at++) {
-        if (line[at] === "\\" && at + 1 < line.length) word += line[++at];
+        if (line[at] === "\\" && line[at + 1] === "\n") at++;
+        else if (line[at] === "\\" && at + 1 < line.length) word += line[++at];
         else if (line[at] === "`" && close !== "`") (at++, nested("`"), at--);
         else if (line[at] === "$" && line[at + 1] === "(") ((at += 2), nested(")"), at--);
         else word += line[at];
@@ -101,6 +104,7 @@ function simpleCommands(line) {
         word = (word ?? "") + line.slice(at, end < 0 ? line.length : end);
         at = end < 0 ? line.length : end + 1;
       } else if (char === '"') quoted();
+      else if (char === "\\" && line[at] === "\n") at++;
       else if (char === "\\" && at < line.length) word = (word ?? "") + line[at++];
       else if (char === "`") nested("`");
       else if (char === "$" && line[at] === "(") (at++, nested(")"));
@@ -121,7 +125,8 @@ function simpleCommands(line) {
   return commands;
 }
 
-const programOf = (word) => word.split("/").pop();
+// The macOS file system ignores letter case, so `PKILL` is `pkill`.
+const programOf = (word) => word.split("/").pop().toLowerCase();
 // `t[a]rmac` and `tar\mac` match the same processes as `tarmac`.
 const namesTarmac = (word) => /tarmac/i.test(word.replace(/[[\]\\^$]/g, ""));
 
@@ -132,37 +137,38 @@ const namesTarmac = (word) => /tarmac/i.test(word.replace(/[[\]\\^$]/g, ""));
  * that is none of these is the program.
  */
 function fromProgram(words) {
-  let rest = words;
-  if (rest[0] === "function") rest = rest.slice(2);
-  while (KEYWORDS.has(rest[0]) || ASSIGNMENT.test(rest[0] ?? "")) rest = rest.slice(1);
+  let at = words[0] === "function" ? 2 : 0;
+  const lead = (word) => KEYWORDS.has(word) || ASSIGNMENT.test(word) || REDIRECTION.test(word);
+  while (at < words.length && lead(words[at])) at++;
   let wrapper = null;
-  while (WRAPPERS.has(programOf(rest[0] ?? ""))) {
-    wrapper = programOf(rest[0]);
+  while (at < words.length && WRAPPERS.has(programOf(words[at]))) {
+    wrapper = programOf(words[at++]);
     // `command -v x` asks where x is; it runs nothing.
-    if (wrapper === "command" && /^-[vV]$/.test(rest[1] ?? "")) return { rest: [], wrapper };
-    let at = 1;
-    for (let afterFlag = false; at < rest.length; at++) {
-      const word = rest[at];
+    if (wrapper === "command" && /^-[vV]$/.test(words[at] ?? "")) return { rest: [], wrapper };
+    for (let afterFlag = false; at < words.length; at++) {
+      const word = words[at];
       if (RUN.has(programOf(word))) break;
       if (word.startsWith("-")) afterFlag = true;
       else if (afterFlag) afterFlag = false;
       else if (!/^\d/.test(word) && !ASSIGNMENT.test(word)) break;
     }
-    rest = rest.slice(at);
   }
-  return { rest, wrapper };
+  return { rest: words.slice(at), wrapper };
 }
 
 function reads(line) {
   const commands = simpleCommands(line).map(({ words, within }) => ({ words, within, ...fromProgram(words) }));
   const finders = commands.filter(({ rest }) => FINDERS.has(programOf(rest[0] ?? "")) && rest.slice(1).some(namesTarmac));
+  const searched = new Set(finders.map(({ within }) => within));
   let named = null;
   const anywhere = () => (named ??= namesTarmac(line));
   return commands.some(({ words, rest, wrapper }) => {
     const program = programOf(rest[0] ?? "");
+    // `eval` joins its arguments into one command line; a shell takes one argument as the line.
+    if (program === "eval") return killsTarmacByName(rest.slice(1).join(" "));
     if (SHELLS.has(program)) return rest.slice(1).some(killsTarmacByName);
     // `kill $(pgrep tarmacd)` and `pgrep tarmacd | xargs kill` kill what a search by name found.
-    if (program === "kill") return finders.some(({ within }) => within === words) || (wrapper === "xargs" && finders.length > 0);
+    if (program === "kill") return searched.has(words) || (wrapper === "xargs" && finders.length > 0);
     if (!KILLERS.has(program)) return false;
     // `… | xargs pkill` takes the names from its input, so the name may be anywhere in the line.
     return rest.slice(1).some(namesTarmac) || (wrapper === "xargs" && anywhere());

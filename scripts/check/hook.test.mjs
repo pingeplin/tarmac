@@ -375,6 +375,14 @@ for (const command of [
   'grep x <<< "$v"\npkill tarmacd',
   "kill $(sudo pgrep tarmacd)",
   "kill $(sudo -n pgrep tarmacd)",
+  "cd x && \\\n  pkill -f tarmac",
+  "sudo \\\npkill tarmacd",
+  'echo "a \\\nb"; pk\\\nill tarmacd',
+  'pkill "tar\\\nmacd"',
+  "eval pkill tarmacd",
+  "eval 'pkill' tarmacd",
+  "PKILL tarmacd",
+  "2>/dev/null pkill tarmacd",
   "kill $(command pgrep -f tarmac-app)",
   "sudo env A=1 nice -n 10 pkill tarmacd",
   "xargs -n 1 pkill -f tarmac",
@@ -426,6 +434,8 @@ for (const command of [
   "command -v pkill tarmacd",
   "sudo -u tarmac grep pkill x",
   "timeout 5 make kill-daemon",
+  "eval echo pkill tarmacd",
+  "ls > pkill.txt tarmac",
   `${"$(".repeat(6000)}ls`,
   SENT["PreToolUse.Bash"].tool_input.command,
 ]) {
@@ -437,9 +447,9 @@ for (const command of [
 test("a megabyte of piped commands is read well inside the hook's ten seconds", () => {
   const started = Date.now();
 
-  const run = hook("bash", bashOf("a|xargs pkill x;".repeat(65536)));
+  const runs = ["a|xargs pkill x;".repeat(65536), "sudo ".repeat(200000), `${"pgrep tarmacd;".repeat(30000)}${"kill 1;".repeat(30000)}`].map((command) => hook("bash", bashOf(command)).code);
 
-  assert.equal(run.code, 0);
+  assert.deepEqual(runs, [0, 0, 0]);
   assert.ok(Date.now() - started < 5000);
 });
 
