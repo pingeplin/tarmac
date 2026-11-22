@@ -717,3 +717,15 @@ test("S16: a tool that a signal ended is named as that", () => {
   assert.equal(run.code, 2);
   assert.match(run.err, /^✗ mutants: cargo-mutants was ended by SIGKILL$/m);
 });
+
+test("S38: a Rust file that git takes for binary still gives its changed lines", () => {
+  const cargo = tool();
+  const dir = changed();
+  write(dir, { ".git/info/attributes": "*.rs -diff\n", [SOURCE]: "fn a() -> u8 {\n    6\n}\n", "core/crates/x/src/nul.rs": "fn with_nul() {} // \0\n" });
+  mutants(dir, cargo);
+  const [{ diff }] = calls(cargo);
+
+  assert.match(diff, /^\+ {4}6$/m);
+  assert.match(diff, /^\+fn with_nul\(\) \{\} \/\/ \0$/m);
+  assert.doesNotMatch(diff, /^Binary files /m);
+});

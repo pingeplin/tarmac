@@ -30,7 +30,8 @@ const PASSED = ["PATH", "TMPDIR", "LANG", "LC_ALL", "TERM", "USER", "LOGNAME", "
 // The diff must look the same whatever the user's git config says: the tool
 // reads only a `b/` prefix, and a diff it cannot match tests nothing and passes.
 // A path with a letter outside ASCII is written as it is, not as a quoted escape.
-const DIFF = ["-c", "core.quotePath=false", "diff", "--src-prefix=a/", "--dst-prefix=b/", "--no-ext-diff", "--no-textconv", "--no-color"];
+// `--text`: a file that an attribute or a NUL byte makes binary would give no lines at all.
+const DIFF = ["-c", "core.quotePath=false", "diff", "--src-prefix=a/", "--dst-prefix=b/", "--no-ext-diff", "--no-textconv", "--no-color", "--text"];
 
 /** A reason this check cannot run. Thrown where it is found, and worded as exit 2 in one place. */
 class Blocked extends Error {
