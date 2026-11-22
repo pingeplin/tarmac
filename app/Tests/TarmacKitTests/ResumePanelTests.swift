@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// 2611.0015 S6: the panel at the foot of a card with an offer.
 final class ResumePanelTests: XCTestCase {
@@ -11,7 +11,9 @@ final class ResumePanelTests: XCTestCase {
         try ResumeOffer.fixture(cmd, after: [.output(byteCount: 5)])
     }
 
-    private func queuedOffer(_ cmd: String = "claude --resume 3f2a1b9c-0000-4000-8000-000000000000") throws -> ResumeOffer {
+    private func queuedOffer(_ cmd: String = "claude --resume 3f2a1b9c-0000-4000-8000-000000000000") throws
+        -> ResumeOffer
+    {
         try ResumeOffer.fixture(cmd, after: [.request])
     }
 

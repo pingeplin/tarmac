@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// The markdown doc page as it ships (`TarmacApp/Resources/DocTemplate.html`):
@@ -194,7 +195,9 @@ final class DocTemplateTests: XCTestCase {
     func test2611_0021S25ColumnAlignmentWinsOverTheLeftDefault() throws {
         let all = try rules()
         let left = try XCTUnwrap(all.firstIndex { $0.body.contains("text-align: left;") })
-        for (side, selector) in [("center", #".doc-table td[align="center"]"#), ("right", #".doc-table td[align="right"]"#)] {
+        for (side, selector) in [
+            ("center", #".doc-table td[align="center"]"#), ("right", #".doc-table td[align="right"]"#),
+        ] {
             let index = try XCTUnwrap(all.firstIndex { $0.selectors.contains(selector) }, selector)
             XCTAssertTrue(all[index].selectors.contains(selector.replacingOccurrences(of: " td[", with: " th[")))
             XCTAssertTrue(all[index].body.contains("text-align: \(side);"))
@@ -246,7 +249,10 @@ final class DocTemplateTests: XCTestCase {
         for tag in tags.matches(in: body, range: NSRange(scroll.upperBound..., in: body)) {
             let range = try XCTUnwrap(Range(tag.range, in: body))
             depth += body[range] == "</div>" ? -1 : 1
-            if depth == 0 { end = range.upperBound; break }
+            if depth == 0 {
+                end = range.upperBound
+                break
+            }
         }
         XCTAssertTrue(scaler < scroll.lowerBound || scaler >= end)
         let rule = try rule(for: ".doc-side-scaler")
@@ -281,20 +287,23 @@ final class DocTemplateTests: XCTestCase {
         for (selector, declarations) in expected {
             let matching = all.filter { $0.selectors.contains(selector) }
             XCTAssertEqual(matching.count, 1, selector)
-            let found = Set(matching.flatMap {
-                $0.body.split(separator: ";").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            }.filter { !$0.isEmpty })
+            let found = Set(
+                matching.flatMap {
+                    $0.body.split(separator: ";").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                }.filter { !$0.isEmpty })
             XCTAssertEqual(found, Set(declarations.map { String($0.dropLast()) }), selector)
         }
         XCTAssertFalse(try template().contains("--side-panel-left"))
         XCTAssertTrue(try rule(for: ".doc-side-panel").contains("left: calc(var(--side-panel-start) * var(--zoom));"))
         XCTAssertTrue(
-            try rule(for: ".doc-side-grip").contains("left: calc((var(--side-panel-start) + var(--side-panel)) * var(--zoom));")
+            try rule(for: ".doc-side-grip").contains(
+                "left: calc((var(--side-panel-start) + var(--side-panel)) * var(--zoom));")
         )
         // A border style here would outrank the overlay grip's `border-style: none`.
         for rule in try rules()
         where rule.selectors.contains(where: { $0.contains("data-sidebar-side") && $0.contains(".doc-side-grip") }) {
-            let styled = ["border-style", "border:", "border-left:", "border-right:"].contains(where: rule.body.contains)
+            let styled = ["border-style", "border:", "border-left:", "border-right:"].contains(
+                where: rule.body.contains)
             XCTAssertFalse(styled, "\(rule.selectors)")
         }
         XCTAssertTrue(try rule(for: ".doc-side-strip").contains("left: 0;"))
@@ -311,9 +320,10 @@ final class DocTemplateTests: XCTestCase {
         let render = try AppSource.text("Resources/Web/doc-render.js")
         let regex = try NSRegularExpression(pattern: #"var\((--side-[a-z-]+)\)"#)
         let text = try template()
-        let read = Set(regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
-            Range($0.range(at: 1), in: text).map { String(text[$0]) }
-        })
+        let read = Set(
+            regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+                Range($0.range(at: 1), in: text).map { String(text[$0]) }
+            })
         XCTAssertFalse(read.isEmpty)
         for name in read {
             XCTAssertTrue(render.contains(#"px("\#(name)""#), name)

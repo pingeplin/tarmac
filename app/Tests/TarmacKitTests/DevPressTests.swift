@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// `tarmac dev press <combo>` (spec 2609.0018, #183; parity row Q19): the chord
@@ -99,9 +100,10 @@ final class DevPressTests: XCTestCase {
     func testAPressWithNoFlagsIsATapStampedNow() {
         XCTAssertEqual(
             DevPress.plan(combo: "cmd+q", holdMs: nil, ageMs: nil, busyMs: nil),
-            .success(DevPress.Plan(
-                chord: DevPress.Chord(flags: cmd, characters: "q", keyCode: 12), holdMs: 100, ageMs: 0, busyMs: nil
-            ))
+            .success(
+                DevPress.Plan(
+                    chord: DevPress.Chord(flags: cmd, characters: "q", keyCode: 12), holdMs: 100, ageMs: 0, busyMs: nil
+                ))
         )
     }
 

@@ -1,5 +1,6 @@
 import GhosttyVt
 import XCTest
+
 @testable import TarmacTerm
 
 final class KeyTranslationTests: XCTestCase {

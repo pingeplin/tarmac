@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Spec 2611.0013 S5, S40: what an inbox row says.
@@ -31,7 +32,8 @@ final class InboxCopyTests: XCTestCase {
     }
 
     func testS5AQuoteIsOneLine() {
-        XCTAssertEqual(InboxCopy.quote(inboxItem(.report(.blocked), text: "  May\n\tI  run\r\n rm?  "))?.plain, "“May I run rm?”")
+        XCTAssertEqual(
+            InboxCopy.quote(inboxItem(.report(.blocked), text: "  May\n\tI  run\r\n rm?  "))?.plain, "“May I run rm?”")
     }
 
     func testS9TheRowQuoteRendersInlineMarkdown() {
@@ -44,7 +46,8 @@ final class InboxCopyTests: XCTestCase {
     func testS10ARowQuoteWithNoMarkdownReadsAsBefore() {
         for text in S10.texts {
             XCTAssertEqual(
-                InboxCopy.quote(inboxItem(.report(.blocked), text: text)), .literal("“\(ChromeText.oneLine(text))”"), text
+                InboxCopy.quote(inboxItem(.report(.blocked), text: text)), .literal("“\(ChromeText.oneLine(text))”"),
+                text
             )
         }
     }
@@ -55,16 +58,19 @@ final class InboxCopyTests: XCTestCase {
 
     func testS5ThePlaceIsBoardTerminalAndFolderUnderHome() {
         let withCwd = inboxItem(.report(.blocked), proc: "zsh", cwd: "/Users/u/w/x")
-        XCTAssertEqual(InboxCopy.place(withCwd, boardName: "api", cardLabel: "claude", home: "/Users/u"), "api › claude · ~/w/x")
+        XCTAssertEqual(
+            InboxCopy.place(withCwd, boardName: "api", cardLabel: "claude", home: "/Users/u"), "api › claude · ~/w/x")
         let noCwd = inboxItem(.report(.blocked), proc: "zsh")
         XCTAssertEqual(InboxCopy.place(noCwd, boardName: "api", cardLabel: "claude", home: "/Users/u"), "api › claude")
-        XCTAssertEqual(InboxCopy.place(noCwd, boardName: nil, cardLabel: "claude", home: "/Users/u"), "board-1 › claude")
+        XCTAssertEqual(
+            InboxCopy.place(noCwd, boardName: nil, cardLabel: "claude", home: "/Users/u"), "board-1 › claude")
     }
 
     func testThePlaceNamesTheTerminalByItsCardElseItsProcElseShell() {
         let withProc = inboxItem(.bell, proc: "make")
         XCTAssertEqual(InboxCopy.place(withProc, boardName: nil, cardLabel: nil, home: "/Users/u"), "board-1 › make")
-        XCTAssertEqual(InboxCopy.place(inboxItem(.bell), boardName: nil, cardLabel: nil, home: "/Users/u"), "board-1 › shell")
+        XCTAssertEqual(
+            InboxCopy.place(inboxItem(.bell), boardName: nil, cardLabel: nil, home: "/Users/u"), "board-1 › shell")
     }
 
     func testOnlyAFolderUnderTheHomeFolderStartsWithATilde() {
@@ -126,7 +132,10 @@ final class InboxCopyTests: XCTestCase {
         ]
         var strings = [InboxCopy.empty, InboxCopy.footer] + Inbox.Filter.allCases.map(InboxCopy.filterName)
         for i in items {
-            strings += [InboxCopy.tag(i.kind), InboxCopy.title(i), InboxCopy.place(i, boardName: nil, cardLabel: nil, home: "/")]
+            strings += [
+                InboxCopy.tag(i.kind), InboxCopy.title(i),
+                InboxCopy.place(i, boardName: nil, cardLabel: nil, home: "/"),
+            ]
         }
         XCTAssertEqual(InboxCopy.empty, "no items")
         XCTAssertEqual(Inbox.Filter.allCases.map(InboxCopy.filterName), ["all", "reports", "bell", "exit"])

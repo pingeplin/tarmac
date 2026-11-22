@@ -36,7 +36,8 @@ final class DocLayoutScriptTests: XCTestCase {
 
     private func table(_ header: String, _ rows: String...) -> String {
         let columns = header.split(separator: "|").count
-        return (["| \(header) |", "|" + String(repeating: "---|", count: columns)] + rows).joined(separator: "\n") + "\n"
+        return (["| \(header) |", "|" + String(repeating: "---|", count: columns)] + rows).joined(separator: "\n")
+            + "\n"
     }
 
     private func occurrences(of part: String, in text: String) -> Int {
@@ -98,10 +99,12 @@ final class DocLayoutScriptTests: XCTestCase {
             (0xFFE0, 0xFFE6), (0x1F300, 0x1F64F), (0x1F900, 0x1F9FF), (0x20000, 0x3FFFD),
         ]
         let context = try page()
-        let width = try XCTUnwrap(context.evaluateScript("""
-            (point) => tarmacDocLayout.textColumns(marked.lexer("| d |\\n|---|\\n| " +
-              String.fromCodePoint(point).repeat(20) + " |\\n")[0])[0]
-            """))
+        let width = try XCTUnwrap(
+            context.evaluateScript(
+                """
+                (point) => tarmacDocLayout.textColumns(marked.lexer("| d |\\n|---|\\n| " +
+                  String.fromCodePoint(point).repeat(20) + " |\\n")[0])[0]
+                """))
         for (low, high) in ranges {
             XCTAssertEqual(width.call(withArguments: [low]).toBool(), true, String(low, radix: 16))
             XCTAssertEqual(width.call(withArguments: [high]).toBool(), true, String(high, radix: 16))
@@ -146,7 +149,8 @@ final class DocLayoutScriptTests: XCTestCase {
 
     /// S34 — a table inside a list item is marked too.
     func testS34ANestedTableMarksItsTextColumn() throws {
-        let html = try render("- item\n\n  " + table("n | d", "| 1 | \(a(40)) |").replacingOccurrences(of: "\n|", with: "\n  |"))
+        let html = try render(
+            "- item\n\n  " + table("n | d", "| 1 | \(a(40)) |").replacingOccurrences(of: "\n|", with: "\n  |"))
 
         XCTAssertEqual(occurrences(of: "<div class=\"doc-table\"><table>", in: html), 1)
         XCTAssertTrue(html.contains("<th class=\"doc-text-col\">d</th>"))
@@ -223,7 +227,8 @@ final class DocLayoutScriptTests: XCTestCase {
 
         let unmarked = try evaluate("tarmacDocLayout.parse(md, '').html", markdown: outlined)
         XCTAssertFalse(unmarked.contains("data-outline"))
-        XCTAssertEqual(unmarked, html.replacingOccurrences(of: #" data-outline="k9-\d""#, with: "", options: .regularExpression))
+        XCTAssertEqual(
+            unmarked, html.replacingOccurrences(of: #" data-outline="k9-\d""#, with: "", options: .regularExpression))
         XCTAssertEqual(try render(outlined), unmarked)
     }
 
@@ -234,7 +239,8 @@ final class DocLayoutScriptTests: XCTestCase {
         context.setObject(outlined, forKeyedSubscript: "md" as NSString)
         context.evaluateScript("tarmacDocLayout.parse(md, 'k9'); var second = tarmacDocLayout.parse('# R', '');")
 
-        XCTAssertEqual(context.evaluateScript("JSON.stringify(second.outline)")?.toString(), #"[{"depth":1,"text":"R"}]"#)
+        XCTAssertEqual(
+            context.evaluateScript("JSON.stringify(second.outline)")?.toString(), #"[{"depth":1,"text":"R"}]"#)
         XCTAssertEqual(context.evaluateScript("second.html.indexOf('data-outline')")?.toInt32(), -1)
     }
 
@@ -248,7 +254,8 @@ final class DocLayoutScriptTests: XCTestCase {
     /// 2611.0022 S28
     func test2611_0022S28TheCurrentSection() throws {
         let context = try page()
-        func current(_ tops: [Double], _ scrollTop: Double, _ view: Double, _ height: Double, _ zoom: Double) -> Int32? {
+        func current(_ tops: [Double], _ scrollTop: Double, _ view: Double, _ height: Double, _ zoom: Double) -> Int32?
+        {
             context.evaluateScript("tarmacDocLayout.currentSection")?
                 .call(withArguments: [tops, scrollTop, view, height, zoom]).toInt32()
         }
@@ -322,7 +329,8 @@ final class DocLayoutScriptTests: XCTestCase {
             box(1260, 20, 240)
         )
         XCTAssertEqual(
-            try json("""
+            try json(
+                """
                 tarmacDocLayout.geometry(Object.assign({}, state, {mode: tarmacDocLayout.shownMode(state, 0, 0)}), 1280, null)
                 """.replacingOccurrences(of: "state", with: "{mode: 'docked', width: 240, strip: 30, grip: 8}")),
             box(1280, 0, 0)
@@ -333,7 +341,8 @@ final class DocLayoutScriptTests: XCTestCase {
     func test2611_0022S29cTheReleaseReport() throws {
         XCTAssertEqual(try json("tarmacDocLayout.release(false, {width: 300, collapsed: false})"), "null")
         XCTAssertEqual(
-            try json("tarmacDocLayout.release(true, {width: 300, collapsed: false})"), #"{"action":"resize","width":300}"#
+            try json("tarmacDocLayout.release(true, {width: 300, collapsed: false})"),
+            #"{"action":"resize","width":300}"#
         )
         XCTAssertEqual(try json("tarmacDocLayout.release(true, {width: -60, collapsed: true})"), #"{"action":"close"}"#)
     }
@@ -344,7 +353,8 @@ final class DocLayoutScriptTests: XCTestCase {
         func strip(_ fields: Int, _ outline: String, _ current: Int) throws -> String {
             try json("tarmacDocLayout.strip(\(fields), \(outline), \(current))")
         }
-        XCTAssertEqual(try strip(2, outline, 2), #"{"icons":["fields","outline"],"ticks":[0,1,3],"lit":1,"section":"fields"}"#)
+        XCTAssertEqual(
+            try strip(2, outline, 2), #"{"icons":["fields","outline"],"ticks":[0,1,3],"lit":1,"section":"fields"}"#)
         XCTAssertEqual(try json("tarmacDocLayout.strip(2, \(outline), 4).lit"), "3")
         XCTAssertEqual(try json("tarmacDocLayout.strip(2, \(outline), -1).lit"), "-1")
         XCTAssertEqual(try json("tarmacDocLayout.strip(2, \(outline), 1).lit"), "1")
@@ -358,8 +368,10 @@ final class DocLayoutScriptTests: XCTestCase {
     /// 2611.0022 S29e
     func test2611_0022S29eAnIconClick() throws {
         func click(_ arguments: String) throws -> String { try json("tarmacDocLayout.iconClick(\(arguments))") }
-        XCTAssertEqual(try click("'strip', 'fields', 'outline'"), #"{"post":"open","section":"outline","scroll":"onOpen"}"#)
-        XCTAssertEqual(try click("'overlay', 'outline', 'outline'"), #"{"post":"close","section":"outline","scroll":null}"#)
+        XCTAssertEqual(
+            try click("'strip', 'fields', 'outline'"), #"{"post":"open","section":"outline","scroll":"onOpen"}"#)
+        XCTAssertEqual(
+            try click("'overlay', 'outline', 'outline'"), #"{"post":"close","section":"outline","scroll":null}"#)
         XCTAssertEqual(try click("'overlay', 'outline', 'fields'"), #"{"post":null,"section":"fields","scroll":"now"}"#)
         XCTAssertEqual(try click("'docked', 'outline', 'fields'"), #"{"post":null,"section":"outline","scroll":null}"#)
     }
@@ -424,9 +436,12 @@ final class DocLayoutScriptTests: XCTestCase {
     func test2611_0022WhatEndsAKeptDrag() throws {
         let width = "{width: 300, collapsed: false}"
         XCTAssertEqual(try json("tarmacDocLayout.dragOnState(false, \(width), true)"), "null")
-        XCTAssertEqual(try json("tarmacDocLayout.dragOnState(false, \(width), false)"), #"{"width":300,"collapsed":false}"#)
-        XCTAssertEqual(try json("tarmacDocLayout.dragOnState(true, \(width), true)"), #"{"width":300,"collapsed":false}"#)
-        XCTAssertEqual(try json("tarmacDocLayout.dragOnState(true, \(width), false)"), #"{"width":300,"collapsed":false}"#)
+        XCTAssertEqual(
+            try json("tarmacDocLayout.dragOnState(false, \(width), false)"), #"{"width":300,"collapsed":false}"#)
+        XCTAssertEqual(
+            try json("tarmacDocLayout.dragOnState(true, \(width), true)"), #"{"width":300,"collapsed":false}"#)
+        XCTAssertEqual(
+            try json("tarmacDocLayout.dragOnState(true, \(width), false)"), #"{"width":300,"collapsed":false}"#)
     }
 
     /// 2611.0022 D11: the drag's direction is the sidebar's side.
@@ -475,7 +490,9 @@ final class DocLayoutScriptTests: XCTestCase {
         for state in ["{side: 'left'}", "{}", "{side: 'Right'}", "{side: 1}", "null"] {
             XCTAssertEqual(try json("tarmacDocLayout.side(\(state))"), #""left""#, state)
         }
-        XCTAssertEqual(try json("tarmacDocLayout.dragWidth(240, -60, 1, -1, 160, 420)"), #"{"width":300,"collapsed":false}"#)
-        XCTAssertEqual(try json("tarmacDocLayout.dragWidth(240, 81, 1, -1, 160, 420)"), #"{"width":159,"collapsed":true}"#)
+        XCTAssertEqual(
+            try json("tarmacDocLayout.dragWidth(240, -60, 1, -1, 160, 420)"), #"{"width":300,"collapsed":false}"#)
+        XCTAssertEqual(
+            try json("tarmacDocLayout.dragWidth(240, 81, 1, -1, 160, 420)"), #"{"width":159,"collapsed":true}"#)
     }
 }

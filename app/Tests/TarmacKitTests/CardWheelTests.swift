@@ -1,12 +1,15 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// An HTML card's wheel conversion (spec 2610.0002): what a wheel event's
 /// delta becomes in the document's own units, and the residue a precise
 /// device leaves for the next event.
 final class CardWheelTests: XCTestCase {
-    private func points(_ wheel: inout CardWheel, dx: Double = 0, dy: Double = 0, scale: CGFloat = 1.5) -> CardWheel.Delta? {
+    private func points(_ wheel: inout CardWheel, dx: Double = 0, dy: Double = 0, scale: CGFloat = 1.5) -> CardWheel
+        .Delta?
+    {
         wheel.convert(dx: dx, dy: dy, precise: true, scale: scale)
     }
 
@@ -110,7 +113,9 @@ final class CardWheelTests: XCTestCase {
         var steps: [Int] = []
         var travelled = 0.0
         for delta in deltas {
-            guard case .points(_, let dy) = points(&wheel, dy: delta) else { return XCTFail("\(delta) was not converted") }
+            guard case .points(_, let dy) = points(&wheel, dy: delta) else {
+                return XCTFail("\(delta) was not converted")
+            }
             steps.append(dy)
             travelled += delta
             XCTAssertLessThanOrEqual(abs(Double(steps.reduce(0, +)) - 1.5 * travelled), 0.5, "after \(delta)")

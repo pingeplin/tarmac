@@ -59,10 +59,12 @@ extension CardView {
     }
 
     func thumbDragged(_ event: NSEvent) {
-        guard let offset = scrollDrag?.offset(
-            pointerY: thumbPointerY(event), metrics: scrollMetrics, body: scrollTrackBody,
-            covered: docBody?.scrollCover ?? 0, scale: scale
-        ) else { return }
+        guard
+            let offset = scrollDrag?.offset(
+                pointerY: thumbPointerY(event), metrics: scrollMetrics, body: scrollTrackBody,
+                covered: docBody?.scrollCover ?? 0, scale: scale
+            )
+        else { return }
         if let docBody { docBody.scroll(to: offset) } else { onScrollTo?(offset) }
     }
 

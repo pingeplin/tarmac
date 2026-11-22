@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// The content rule a markdown doc's web view loads under, as WebKit is given it.
@@ -13,10 +14,12 @@ final class DocFrameRuleTests: XCTestCase {
         let rules = try rules()
         XCTAssertEqual(rules.count, 1)
         let rule = try XCTUnwrap(rules.first)
-        XCTAssertEqual(rule as NSDictionary, [
-            "trigger": ["url-filter": "^tarmac-card://img/", "load-context": ["child-frame"]],
-            "action": ["type": "block"],
-        ] as NSDictionary)
+        XCTAssertEqual(
+            rule as NSDictionary,
+            [
+                "trigger": ["url-filter": "^tarmac-card://img/", "load-context": ["child-frame"]],
+                "action": ["type": "block"],
+            ] as NSDictionary)
     }
 
     func testTheFilterMatchesEveryImageURLTheAppBuildsAndNoOtherURL() throws {

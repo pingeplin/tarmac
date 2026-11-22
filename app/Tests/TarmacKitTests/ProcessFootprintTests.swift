@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// The memory a process uses, as Activity Monitor shows it (spec 2611.0004).
 final class ProcessFootprintTests: XCTestCase {

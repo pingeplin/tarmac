@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// What a point on a card is: the scroll thumb while it can be grabbed, then

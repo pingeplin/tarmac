@@ -23,9 +23,10 @@ enum CardWebView {
         configuration.setURLSchemeHandler(handler, forURLScheme: CardSchemeHandler.scheme)
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         for source in scripts {
-            configuration.userContentController.addUserScript(WKUserScript(
-                source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: world
-            ))
+            configuration.userContentController.addUserScript(
+                WKUserScript(
+                    source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: world
+                ))
         }
         return kind.init(frame: .zero, configuration: configuration)
     }
@@ -39,7 +40,7 @@ extension WKWebView {
     /// which is nil too.
     var webProcessID: Int32? {
         guard responds(to: Selector(("_webProcessIdentifier"))),
-              let pid = (value(forKey: "_webProcessIdentifier") as? NSNumber)?.int32Value, pid != 0
+            let pid = (value(forKey: "_webProcessIdentifier") as? NSNumber)?.int32Value, pid != 0
         else { return nil }
         return pid
     }

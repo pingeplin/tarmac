@@ -35,7 +35,10 @@ public struct TermReport: Equatable, Sendable {
     /// message. The report is nil for a frame that is no report: no `kind`, a
     /// kind this build does not know, or no `at_ms`.
     public static func frame(_ message: Message) -> TermReportFrame? {
-        guard case .termReport(let termID, let kind, let text, let atMs, let proc, let read, let boardID, let cwd) = message else {
+        guard
+            case .termReport(let termID, let kind, let text, let atMs, let proc, let read, let boardID, let cwd) =
+                message
+        else {
             return nil
         }
         let known: Kind?
@@ -44,7 +47,9 @@ public struct TermReport: Equatable, Sendable {
         case "done": known = .done
         default: known = nil
         }
-        guard let known, let atMs else { return TermReportFrame(termID: termID, boardID: boardID, cwd: cwd, report: nil) }
+        guard let known, let atMs else {
+            return TermReportFrame(termID: termID, boardID: boardID, cwd: cwd, report: nil)
+        }
         let report = TermReport(kind: known, text: text, atMs: atMs, proc: proc, read: read)
         return TermReportFrame(termID: termID, boardID: boardID, cwd: cwd, report: report)
     }

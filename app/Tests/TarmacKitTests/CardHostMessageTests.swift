@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// The host → shim messages of an HTML card (`card_shim.js` message listener)
@@ -43,7 +44,8 @@ final class CardHostMessageTests: XCTestCase {
         XCTAssertEqual(names(.zoom(3)), "zoom")
         XCTAssertEqual(names(.cull(true)), "cull")
         XCTAssertEqual(names(.scrollTo(0)), "scrollTo")
-        XCTAssertEqual(names(.fonts(CardFontVariables(interfaceFamily: nil, documentFamily: nil, documentSize: 14))), "fonts")
+        XCTAssertEqual(
+            names(.fonts(CardFontVariables(interfaceFamily: nil, documentFamily: nil, documentSize: 14))), "fonts")
     }
 
     // MARK: - cull polarity (2609.0002 S1, S2)

@@ -1,5 +1,6 @@
 import WebKit
 import XCTest
+
 @testable import TarmacKit
 
 /// An HTML card page in an offscreen `WKWebView`, with the shipped shim placed
@@ -49,7 +50,10 @@ enum CardPage {
         try spin(until: { !view.isLoading }, "load")
         if let zoom {
             _ = try eval(view, "(window.postMessage({ tarmac: 'zoom', z: \(zoom) }, '*'), 0)")
-            try spin(until: { ((try? eval(view, "document.documentElement.style.zoom")) as? String).flatMap(Double.init) == zoom }, "zoom \(zoom)")
+            try spin(
+                until: {
+                    ((try? eval(view, "document.documentElement.style.zoom")) as? String).flatMap(Double.init) == zoom
+                }, "zoom \(zoom)")
             _ = try eval(view, "document.body.offsetWidth")
         }
         return view

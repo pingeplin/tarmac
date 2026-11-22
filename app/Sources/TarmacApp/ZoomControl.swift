@@ -13,10 +13,10 @@ final class ZoomControl: NSView, FontFollowing, ThemeFollowing {
     var onZoomOut: (() -> Void)?
     var onFit: (() -> Void)?
 
-    private let minusBtn = ZoomSegmentButton(title: "\u{2212}") // U+2212 minus
+    private let minusBtn = ZoomSegmentButton(title: "\u{2212}")  // U+2212 minus
     private let pct = NSTextField(labelWithString: "100%")
     private let plusBtn = ZoomSegmentButton(title: "+")
-    private let fitBtn = ZoomSegmentButton(title: "\u{22A1} fit") // U+22A1 squared dot
+    private let fitBtn = ZoomSegmentButton(title: "\u{22A1} fit")  // U+22A1 squared dot
     private let pctLeftBorder = NSView()
     private let pctRightBorder = NSView()
     private let fitLeftBorder = NSView()
@@ -35,7 +35,7 @@ final class ZoomControl: NSView, FontFollowing, ThemeFollowing {
         wantsLayer = true
         layer?.borderWidth = 1
         layer?.cornerRadius = 8
-        layer?.masksToBounds = true // clipped (overflow hidden)
+        layer?.masksToBounds = true  // clipped (overflow hidden)
 
         minusBtn.onClick = { [weak self] in self?.onZoomOut?() }
         plusBtn.onClick = { [weak self] in self?.onZoomIn?() }

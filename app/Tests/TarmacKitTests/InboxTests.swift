@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Spec 2611.0013: the inbox store of reports, bells and exits.
@@ -7,10 +8,11 @@ final class InboxTests: XCTestCase {
         _ term: String, _ kind: String? = "blocked", text: String? = nil, at: UInt64 = 10, proc: String? = nil,
         read: Bool = false, board: String? = "board-1", cwd: String? = nil
     ) -> TermReportFrame {
-        TermReport.frame(.termReport(
-            termID: term, kind: kind, text: text, atMs: kind == nil ? nil : at, proc: proc, read: read,
-            boardID: kind == nil ? nil : board, cwd: kind == nil ? nil : cwd
-        ))!
+        TermReport.frame(
+            .termReport(
+                termID: term, kind: kind, text: text, atMs: kind == nil ? nil : at, proc: proc, read: read,
+                boardID: kind == nil ? nil : board, cwd: kind == nil ? nil : cwd
+            ))!
     }
 
     private func put(_ inbox: inout Inbox, _ frame: TermReportFrame, fallback: String? = nil) {
@@ -36,10 +38,14 @@ final class InboxTests: XCTestCase {
     func testS1AReportFrameMakesAnUnreadItemWithItsPlace() {
         var inbox = Inbox()
         put(&inbox, report("T", text: "May I?", at: 1000, proc: "claude", cwd: "/w"))
-        XCTAssertEqual(inbox.items(.all), [Inbox.Item(
-            kind: .report(.blocked), termID: "T", boardID: "board-1", atMs: 1000, proc: "claude", cwd: "/w",
-            text: "May I?", read: false
-        )])
+        XCTAssertEqual(
+            inbox.items(.all),
+            [
+                Inbox.Item(
+                    kind: .report(.blocked), termID: "T", boardID: "board-1", atMs: 1000, proc: "claude", cwd: "/w",
+                    text: "May I?", read: false
+                )
+            ])
         XCTAssertEqual(inbox.unreadCount, 1)
     }
 
@@ -123,7 +129,8 @@ final class InboxTests: XCTestCase {
         inbox.touch(termID: "T")
         inbox.touch(termID: "U")
         let read = Dictionary(uniqueKeysWithValues: inbox.items(.all).map { ($0.id, $0.read) })
-        XCTAssertEqual(read, [id("T", .report): false, id("T", .bell): true, id("U", .exit): true, id("U", .bell): true])
+        XCTAssertEqual(
+            read, [id("T", .report): false, id("T", .bell): true, id("U", .exit): true, id("U", .bell): true])
     }
 
     func testS17NoOtherOperationMarksABellOrAnExitRead() {
@@ -145,10 +152,14 @@ final class InboxTests: XCTestCase {
         bell(&inbox, "T", at: 2, board: "board-0")
         inbox.exit(termID: "T", boardID: "board-0", code: 3, proc: "zsh", cwd: "/w", nowMs: 5)
         XCTAssertEqual(ids(inbox), [id("T", .exit), id("T", .bell)])
-        XCTAssertEqual(inbox.items(.exit), [Inbox.Item(
-            kind: .exit(code: 3), termID: "T", boardID: "board-0", atMs: 5, proc: "zsh", cwd: "/w", text: nil,
-            read: false
-        )])
+        XCTAssertEqual(
+            inbox.items(.exit),
+            [
+                Inbox.Item(
+                    kind: .exit(code: 3), termID: "T", boardID: "board-0", atMs: 5, proc: "zsh", cwd: "/w", text: nil,
+                    read: false
+                )
+            ])
     }
 
     func testS18AnExitOnATerminalWithNoItemKeepsItsBoardProcAndFolder() {

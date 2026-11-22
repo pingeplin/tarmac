@@ -77,7 +77,9 @@ public final class TerminalView: NSView {
             let previous = renderer.theme
             guard newValue != previous, (try? engine.apply(newValue)) != nil else { return }
             renderer.theme = newValue
-            if newValue.isDark != previous.isDark { send(engine.encodeColorScheme(dark: newValue.isDark), source: .terminal) }
+            if newValue.isDark != previous.isDark {
+                send(engine.encodeColorScheme(dark: newValue.isDark), source: .terminal)
+            }
             // Every row of the frame after a theme is applied is dirty,
             // whichever colour changed, so reading it redraws the whole view.
             readIfNotHeld()
@@ -314,7 +316,11 @@ public final class TerminalView: NSView {
         let layout = TerminalGridLayout(
             bounds: bounds.size, cell: renderer.fonts.metrics.cell, padding: padding, pixelsPerPoint: fontScale
         )
-        defer { gridLayout = layout; needsDisplay = true; reportScrollbar() }
+        defer {
+            gridLayout = layout
+            needsDisplay = true
+            reportScrollbar()
+        }
         guard let layout else { return }
         let surface = layout.surface
         guard layout.cols != engine.cols || layout.rows != engine.rows || gridLayout?.surface != surface else { return }
@@ -518,9 +524,11 @@ public final class TerminalView: NSView {
         default: return
         }
         guard !hasMarkedText() else { return }
-        send(engine.encode(KeyInput(
-            action: pressed ? .press : .release, key: KeyTranslation.key(forKeyCode: event.keyCode), mods: mods
-        )), source: .user)
+        send(
+            engine.encode(
+                KeyInput(
+                    action: pressed ? .press : .release, key: KeyTranslation.key(forKeyCode: event.keyCode), mods: mods
+                )), source: .user)
     }
 
     /// AppKit offers ⌘ and ⌃ chords here before `keyDown`. The menu owns ⌘ chords
@@ -696,7 +704,7 @@ public final class TerminalView: NSView {
     private func openLinkUnderReportedClick(_ event: NSEvent) {
         defer { reportedLinkPress = nil }
         guard event.clickCount == 1, opensLinks(event), let pressed = reportedLinkPress,
-              surfacePoint(event).flatMap(linkPress(at:)) == pressed
+            surfacePoint(event).flatMap(linkPress(at:)) == pressed
         else { return }
         onOpenLink?(pressed.link.url)
     }
@@ -714,7 +722,8 @@ public final class TerminalView: NSView {
             while cols.lowerBound > 0, engine.hyperlink(col: cols.lowerBound - 1, row: row) == target {
                 cols = (cols.lowerBound - 1)...cols.upperBound
             }
-            while cols.upperBound < gridLayout.cols - 1, engine.hyperlink(col: cols.upperBound + 1, row: row) == target {
+            while cols.upperBound < gridLayout.cols - 1, engine.hyperlink(col: cols.upperBound + 1, row: row) == target
+            {
                 cols = cols.lowerBound...(cols.upperBound + 1)
             }
             return TerminalLink(url: target, spans: [LinkSpan(row: row, cols: cols)])
@@ -746,7 +755,8 @@ public final class TerminalView: NSView {
         if readScheduled { readIfNotHeld() }
         let col = Int(point.x / gridLayout.cell.width)
         let row = Int(point.y / gridLayout.cell.height)
-        let insideSelection = frameSnapshot.rows.indices.contains(row)
+        let insideSelection =
+            frameSnapshot.rows.indices.contains(row)
             && frameSnapshot.rows[row].selection?.contains(col) == true
         if !insideSelection {
             selection.selectWord(at: point, surface: gridLayout.surface)
@@ -792,9 +802,11 @@ public final class TerminalView: NSView {
     public override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(
-            rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self
-        ))
+        addTrackingArea(
+            NSTrackingArea(
+                rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                owner: self
+            ))
     }
 
     /// Hover reports count as input to a selection-clearing program, so a shown
@@ -815,7 +827,8 @@ public final class TerminalView: NSView {
 
     public override func scrollWheel(with event: NSEvent) {
         guard let gridLayout else { return super.scrollWheel(with: event) }
-        let delta = event.hasPreciseScrollingDeltas
+        let delta =
+            event.hasPreciseScrollingDeltas
             ? event.scrollingDeltaY
             : event.scrollingDeltaY * gridLayout.cell.height
         scrollRemainder += delta
@@ -909,7 +922,8 @@ extension TerminalView: @preconcurrency NSTextInputClient {
     public func hasMarkedText() -> Bool { markedText.length > 0 }
 
     public func markedRange() -> NSRange {
-        markedText.length > 0 ? NSRange(location: 0, length: markedText.length) : NSRange(location: NSNotFound, length: 0)
+        markedText.length > 0
+            ? NSRange(location: 0, length: markedText.length) : NSRange(location: NSNotFound, length: 0)
     }
 
     public func selectedRange() -> NSRange {
@@ -921,7 +935,9 @@ extension TerminalView: @preconcurrency NSTextInputClient {
         return TerminalPreedit(text: markedText.string, caret: min(NSMaxRange(markedSelection), markedText.length))
     }
 
-    public func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? { nil }
+    public func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?)
+        -> NSAttributedString?
+    { nil }
 
     public func validAttributesForMarkedText() -> [NSAttributedString.Key] { [] }
 
@@ -946,7 +962,10 @@ extension TerminalView: @preconcurrency NSTextInputClient {
     public override func doCommand(by selector: Selector) {}
 
     private func invalidatePreedit() {
-        guard let cursor = frameSnapshot.cursor else { return needsDisplay = true }
+        guard let cursor = frameSnapshot.cursor else {
+            needsDisplay = true
+            return
+        }
         setNeedsDisplay(damageRect(forRow: cursor.row))
     }
 }

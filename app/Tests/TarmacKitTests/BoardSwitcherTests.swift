@@ -1,10 +1,13 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// M3 P4: the ⌘K switcher view-model — prefix filter, ⌘1..9 ordinal on the
 /// *visible* rows, selection clamp, and meta-line formatting.
 final class BoardSwitcherTests: XCTestCase {
-    private func sum(_ id: String, name: String? = nil, running: Int = 0, bell: Int = 0, cards: Int = 0, isLive: Bool = true) -> BoardSwitcher.BoardSummary {
+    private func sum(
+        _ id: String, name: String? = nil, running: Int = 0, bell: Int = 0, cards: Int = 0, isLive: Bool = true
+    ) -> BoardSwitcher.BoardSummary {
         BoardSwitcher.BoardSummary(boardID: id, name: name, running: running, bell: bell, cards: cards, isLive: isLive)
     }
 
@@ -192,7 +195,8 @@ final class BoardSwitcherTests: XCTestCase {
             terms: [term(running: true), term(running: true), term()], cards: 5, daemonRunning: 9
         )
         XCTAssertEqual(
-            s, BoardSwitcher.BoardSummary(boardID: "board-1", name: "infra", running: 2, bell: 0, cards: 5, isLive: true)
+            s,
+            BoardSwitcher.BoardSummary(boardID: "board-1", name: "infra", running: 2, bell: 0, cards: 5, isLive: true)
         )
     }
 
@@ -221,7 +225,8 @@ final class BoardSwitcherTests: XCTestCase {
             boardID: "b", name: nil, visited: false, terms: [term(running: true, bell: true)], cards: 1,
             daemonRunning: 3
         )
-        XCTAssertEqual(s, BoardSwitcher.BoardSummary(boardID: "b", name: nil, running: 3, bell: 0, cards: nil, isLive: true))
+        XCTAssertEqual(
+            s, BoardSwitcher.BoardSummary(boardID: "b", name: nil, running: 3, bell: 0, cards: nil, isLive: true))
     }
 
     // 2611.0013 S10: unread reports, for a visited board and a never-visited one.
@@ -231,7 +236,8 @@ final class BoardSwitcherTests: XCTestCase {
         )
         XCTAssertEqual(unvisited.bell, 0)
         XCTAssertEqual(unvisited.report, 2)
-        let visited = BoardSwitcher.summary(boardID: "b", name: nil, visited: true, terms: [], cards: 1, daemonRunning: nil, reports: 1)
+        let visited = BoardSwitcher.summary(
+            boardID: "b", name: nil, visited: true, terms: [], cards: 1, daemonRunning: nil, reports: 1)
         XCTAssertEqual(visited.report, 1)
         let row = BoardSwitcher.rows(summaries: [unvisited], active: "a", filter: "")
         XCTAssertEqual(row.first?.report, 2)
@@ -240,7 +246,8 @@ final class BoardSwitcherTests: XCTestCase {
 
     func testS10TheMetaDropsAZeroReportAndKeepsTheOrder() {
         XCTAssertEqual(BoardSwitcher.meta(running: 1, bell: 0, report: 2, cards: 3), "1 running · 2 report · 3 cards")
-        XCTAssertEqual(BoardSwitcher.meta(running: 2, bell: 1, report: 1, cards: 8), "2 running · 1 bell · 1 report · 8 cards")
+        XCTAssertEqual(
+            BoardSwitcher.meta(running: 2, bell: 1, report: 1, cards: 8), "2 running · 1 bell · 1 report · 8 cards")
         XCTAssertEqual(BoardSwitcher.meta(running: 0, bell: 0, report: 0, cards: 1), "1 card")
     }
 

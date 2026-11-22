@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// The OSC-title vs process-name precedence rule.

@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// The path rule of spec 2611.0002 (S15–S18), widened by 2611.0005 (S1–S5,
@@ -19,7 +20,9 @@ final class CardDataPathTests: XCTestCase {
     }
 
     func test2611_0005S1ANameUnderTheCardsDirectoryGivesThatFileAtAnyDepth() {
-        for name in ["sub/stats.json", "./sub/stats.json", "sub//stats.json", "sub/x/../stats.json", "/a/b/sub/stats.json"] {
+        for name in [
+            "sub/stats.json", "./sub/stats.json", "sub//stats.json", "sub/x/../stats.json", "/a/b/sub/stats.json",
+        ] {
             XCTAssertEqual(judged(name), .file("/a/b/sub/stats.json"), name)
         }
         XCTAssertEqual(judged("sub/deep/stats.json"), .file("/a/b/sub/deep/stats.json"))

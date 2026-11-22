@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// Phase 4 wayfinding math (crib §6–7): fit-to-cards bbox, the world↔minimap
@@ -35,8 +36,8 @@ final class BoardWayfindingTests: XCTestCase {
             maxZoom: 3.0
         )
         XCTAssertNotNil(fit)
-        XCTAssertEqual(fit!.center.x, 300, accuracy: 1e-9) // 100 + 400/2
-        XCTAssertEqual(fit!.center.y, 200, accuracy: 1e-9) // 100 + 200/2
+        XCTAssertEqual(fit!.center.x, 300, accuracy: 1e-9)  // 100 + 400/2
+        XCTAssertEqual(fit!.center.y, 200, accuracy: 1e-9)  // 100 + 200/2
         XCTAssertEqual(fit!.zoom, 1.6, accuracy: 1e-9)
     }
 
@@ -78,13 +79,14 @@ final class BoardWayfindingTests: XCTestCase {
     }
 
     func testFitOfNoCardsIsNil() {
-        XCTAssertNil(BoardWayfinding.fit(
-            cards: [],
-            viewportSize: CGSize(width: 800, height: 600),
-            margin: 0.1,
-            minZoom: 0.1,
-            maxZoom: 3.0
-        ))
+        XCTAssertNil(
+            BoardWayfinding.fit(
+                cards: [],
+                viewportSize: CGSize(width: 800, height: 600),
+                margin: 0.1,
+                minZoom: 0.1,
+                maxZoom: 3.0
+            ))
     }
 
     /// Two cards: fit spans both, centered on their union.
@@ -142,7 +144,7 @@ final class BoardWayfindingTests: XCTestCase {
     /// The world box origin maps to the padded, centered offset (the box is
     /// centered on the limiting axis).
     func testMinimapMappingCentersContent() {
-        let worldBox = CGRect(x: 0, y: 0, width: 880, height: 880) // square
+        let worldBox = CGRect(x: 0, y: 0, width: 880, height: 880)  // square
         let mapping = BoardWayfinding.minimapMapping(
             worldBox: worldBox,
             minimapSize: CGSize(width: 132, height: 88),
@@ -180,8 +182,10 @@ final class BoardWayfindingTests: XCTestCase {
         let mapping = BoardWayfinding.MinimapMapping(worldOrigin: .zero, scale: 0.1, offset: CGPoint(x: 6, y: 6))
         XCTAssertNil(mapping.strokeBox(CGRect(x: 100, y: 100, width: 5, height: 200), lineWidth: 1))
         XCTAssertNil(mapping.strokeBox(CGRect(x: 100, y: 100, width: 400, height: 5), lineWidth: 1))
-        XCTAssertNil(mapping.strokeBox(CGRect(x: 100, y: 100, width: 10, height: 200), lineWidth: 1), "exactly 1px wide")
-        XCTAssertNil(mapping.strokeBox(CGRect(x: 100, y: 100, width: 400, height: 10), lineWidth: 1), "exactly 1px high")
+        XCTAssertNil(
+            mapping.strokeBox(CGRect(x: 100, y: 100, width: 10, height: 200), lineWidth: 1), "exactly 1px wide")
+        XCTAssertNil(
+            mapping.strokeBox(CGRect(x: 100, y: 100, width: 400, height: 10), lineWidth: 1), "exactly 1px high")
         XCTAssertEqual(
             mapping.strokeBox(CGRect(x: 100, y: 100, width: 11, height: 200), lineWidth: 1)?.width ?? -1,
             0.1, accuracy: 1e-9
@@ -206,7 +210,7 @@ final class BoardWayfindingTests: XCTestCase {
             inset: 18
         )
         XCTAssertEqual(p?.edge, .right)
-        XCTAssertEqual(p?.along, 300) // y stays (within inset bounds)
+        XCTAssertEqual(p?.along, 300)  // y stays (within inset bounds)
     }
 
     func testHintPlacementPicksTopEdgeAndClampsAlong() {
@@ -218,7 +222,7 @@ final class BoardWayfindingTests: XCTestCase {
             inset: 18
         )
         XCTAssertEqual(p?.edge, .top)
-        XCTAssertEqual(p?.along, 18) // clamped to minX + inset
+        XCTAssertEqual(p?.along, 18)  // clamped to minX + inset
     }
 
     func testHintPlacementLeftEdge() {

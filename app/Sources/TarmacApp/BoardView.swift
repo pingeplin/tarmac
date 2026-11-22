@@ -194,13 +194,15 @@ final class BoardView: NSView, ThemeFollowing {
     /// Does nothing on an empty board.
     func fitToCards() {
         let rects = cards.values.map(\.worldFrame.rect)
-        guard let fit = BoardWayfinding.fit(
-            cards: rects,
-            viewportSize: bounds.size,
-            margin: 0.1,
-            minZoom: Viewport.minZoom,
-            maxZoom: Viewport.maxZoom
-        ) else { return }
+        guard
+            let fit = BoardWayfinding.fit(
+                cards: rects,
+                viewportSize: bounds.size,
+                margin: 0.1,
+                minZoom: Viewport.minZoom,
+                maxZoom: Viewport.maxZoom
+            )
+        else { return }
         setViewport(Viewport(zoom: fit.zoom, cx: fit.center.x, cy: fit.center.y), commit: true)
     }
 
@@ -250,12 +252,13 @@ final class BoardView: NSView, ThemeFollowing {
     /// window's first responder inside it, severs a press in flight, and
     /// reloads a web view.
     private func restack() {
-        cardLayer.sortSubviews({ a, b, _ in
-            MainActor.assumeIsolated {
-                guard let a = BoardView.stackKey(a), let b = BoardView.stackKey(b) else { return .orderedSame }
-                return a < b ? .orderedAscending : b < a ? .orderedDescending : .orderedSame
-            }
-        }, context: nil)
+        cardLayer.sortSubviews(
+            { a, b, _ in
+                MainActor.assumeIsolated {
+                    guard let a = BoardView.stackKey(a), let b = BoardView.stackKey(b) else { return .orderedSame }
+                    return a < b ? .orderedAscending : b < a ? .orderedDescending : .orderedSame
+                }
+            }, context: nil)
     }
 
     /// A card's place; its offer strip (2611.0011) takes the same place, just
@@ -352,9 +355,11 @@ final class BoardView: NSView, ThemeFollowing {
         carry = CardCarry(
             owner: card.id,
             ownerFrame: card.worldFrame.rect,
-            satellites: Provenance.carried(by: card.id, among: cards.mapValues {
-                Provenance.Card(frame: $0.worldFrame.rect, owner: $0.ownerTermID, attached: $0.attached)
-            })
+            satellites: Provenance.carried(
+                by: card.id,
+                among: cards.mapValues {
+                    Provenance.Card(frame: $0.worldFrame.rect, owner: $0.ownerTermID, attached: $0.attached)
+                })
         )
     }
 

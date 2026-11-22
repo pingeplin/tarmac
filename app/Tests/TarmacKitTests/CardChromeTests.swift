@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// 2606.0006: the border rule with `fresh` dropped from the border. The teal
@@ -49,9 +50,9 @@ final class CardChromeTests: XCTestCase {
     func testInvariantExhaustiveOverAll16States() {
         for mask in 0..<16 {
             let s = CardChrome.State(
-                dead:     mask & 0b0001 != 0,
-                fresh:    mask & 0b0010 != 0,
-                prime:    mask & 0b0100 != 0,
+                dead: mask & 0b0001 != 0,
+                fresh: mask & 0b0010 != 0,
+                prime: mask & 0b0100 != 0,
                 selected: mask & 0b1000 != 0
             )
 
@@ -64,9 +65,11 @@ final class CardChromeTests: XCTestCase {
             // (b) role-coverage — expected computed from inputs, so no state can
             // take a removed (e.g. the old fresh-driven) role.
             let expectedRole: CardChrome.BorderRole =
-                s.dead ? .muted
-                : s.selected ? .focus
-                : .plain
+                s.dead
+                ? .muted
+                : s.selected
+                    ? .focus
+                    : .plain
             XCTAssertEqual(
                 CardChrome.borderRole(s), expectedRole,
                 "state \(s): borderRole must equal the role computed from the inputs"
@@ -85,8 +88,10 @@ final class CardChromeTests: XCTestCase {
     private func assertInert(
         _ s: CardChrome.State, _ name: String, _ field: WritableKeyPath<CardChrome.State, Bool>
     ) {
-        var off = s; off[keyPath: field] = false
-        var on = s;  on[keyPath: field] = true
+        var off = s
+        off[keyPath: field] = false
+        var on = s
+        on[keyPath: field] = true
         XCTAssertEqual(
             CardChrome.borderRole(off), CardChrome.borderRole(on),
             "state \(s): \(name) must not affect borderRole"
@@ -136,9 +141,11 @@ final class CardChromeTests: XCTestCase {
             let borrowed = mask & 0b1000 != 0
 
             let expected: CardChrome.Border =
-                lifted ? .lift
-                : borrowed ? .borrowed
-                : .resting(s.dead ? .muted : s.selected ? .focus : .plain)
+                lifted
+                ? .lift
+                : borrowed
+                    ? .borrowed
+                    : .resting(s.dead ? .muted : s.selected ? .focus : .plain)
             XCTAssertEqual(
                 CardChrome.border(s, lifted: lifted, borrowed: borrowed), expected,
                 "state \(s), lifted \(lifted), borrowed \(borrowed)"

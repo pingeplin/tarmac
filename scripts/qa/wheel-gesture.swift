@@ -125,14 +125,17 @@ func parse(_ arguments: [String]) -> Options {
         }
     }
     if options.card.isEmpty {
-        fail("usage: wheel-gesture.swift <card id> [--dy n] [--dx n] [--events n] [--lines] [--select] [--no-end] [--at center|x,y] [--then thumb|thumb:x,y|x,y] [--press] [--clicks n] [--drag dx,dy] [--steps n] [--step-ms ms] [--sample ms] [--sample-last ms] [--release] [--stay] [--key escape]")
+        fail(
+            "usage: wheel-gesture.swift <card id> [--dy n] [--dx n] [--events n] [--lines] [--select] [--no-end] [--at center|x,y] [--then thumb|thumb:x,y|x,y] [--press] [--clicks n] [--drag dx,dy] [--steps n] [--step-ms ms] [--sample ms] [--sample-last ms] [--release] [--stay] [--key escape]"
+        )
     }
     return options
 }
 
 // MARK: - The app
 
-let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+    .deletingLastPathComponent()
 let cli = root.appendingPathComponent("core/target/debug/tarmac").path
 
 func run(_ executable: String, _ arguments: [String]) -> (status: Int32, output: Data) {
@@ -173,7 +176,8 @@ func facts(of card: String, in snapshot: [String: Any]) -> [String: Any]? {
 
 func rect(_ value: Any?) -> CGRect? {
     guard let fields = value as? [String: Any],
-          let x = number(fields["x"]), let y = number(fields["y"]), let w = number(fields["w"]), let h = number(fields["h"])
+        let x = number(fields["x"]), let y = number(fields["y"]), let w = number(fields["w"]),
+        let h = number(fields["h"])
     else { return nil }
     return CGRect(x: x, y: y, width: w, height: h)
 }
@@ -181,7 +185,8 @@ func rect(_ value: Any?) -> CGRect? {
 guard let first = snapshot() else { fail("no app answers on \(socket) (is `make run` up?)") }
 guard let card = facts(of: options.card, in: first) else { fail("no card \(options.card) on the active board") }
 guard let cardRect = rect(card["screen_rect"]) else { fail("the card has no screen_rect: it is not laid out") }
-guard let origin = first["content_origin"] as? [String: Any], let originX = number(origin["x"]), let originY = number(origin["y"])
+guard let origin = first["content_origin"] as? [String: Any], let originX = number(origin["x"]),
+    let originY = number(origin["y"])
 else { fail("the snapshot has no content_origin: the window is not on a display") }
 guard let zoom = number((first["viewport"] as? [String: Any])?["zoom"]) else { fail("the snapshot has no zoom") }
 
@@ -197,14 +202,18 @@ let inBody = options.at ?? CGPoint(x: body.width / 2, y: body.height / 2)
 let aim = CGPoint(x: originX + body.minX + inBody.x, y: originY + body.minY + inBody.y)
 
 let absoluteSocket = URL(fileURLWithPath: socket).standardizedFileURL.path
-guard let owner = String(decoding: run("/usr/sbin/lsof", ["-t", absoluteSocket]).output, as: UTF8.self)
-    .split(separator: "\n").first.flatMap({ Int32($0) })
+guard
+    let owner = String(decoding: run("/usr/sbin/lsof", ["-t", absoluteSocket]).output, as: UTF8.self)
+        .split(separator: "\n").first.flatMap({ Int32($0) })
 else { fail("no process owns \(absoluteSocket)") }
 
 /// A press an earlier call left held: the file holds how far below the
 /// thumb's top it landed.
-let heldFile = URL(fileURLWithPath: absoluteSocket).deletingLastPathComponent().appendingPathComponent("wheel-gesture-held")
-var heldGrab = (try? String(contentsOf: heldFile, encoding: .utf8)).flatMap { Double($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+let heldFile = URL(fileURLWithPath: absoluteSocket).deletingLastPathComponent().appendingPathComponent(
+    "wheel-gesture-held")
+var heldGrab = (try? String(contentsOf: heldFile, encoding: .utf8)).flatMap {
+    Double($0.trimmingCharacters(in: .whitespacesAndNewlines))
+}
 // A call that was cut short can leave the file with no button down.
 if heldGrab != nil, !CGEventSource.buttonState(.combinedSessionState, button: .left) {
     try? FileManager.default.removeItem(at: heldFile)
@@ -219,16 +228,20 @@ if options.release, !options.press, !held { fail("--release needs --press, or a 
 guard let cursor = CGEvent(source: nil)?.location else { fail("could not read the cursor") }
 let start = held ? cursor : aim
 
-let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+let windows =
+    CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+    ?? []
 let top = windows.first { window in
     guard (window[kCGWindowLayer as String] as? Int) == 0,
-          let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
-          let wx = bounds["X"], let wy = bounds["Y"], let ww = bounds["Width"], let wh = bounds["Height"]
+        let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
+        let wx = bounds["X"], let wy = bounds["Y"], let ww = bounds["Width"], let wh = bounds["Height"]
     else { return false }
     return CGRect(x: wx, y: wy, width: ww, height: wh).contains(start)
 }
 guard (top?[kCGWindowOwnerPID as String] as? Int32) == owner else {
-    fail("the dev app's window is not the top one at \(Int(start.x)),\(Int(start.y)): bring it forward, or the card into it")
+    fail(
+        "the dev app's window is not the top one at \(Int(start.x)),\(Int(start.y)): bring it forward, or the card into it"
+    )
 }
 
 // MARK: - Posting
@@ -258,9 +271,12 @@ var pointer = start
 var posted: [[String: Any]] = []
 
 func wheel(dx: Int32, dy: Int32, phase: Int64?, named name: String) {
-    guard let event = CGEvent(
-        scrollWheelEvent2Source: nil, units: options.lines ? .line : .pixel, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0
-    ) else { return }
+    guard
+        let event = CGEvent(
+            scrollWheelEvent2Source: nil, units: options.lines ? .line : .pixel, wheelCount: 2, wheel1: dy, wheel2: dx,
+            wheel3: 0
+        )
+    else { return }
     if let phase {
         event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
         event.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
@@ -309,7 +325,9 @@ if !held {
                 move(to: cursor)
                 fail("the card has no scroll thumb laid out")
             }
-            pointer = from.map { CGPoint(x: thumb.minX + $0.x, y: thumb.minY + $0.y) } ?? CGPoint(x: thumb.midX, y: thumb.midY)
+            pointer =
+                from.map { CGPoint(x: thumb.minX + $0.x, y: thumb.minY + $0.y) }
+                ?? CGPoint(x: thumb.midX, y: thumb.midY)
         case .body(let from):
             pointer = CGPoint(x: originX + body.minX + from.x, y: originY + body.minY + from.y)
         }

@@ -32,7 +32,8 @@ extension AppController {
         } catch {
             fatalError("tarmac: could not create a terminal view: \(error)")
         }
-        view.onInput = { [weak self] bytes, source in self?.terminalDidSend(termID: termID, Data(bytes), source: source) }
+        view.onInput = { [weak self] bytes, source in self?.terminalDidSend(termID: termID, Data(bytes), source: source)
+        }
         view.onResize = { [weak self] _, _ in self?.terminalSizeChanged(termID: termID) }
         view.onTitleChanged = { [weak self] title in self?.handleTermTitle(termID: termID, title: title) }
         view.onScrollChanged = { [weak self] scrollbar in self?.terminalScrolled(termID: termID, scrollbar) }
@@ -57,9 +58,10 @@ extension AppController {
     /// whichever board holds it.
     private func terminalScrolled(termID: String, _ scrollbar: TerminalScrollbar) {
         guard let (_, board) = anySession(termID) else { return }
-        board.view.card(.term(termID))?.scrollChanged(ScrollMetrics(
-            offset: Double(scrollbar.offset), visible: Double(scrollbar.visible), total: Double(scrollbar.total)
-        ))
+        board.view.card(.term(termID))?.scrollChanged(
+            ScrollMetrics(
+                offset: Double(scrollbar.offset), visible: Double(scrollbar.visible), total: Double(scrollbar.total)
+            ))
     }
 
     // MARK: - Routing
@@ -221,7 +223,8 @@ extension AppController {
 
     func deadOffer(_ s: TerminalSession, on board: Board) -> DeadCardOffer.Offer? {
         DeadCardOffer.make(
-            record: board.termRecords[s.termID], endedHere: s.endedAt != nil, lastCwd: s.lastCwd, home: NSHomeDirectory()
+            record: board.termRecords[s.termID], endedHere: s.endedAt != nil, lastCwd: s.lastCwd,
+            home: NSHomeDirectory()
         )
     }
 
@@ -233,12 +236,14 @@ extension AppController {
     func reopenDead(_ termID: String) {
         let board = activeBoard
         guard let s = board.sessions[termID], let offer = s.deadOffer,
-              let card = board.view.card(.term(termID)), card.dead else { return }
+            let card = board.view.card(.term(termID)), card.dead
+        else { return }
         let frame = card.worldFrame
         let reopen = DeadCardOffer.reopen(offer, deadID: termID)
         removeTerminalCard(termID, on: board)
         board.termRecords[termID] = nil
-        let fresh = addTerminal(BootTerminal.mint(), frame: frame, spawn: reopen.spawn, resume: reopen.resume, on: board)
+        let fresh = addTerminal(
+            BootTerminal.mint(), frame: frame, spawn: reopen.spawn, resume: reopen.resume, on: board)
         setRecordedResume(fresh, reopen.resume, on: board)
         board.view.select(.term(fresh.termID))
         setPrime(fresh.termID)
@@ -384,13 +389,15 @@ extension AppController {
     func handleTermNew(_ request: TermNewPlan.Request) {
         let board = boards[request.boardID]
         let cards = board?.view.cards.values
-        let decision = TermNewPlan.plan(request, on: TermNewPlan.Board(
-            ready: board.map(canSpawn(on:)) ?? false,
-            ownerFrame: request.ownerTermID.flatMap { board?.view.card(.term($0))?.worldFrame.rect },
-            primeFrame: board?.primeTermCard?.worldFrame.rect,
-            existing: cards?.map(\.worldFrame.rect) ?? [],
-            zs: cards?.map(\.worldFrame.z) ?? []
-        ))
+        let decision = TermNewPlan.plan(
+            request,
+            on: TermNewPlan.Board(
+                ready: board.map(canSpawn(on:)) ?? false,
+                ownerFrame: request.ownerTermID.flatMap { board?.view.card(.term($0))?.worldFrame.rect },
+                primeFrame: board?.primeTermCard?.worldFrame.rect,
+                existing: cards?.map(\.worldFrame.rect) ?? [],
+                zs: cards?.map(\.worldFrame.z) ?? []
+            ))
         switch decision {
         case .refuse(let msg):
             client.send(.termNewErr(reqID: request.reqID, msg: msg))
@@ -554,7 +561,8 @@ extension AppController {
     func handleTermReport(_ frame: TermReportFrame) {
         let termID = frame.termID
         guard let (_, board) = anySession(termID),
-              let card = board.view.card(.term(termID)), !card.dead else { return }
+            let card = board.view.card(.term(termID)), !card.dead
+        else { return }
         card.setReport(frame.report)
         board.view.signalsChanged()
     }
@@ -575,7 +583,8 @@ extension AppController {
     func clearBell(termID: String) {
         touchInbox(termID: termID)
         guard let (s, board) = anySession(termID),
-              let card = board.view.card(.term(termID)), card.bellActive else { return }
+            let card = board.view.card(.term(termID)), card.bellActive
+        else { return }
         s.bellAt = nil
         card.setBell(false)
         board.view.signalsChanged()
@@ -590,7 +599,8 @@ extension AppController {
         let board = activeBoard
         return board.sessionOrder.compactMap { termID in
             guard let s = board.sessions[termID], let card = board.view.card(.term(termID)),
-                  let signal = card.signal(exitUnread: inbox.exitUnread(termID: termID)) else { return nil }
+                let signal = card.signal(exitUnread: inbox.exitUnread(termID: termID))
+            else { return nil }
             return OffscreenHintLayout.Hint(
                 cardID: termID,
                 centerView: board.view.worldToView(

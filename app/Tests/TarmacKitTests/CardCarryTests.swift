@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// A terminal's attached docs travel with it while it is moved or resized, and
@@ -26,7 +27,8 @@ final class CardCarryTests: XCTestCase {
 
     func testTheSatellitesFollowTheirOwnerByItsTravel() {
         XCTAssertEqual(
-            carry(["a": at(600, 100), "b": at(600, 450)]).origins(moving: "term", to: ownerFrame.offsetBy(dx: 30, dy: -40)),
+            carry(["a": at(600, 100), "b": at(600, 450)]).origins(
+                moving: "term", to: ownerFrame.offsetBy(dx: 30, dy: -40)),
             ["a": CGPoint(x: 630, y: 60), "b": CGPoint(x: 630, y: 410)]
         )
     }
@@ -60,22 +62,26 @@ final class CardCarryTests: XCTestCase {
     /// The bottom-right handle moves the right and bottom edges only.
     func testABottomRightGrowMovesTheDocsThatFaceTheRightAndBottomEdges() {
         let grown = CGRect(x: 100, y: 100, width: 720, height: 460)
-        XCTAssertEqual(carry(ring).origins(moving: "term", to: grown), [
-            "right": CGPoint(x: 906, y: 100), "below": CGPoint(x: 100, y: 600),
-            "left": CGPoint(x: -378, y: 100), "above": CGPoint(x: 100, y: -250),
-            "belowRight": CGPoint(x: 906, y: 600), "aboveLeft": CGPoint(x: -378, y: -250),
-        ])
+        XCTAssertEqual(
+            carry(ring).origins(moving: "term", to: grown),
+            [
+                "right": CGPoint(x: 906, y: 100), "below": CGPoint(x: 100, y: 600),
+                "left": CGPoint(x: -378, y: 100), "above": CGPoint(x: 100, y: -250),
+                "belowRight": CGPoint(x: 906, y: 600), "aboveLeft": CGPoint(x: -378, y: -250),
+            ])
     }
 
     /// The top-left handle moves the left and top edges only; a doc below the
     /// owner sits between its left and right edges and stays.
     func testATopLeftGrowMovesTheDocsThatFaceTheLeftAndTopEdges() {
         let grown = CGRect(x: 50, y: 60, width: 520, height: 370)
-        XCTAssertEqual(carry(ring).origins(moving: "term", to: grown), [
-            "right": CGPoint(x: 656, y: 100), "below": CGPoint(x: 100, y: 470),
-            "left": CGPoint(x: -428, y: 100), "above": CGPoint(x: 100, y: -290),
-            "belowRight": CGPoint(x: 656, y: 470), "aboveLeft": CGPoint(x: -428, y: -290),
-        ])
+        XCTAssertEqual(
+            carry(ring).origins(moving: "term", to: grown),
+            [
+                "right": CGPoint(x: 656, y: 100), "below": CGPoint(x: 100, y: 470),
+                "left": CGPoint(x: -428, y: 100), "above": CGPoint(x: 100, y: -290),
+                "belowRight": CGPoint(x: 656, y: 470), "aboveLeft": CGPoint(x: -428, y: -290),
+            ])
     }
 
     /// A shrink pulls the docs in: every gap to a moved edge is the gap at the press.

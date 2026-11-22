@@ -71,12 +71,12 @@ public struct DevReply: Equatable, Sendable {
     }
 }
 
-public extension DevRequest {
-    static func decode(payload: Data) throws -> DevRequest {
+extension DevRequest {
+    public static func decode(payload: Data) throws -> DevRequest {
         try decode(MsgPack.decode(payload))
     }
 
-    static func decode(_ value: MsgPackValue) throws -> DevRequest {
+    public static func decode(_ value: MsgPackValue) throws -> DevRequest {
         let fields = try MapReader(value)
         let t = try fields.req("t", \.stringValue)
         switch t {
@@ -103,7 +103,8 @@ public extension DevRequest {
         case "board":
             return .board(boardID: try fields.opt("board_id", \.stringValue))
         case "click":
-            return .click(card: try fields.opt("card", \.stringValue), control: try fields.req("control", \.stringValue))
+            return .click(
+                card: try fields.opt("card", \.stringValue), control: try fields.req("control", \.stringValue))
         case "press":
             return .press(
                 combo: try fields.req("combo", \.stringValue),
@@ -117,7 +118,7 @@ public extension DevRequest {
         }
     }
 
-    func encodedPayload() -> Data {
+    public func encodedPayload() -> Data {
         var fields = WireFields()
         func int(_ n: Int?) -> MsgPackValue? { n.map { .int(Int64($0)) } }
         switch self {
@@ -166,13 +167,13 @@ public extension DevRequest {
     }
 }
 
-public extension DevReply {
-    static func decode(payload: Data) throws -> DevReply {
+extension DevReply {
+    public static func decode(payload: Data) throws -> DevReply {
         let fields = try MapReader(MsgPack.decode(payload))
         return DevReply(ok: try fields.req("ok", \.boolValue), body: try fields.req("body", \.stringValue))
     }
 
-    func encodedPayload() -> Data {
+    public func encodedPayload() -> Data {
         MsgPack.encode(.orderedMap([MsgPackField("ok", .bool(ok)), MsgPackField("body", .string(body))]))
     }
 }

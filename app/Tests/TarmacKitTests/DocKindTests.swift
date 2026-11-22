@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Spec 2607.0004 S1: kind is derived from the path extension alone.

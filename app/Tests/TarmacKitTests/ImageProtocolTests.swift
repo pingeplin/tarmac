@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Ports every `#[test]` of `desktop/src-tauri/src/image_protocol.rs` and the
@@ -229,7 +230,9 @@ final class ImageProtocolTests: XCTestCase {
     }
 
     func testANameThatLeadsNowhereIs404NamingThePathAndWhy() {
-        struct Loop: LocalizedError { var errorDescription: String? { "Too many levels of symbolic links (os error 62)" } }
+        struct Loop: LocalizedError {
+            var errorDescription: String? { "Too many levels of symbolic links (os error 62)" }
+        }
         let disk = SchemeFixtures.Disk()
         let resp = ImageProtocol.respond(path: "/repo/loop.png", file: .failure(Loop()), read: disk.read)
 

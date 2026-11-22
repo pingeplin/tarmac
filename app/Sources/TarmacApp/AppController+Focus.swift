@@ -51,10 +51,10 @@ extension AppController {
         guard board.card(id) != nil else { return }
         board.select(id)
         board.raise(id)
-        if case let .term(termID) = id { clearBell(termID: termID) }
-        if case let .term(termID) = id, sessions[termID]?.live == true {
+        if case .term(let termID) = id { clearBell(termID: termID) }
+        if case .term(let termID) = id, sessions[termID]?.live == true {
             setPrime(termID)
-        } else if case let .term(termID) = id, let s = sessions[termID] {
+        } else if case .term(let termID) = id, let s = sessions[termID] {
             // A dead card is never prime, but it holds the keys, so that
             // Return reaches its reopen offer (2611.0011, D10).
             window?.makeFirstResponder(s.view)
@@ -139,9 +139,10 @@ extension AppController {
             let isTerminal: Bool
             if case .term = id { isTerminal = true } else { isTerminal = false }
             card.setPrime(isPrime)
-            card.setQuiet(CardDim.isQuiet(
-                terminal: isTerminal, prime: isPrime, dead: card.dead, boardHasPrime: primeID != nil
-            ))
+            card.setQuiet(
+                CardDim.isQuiet(
+                    terminal: isTerminal, prime: isPrime, dead: card.dead, boardHasPrime: primeID != nil
+                ))
         }
         // The resume panel's key hints show on the prime card only.
         for s in b.sessions.values where s.resumeOffer != nil {

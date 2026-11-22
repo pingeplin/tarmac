@@ -13,7 +13,8 @@ extension AppController {
         // dispatched, so the card is already on top when its content starts
         // tracking the mouse.
         clickFocusMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-            let point = event.locationInWindow, windowNumber = event.windowNumber
+            let point = event.locationInWindow
+            let windowNumber = event.windowNumber
             MainActor.assumeIsolated { self?.handlePress(at: point, windowNumber: windowNumber) }
             return event
         }

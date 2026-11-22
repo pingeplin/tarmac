@@ -24,7 +24,8 @@ public enum CardSchemeRouter {
 
     public static func route(url: String) -> Route {
         let uri = withoutFragment(url)
-        return ImageProtocol.owns(uri: uri) ? .image(ImageProtocol.resolve(uri: uri)) : .doc(CardProtocol.resolve(uri: uri))
+        return ImageProtocol.owns(uri: uri)
+            ? .image(ImageProtocol.resolve(uri: uri)) : .doc(CardProtocol.resolve(uri: uri))
     }
 
     /// Resolves `url`, reads through `read` only when a file is to be served, and

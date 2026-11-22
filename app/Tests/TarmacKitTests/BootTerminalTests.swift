@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// M3: the single home for terminal-id minting.

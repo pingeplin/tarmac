@@ -41,7 +41,9 @@ public struct RestoreCard: Equatable, Sendable {
         let resumable = spawned.filter { $0.resume != nil }.count
         var lines: [Line] = []
         if inFolders == 1 { lines.append(Line(glyph: "✓", text: "1 terminal back in its folder", ok: true)) }
-        if inFolders > 1 { lines.append(Line(glyph: "✓", text: "\(inFolders) terminals back in their folders", ok: true)) }
+        if inFolders > 1 {
+            lines.append(Line(glyph: "✓", text: "\(inFolders) terminals back in their folders", ok: true))
+        }
         if resumable > 0 {
             lines.append(Line(glyph: nil, text: "\(resumable) with an agent session to resume", ok: false))
         }

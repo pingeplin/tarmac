@@ -1,5 +1,6 @@
 import AppKit
 import XCTest
+
 @testable import TarmacTerm
 
 @MainActor
@@ -82,10 +83,11 @@ final class TerminalViewTests: XCTestCase {
     /// AppKit can hand a view a dirty rect larger than its bounds; a card's
     /// header sits right above the terminal and must not be painted over.
     func testDrawingStaysInsideTheViewsBounds() throws {
-        let rep = try XCTUnwrap(NSBitmapImageRep(
-            bitmapDataPlanes: nil, pixelsWide: 700, pixelsHigh: 500, bitsPerSample: 8, samplesPerPixel: 4,
-            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
-        ))
+        let rep = try XCTUnwrap(
+            NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: 700, pixelsHigh: 500, bitsPerSample: 8, samplesPerPixel: 4,
+                hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+            ))
         let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: rep))
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = context
@@ -105,10 +107,11 @@ final class TerminalViewTests: XCTestCase {
     /// Layer display can hand over a strip just outside the bounds; the
     /// intersection is then the null rect, whose origin is infinite.
     func testADirtyRectThatMissesTheBoundsDrawsNothing() throws {
-        let rep = try XCTUnwrap(NSBitmapImageRep(
-            bitmapDataPlanes: nil, pixelsWide: 700, pixelsHigh: 500, bitsPerSample: 8, samplesPerPixel: 4,
-            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
-        ))
+        let rep = try XCTUnwrap(
+            NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: 700, pixelsHigh: 500, bitsPerSample: 8, samplesPerPixel: 4,
+                hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+            ))
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: rep))
         NSColor.magenta.setFill()
@@ -153,7 +156,8 @@ final class TerminalViewTests: XCTestCase {
     }
 
     func testResetKeepsTheGrid() throws {
-        let cols = view.cols, rows = view.rows
+        let cols = view.cols
+        let rows = view.rows
         view.reset()
         XCTAssertEqual(view.cols, cols)
         XCTAssertEqual(view.rows, rows)
@@ -251,10 +255,12 @@ final class TerminalViewTests: XCTestCase {
         _ type: NSEvent.EventType, col: Int, row: Int, flags: NSEvent.ModifierFlags = [], clicks: Int = 1
     ) throws -> NSEvent {
         let cell = try XCTUnwrap(view.gridLayout).rect(col: col, row: row)
-        return try XCTUnwrap(NSEvent.mouseEvent(
-            with: type, location: view.convert(CGPoint(x: cell.midX, y: cell.midY), to: nil), modifierFlags: flags,
-            timestamp: 1, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1
-        ))
+        return try XCTUnwrap(
+            NSEvent.mouseEvent(
+                with: type, location: view.convert(CGPoint(x: cell.midX, y: cell.midY), to: nil), modifierFlags: flags,
+                timestamp: 1, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks,
+                pressure: 1
+            ))
     }
 
     private func click(col: Int, row: Int, flags: NSEvent.ModifierFlags = []) throws {
@@ -491,9 +497,10 @@ final class TerminalViewTests: XCTestCase {
     // MARK: wheel
 
     private func wheel(lines: Int32) throws -> NSEvent {
-        let event = try XCTUnwrap(CGEvent(
-            scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: lines, wheel2: 0, wheel3: 0
-        ))
+        let event = try XCTUnwrap(
+            CGEvent(
+                scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: lines, wheel2: 0, wheel3: 0
+            ))
         return try XCTUnwrap(NSEvent(cgEvent: event))
     }
 
@@ -726,7 +733,9 @@ final class TerminalViewTests: XCTestCase {
     // MARK: IME
 
     func testCompositionHoldsKeysBackUntilItCommits() {
-        view.setMarkedText("ni", selectedRange: NSRange(location: 2, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        view.setMarkedText(
+            "ni", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
         XCTAssertTrue(view.hasMarkedText())
         XCTAssertEqual(sent, [])
 
@@ -748,13 +757,16 @@ final class TerminalViewTests: XCTestCase {
     func testTheCandidateWindowFollowsTheInputMethodsCaret() throws {
         let cell = try XCTUnwrap(view.gridLayout).cell
         let nowhere = NSRange(location: NSNotFound, length: 0)
-        let whole = NSRange(location: 0, length: 4), last = NSRange(location: 3, length: 1)
+        let whole = NSRange(location: 0, length: 4)
+        let last = NSRange(location: 3, length: 1)
         view.setMarkedText("abcd", selectedRange: NSRange(location: 0, length: 0), replacementRange: nowhere)
         let start = view.firstRect(forCharacterRange: whole, actualRange: nil)
         view.setMarkedText("abcd", selectedRange: NSRange(location: 2, length: 0), replacementRange: nowhere)
         // The composing text is set at the font's own advance, a little off the grid's.
-        XCTAssertEqual(view.firstRect(forCharacterRange: whole, actualRange: nil).minX - start.minX, 2 * cell.width, accuracy: 1)
-        XCTAssertEqual(view.firstRect(forCharacterRange: last, actualRange: nil).minX - start.minX, 2 * cell.width, accuracy: 1)
+        XCTAssertEqual(
+            view.firstRect(forCharacterRange: whole, actualRange: nil).minX - start.minX, 2 * cell.width, accuracy: 1)
+        XCTAssertEqual(
+            view.firstRect(forCharacterRange: last, actualRange: nil).minX - start.minX, 2 * cell.width, accuracy: 1)
     }
 
     func testTheCandidateWindowOpensUnderTheClauseBeingConverted() throws {
@@ -764,13 +776,19 @@ final class TerminalViewTests: XCTestCase {
         view.setMarkedText("abcd", selectedRange: NSRange(location: 0, length: 0), replacementRange: nowhere)
         let start = view.firstRect(forCharacterRange: whole, actualRange: nil)
         view.setMarkedText("abcd", selectedRange: NSRange(location: 1, length: 2), replacementRange: nowhere)
-        XCTAssertEqual(view.firstRect(forCharacterRange: whole, actualRange: nil).minX - start.minX, cell.width, accuracy: 1)
+        XCTAssertEqual(
+            view.firstRect(forCharacterRange: whole, actualRange: nil).minX - start.minX, cell.width, accuracy: 1)
     }
 
     func testChordSeenDuringCompositionSaysSo() {
         var seen: [Bool] = []
-        view.keyOverride = { seen.append($0.isComposing); return nil }
-        view.setMarkedText("n", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        view.keyOverride = {
+            seen.append($0.isComposing)
+            return nil
+        }
+        view.setMarkedText(
+            "n", selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
         view.keyDown(with: key("\u{7f}", code: 0x33))
         XCTAssertEqual(seen, [true])
     }
@@ -782,7 +800,9 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertFalse(sent.isEmpty, "a kitty program that asked for releases gets them")
 
         calls = []
-        view.setMarkedText("n", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        view.setMarkedText(
+            "n", selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
         view.keyUp(with: release)
         XCTAssertEqual(sent, [])
     }
@@ -903,10 +923,11 @@ final class TerminalViewTests: XCTestCase {
 
         XCTAssertEqual(view.fontGeneration, before + 1)
         XCTAssertEqual(view.gridLayout?.cell, cell("Monaco"))
-        let layout = try XCTUnwrap(TerminalGridLayout(
-            bounds: view.bounds.size, cell: cell("Monaco"), padding: view.padding,
-            pixelsPerPoint: window.backingScaleFactor
-        ))
+        let layout = try XCTUnwrap(
+            TerminalGridLayout(
+                bounds: view.bounds.size, cell: cell("Monaco"), padding: view.padding,
+                pixelsPerPoint: window.backingScaleFactor
+            ))
         XCTAssertEqual(resizes, [[layout.cols, layout.rows]])
         XCTAssertEqual([view.engine.cols, view.engine.rows], [layout.cols, layout.rows])
     }
@@ -956,10 +977,11 @@ final class TerminalViewTests: XCTestCase {
 
         XCTAssertEqual(view.fontGeneration, before + 1)
         XCTAssertEqual(view.gridLayout?.cell, cell(nil, size: 20))
-        let layout = try XCTUnwrap(TerminalGridLayout(
-            bounds: view.bounds.size, cell: cell(nil, size: 20), padding: view.padding,
-            pixelsPerPoint: window.backingScaleFactor
-        ))
+        let layout = try XCTUnwrap(
+            TerminalGridLayout(
+                bounds: view.bounds.size, cell: cell(nil, size: 20), padding: view.padding,
+                pixelsPerPoint: window.backingScaleFactor
+            ))
         XCTAssertEqual(resizes, [[layout.cols, layout.rows]])
         XCTAssertEqual([view.engine.cols, view.engine.rows], [layout.cols, layout.rows])
     }
@@ -1169,7 +1191,8 @@ final class TerminalViewTests: XCTestCase {
     }
 
     private let colourQueries = "\u{1b}]11;?\u{1b}\\\u{1b}]10;?\u{1b}\\\u{1b}]4;2;?\u{1b}\\\u{1b}[?996n"
-    private let lightAnswers = "\u{1b}]11;rgb:fcfc/fcfc/fcfc\u{1b}\\\u{1b}]10;rgb:2323/2626/2929\u{1b}\\"
+    private let lightAnswers =
+        "\u{1b}]11;rgb:fcfc/fcfc/fcfc\u{1b}\\\u{1b}]10;rgb:2323/2626/2929\u{1b}\\"
         + "\u{1b}]4;2;rgb:0b0b/8a8a/0f0f\u{1b}\\\u{1b}[?997;2n"
 
     /// S23
@@ -1282,7 +1305,8 @@ final class TerminalViewTests: XCTestCase {
     /// S44 — a 256-colour index above 15 and an RGB colour are not the
     /// theme's to change.
     func test2610_0007S44ANewThemeLeavesIndexedAndRgbTextAsItWas() throws {
-        let indexed = RGB(255, 0, 0), direct = RGB(10, 20, 30)
+        let indexed = RGB(255, 0, 0)
+        let direct = RGB(10, 20, 30)
         feed("\u{1b}[38;5;196mMMMM\u{1b}[0m\r\n\u{1b}[38;2;10;20;30mMMMM\u{1b}[0m")
         read()
         let before = try drawn(view)
@@ -1525,10 +1549,12 @@ final class TerminalViewTests: XCTestCase {
         view.rightMouseDragged(with: try mouse(.rightMouseDragged, col: 4, row: 0))
         view.rightMouseUp(with: try mouse(.rightMouseUp, col: 4, row: 0))
 
-        XCTAssertEqual(calls, [
-            Sent(text: "\u{1b}[<2;3;1M", source: .user), Sent(text: "\u{1b}[<34;5;1M", source: .user),
-            Sent(text: "\u{1b}[<2;5;1m", source: .user),
-        ])
+        XCTAssertEqual(
+            calls,
+            [
+                Sent(text: "\u{1b}[<2;3;1M", source: .user), Sent(text: "\u{1b}[<34;5;1M", source: .user),
+                Sent(text: "\u{1b}[<2;5;1m", source: .user),
+            ])
     }
 
     func test2611_0008S5MiddleButtonReportsAreTheUsers() throws {
@@ -1537,9 +1563,11 @@ final class TerminalViewTests: XCTestCase {
         view.otherMouseDown(with: try mouse(.otherMouseDown, col: 2, row: 0))
         view.otherMouseUp(with: try mouse(.otherMouseUp, col: 2, row: 0))
 
-        XCTAssertEqual(calls, [
-            Sent(text: "\u{1b}[<1;3;1M", source: .user), Sent(text: "\u{1b}[<1;3;1m", source: .user),
-        ])
+        XCTAssertEqual(
+            calls,
+            [
+                Sent(text: "\u{1b}[<1;3;1M", source: .user), Sent(text: "\u{1b}[<1;3;1m", source: .user),
+            ])
     }
 
     func test2611_0008S6AWheelInTheAlternateScreenIsTheUsers() throws {
@@ -1573,9 +1601,11 @@ final class TerminalViewTests: XCTestCase {
         view.theme = light
         view.theme = dark
 
-        XCTAssertEqual(calls, [
-            Sent(text: "\u{1b}[?997;2n", source: .terminal), Sent(text: "\u{1b}[?997;1n", source: .terminal),
-        ])
+        XCTAssertEqual(
+            calls,
+            [
+                Sent(text: "\u{1b}[?997;2n", source: .terminal), Sent(text: "\u{1b}[?997;1n", source: .terminal),
+            ])
     }
 
     func test2611_0008S13EachSendKeepsItsOwnSource() {
@@ -1585,10 +1615,12 @@ final class TerminalViewTests: XCTestCase {
         view.keyDown(with: key("a", code: 0x00))
         window.makeFirstResponder(view)
 
-        XCTAssertEqual(calls, [
-            Sent(text: "\u{1b}[O", source: .terminal), Sent(text: "a", source: .user),
-            Sent(text: "\u{1b}[I", source: .terminal),
-        ])
+        XCTAssertEqual(
+            calls,
+            [
+                Sent(text: "\u{1b}[O", source: .terminal), Sent(text: "a", source: .user),
+                Sent(text: "\u{1b}[I", source: .terminal),
+            ])
     }
 }
 

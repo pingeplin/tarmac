@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Spec 2609.0014: which markdown doc-card `<img src>` values name a local file,
@@ -108,7 +109,9 @@ final class DocImageTests: XCTestCase {
     // MARK: - src (S4, S10–S11): the address a doc-card image is loaded from
 
     func testS4ANonLocalSrcIsLeftAsWritten() {
-        for src in ["https://h/x.png", "data:image/png;base64,AAAA", "//h/x.png", "file://example.com/x.png", "", "#top"] {
+        for src in [
+            "https://h/x.png", "data:image/png;base64,AAAA", "//h/x.png", "file://example.com/x.png", "", "#top",
+        ] {
             XCTAssertEqual(DocImage.src(src, docPath: "/r/README.md", mtimeMs: 1234), src, src)
         }
     }

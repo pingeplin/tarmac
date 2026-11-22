@@ -44,7 +44,10 @@ public struct DevBoardWait: Equatable, Sendable {
         }
         return DevError(
             .timeout, "\(what) within \(timeoutMs)ms",
-            extra: ["board_id": .string(activeBoardID), "timeout_ms": .number(Double(timeoutMs)), "switching": .bool(switching)]
+            extra: [
+                "board_id": .string(activeBoardID), "timeout_ms": .number(Double(timeoutMs)),
+                "switching": .bool(switching),
+            ]
         )
     }
 }

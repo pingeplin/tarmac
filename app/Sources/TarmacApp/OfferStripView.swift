@@ -118,7 +118,8 @@ final class OfferStripView: NSView, FontFollowing, ThemeFollowing {
         let font = label.font ?? Theme.mono(9)
         let text = NSMutableAttributedString(string: text, attributes: [.font: font, .foregroundColor: Theme.text])
         if let title = panel?.title {
-            text.addAttribute(.foregroundColor, value: Theme.faint, range: NSRange(location: 0, length: (title as NSString).length))
+            text.addAttribute(
+                .foregroundColor, value: Theme.faint, range: NSRange(location: 0, length: (title as NSString).length))
         }
         label.attributedStringValue = text
     }
@@ -141,7 +142,8 @@ final class OfferStripView: NSView, FontFollowing, ThemeFollowing {
         let now = Measured(bodySize: body.size, scale: scale, text: text, buttons: buttons.map(\.model))
         if now != measured {
             measured = now
-            let padX = scale.length(ChipMetrics.padX), padY = scale.length(ChipMetrics.padY)
+            let padX = scale.length(ChipMetrics.padX)
+            let padY = scale.length(ChipMetrics.padY)
             let textWidth = max(0, width - 2 * padX)
             let textHeight = ceil(label.sizeThatFits(NSSize(width: textWidth, height: .greatestFiniteMagnitude)).height)
             label.frame = NSRect(x: padX, y: padY, width: textWidth, height: textHeight)
@@ -150,7 +152,8 @@ final class OfferStripView: NSView, FontFollowing, ThemeFollowing {
             let rowY = padY + textHeight + (buttons.isEmpty ? 0 : padY)
             for button in buttons {
                 let size = button.view.intrinsicContentSize
-                button.view.frame = NSRect(x: scale.aligned(x), y: scale.aligned(rowY), width: size.width, height: size.height)
+                button.view.frame = NSRect(
+                    x: scale.aligned(x), y: scale.aligned(rowY), width: size.width, height: size.height)
                 x += size.width + scale.length(Self.buttonGap)
                 rowHeight = max(rowHeight, size.height)
             }

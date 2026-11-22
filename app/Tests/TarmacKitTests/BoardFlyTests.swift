@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// A fly is a 300 ms ease-in-out of zoom and center together.

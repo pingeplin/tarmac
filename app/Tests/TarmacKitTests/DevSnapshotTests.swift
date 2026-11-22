@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// The QA driver's snapshot (spec 2609.0015, #166; guard facts and `borrowed`
@@ -29,7 +30,8 @@ final class DevSnapshotTests: XCTestCase {
         return t
     }
 
-    private func term(_ terminal: Terminal? = nil, screenRect: CGRect? = nil, scroll: DevSnapshot.Scroll? = nil) -> Card {
+    private func term(_ terminal: Terminal? = nil, screenRect: CGRect? = nil, scroll: DevSnapshot.Scroll? = nil) -> Card
+    {
         Card(
             id: "t-1", content: .term(terminal ?? self.terminal()),
             frame: CGRect(x: 10, y: 20, width: 400, height: 300), screenRect: screenRect, scroll: scroll
@@ -37,7 +39,9 @@ final class DevSnapshotTests: XCTestCase {
     }
 
     private func doc(_ id: String = "/Users/e/a.b.md", scroll: DevSnapshot.Scroll? = nil) -> Card {
-        Card(id: id, content: .doc, frame: CGRect(x: 500, y: 20, width: 300, height: 200), screenRect: nil, scroll: scroll)
+        Card(
+            id: id, content: .doc, frame: CGRect(x: 500, y: 20, width: 300, height: 200), screenRect: nil,
+            scroll: scroll)
     }
 
     private func scroll(laidOut: Bool = true, alpha: CGFloat = 1, thumb: CGRect? = nil) throws -> DevSnapshot.Scroll {
@@ -74,10 +78,11 @@ final class DevSnapshotTests: XCTestCase {
             borrowedCard: borrowedCard,
             keyboardFocus: keyboardFocus,
             quitGuard: quitGuard,
-            fonts: fonts ?? DevSnapshot.Fonts(
-                saved: [:], terminalFace: "SystemMono-Regular", terminalSize: 16,
-                interfaceFace: "SystemMono-Regular", documentCSS: "system-ui", documentSize: 14
-            ),
+            fonts: fonts
+                ?? DevSnapshot.Fonts(
+                    saved: [:], terminalFace: "SystemMono-Regular", terminalSize: 16,
+                    interfaceFace: "SystemMono-Regular", documentCSS: "system-ui", documentSize: 14
+                ),
             theme: theme ?? DevSnapshot.Theme(choice: .standard, inEffect: .dark, name: "breeze-dark"),
             restoreCard: restoreCard,
             inbox: inbox,
@@ -86,7 +91,8 @@ final class DevSnapshotTests: XCTestCase {
         )
     }
 
-    private func fields(_ value: JSONValue?, file: StaticString = #filePath, line: UInt = #line) -> [String: JSONValue] {
+    private func fields(_ value: JSONValue?, file: StaticString = #filePath, line: UInt = #line) -> [String: JSONValue]
+    {
         guard case .object(let fields)? = value else {
             XCTFail("not an object: \(String(describing: value))", file: file, line: line)
             return [:]
@@ -94,7 +100,9 @@ final class DevSnapshotTests: XCTestCase {
         return fields
     }
 
-    private func cards(_ snapshot: JSONValue, file: StaticString = #filePath, line: UInt = #line) -> [[String: JSONValue]] {
+    private func cards(_ snapshot: JSONValue, file: StaticString = #filePath, line: UInt = #line) -> [[String:
+        JSONValue]]
+    {
         guard case .array(let cards)? = fields(snapshot)["cards"] else {
             XCTFail("no cards array", file: file, line: line)
             return []
@@ -165,7 +173,8 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(card(snapshot, "/Users/e/a.b.md")["kind"], "doc")
         XCTAssertEqual(card(snapshot, "/Users/e/a.b.md")["board_rect"], ["x": 500, "y": 20, "w": 300, "h": 200])
         XCTAssertEqual(
-            card(snapshot, "t-1").keys.sorted(), ["board_rect", "focused", "id", "kind", "screen_rect", "scroll", "term"]
+            card(snapshot, "t-1").keys.sorted(),
+            ["board_rect", "focused", "id", "kind", "screen_rect", "scroll", "term"]
         )
         XCTAssertEqual(
             card(snapshot, "/Users/e/a.b.md").keys.sorted(),
@@ -202,7 +211,8 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(thumb(try scroll(thumb: rect)), ["x": 379, "y": 33, "w": 10, "h": 24])
         XCTAssertEqual(thumb(try scroll(thumb: nil)), .null)
         XCTAssertEqual(thumb(try scroll(laidOut: false, thumb: rect)), .null)
-        XCTAssertEqual(thumb(try scroll(alpha: 0, thumb: rect)), ["x": 379, "y": 33, "w": 10, "h": 24], "a faded thumb")
+        XCTAssertEqual(
+            thumb(try scroll(alpha: 0, thumb: rect)), ["x": 379, "y": 33, "w": 10, "h": 24], "a faded thumb")
     }
 
     func test2610_0004S14ShownDoesNotLookAtTheThumbsRect() throws {
@@ -242,10 +252,13 @@ final class DevSnapshotTests: XCTestCase {
 
     func testATerminalsFactsAreReportedAsMeasured() {
         let facts = fields(card(DevSnapshot.build(input(cards: [term(terminal(tail: "$ ls\na b"))])), "t-1")["term"])
-        XCTAssertEqual(facts, [
-            "alive": true, "cols": 80, "rows": 24, "proc": "zsh", "selection": .null, "scrollback_tail": "$ ls\na b",
-            "cursor_row": 57,
-        ])
+        XCTAssertEqual(
+            facts,
+            [
+                "alive": true, "cols": 80, "rows": 24, "proc": "zsh", "selection": .null,
+                "scrollback_tail": "$ ls\na b",
+                "cursor_row": 57,
+            ])
     }
 
     /// #380: the cursor's row counted from the top of the scrollback, which
@@ -270,10 +283,12 @@ final class DevSnapshotTests: XCTestCase {
         let armed = try terminal(offerAfter: [.output(byteCount: 5)])
         XCTAssertEqual(fields(facts(armed)["resume"])["armed"], true)
         let waiting = try terminal(offerAfter: [])
-        XCTAssertEqual(facts(waiting)["resume"], [
-            "cmd": "echo HI", "armed": false, "queued": false, "title": "resume last agent session?",
-            "buttons": ["resume", "skip"],
-        ])
+        XCTAssertEqual(
+            facts(waiting)["resume"],
+            [
+                "cmd": "echo HI", "armed": false, "queued": false, "title": "resume last agent session?",
+                "buttons": ["resume", "skip"],
+            ])
         XCTAssertNil(facts(armed)["reopen"])
     }
 
@@ -294,15 +309,19 @@ final class DevSnapshotTests: XCTestCase {
 
     func testS22AQueuedAndAnArmedOfferAreReportedWithTheirPanel() throws {
         let queued = try terminal(offerAfter: [.request])
-        XCTAssertEqual(facts(queued)["resume"], [
-            "cmd": "echo HI", "armed": false, "queued": true, "title": "resumes when the shell is ready",
-            "buttons": ["skip"],
-        ])
+        XCTAssertEqual(
+            facts(queued)["resume"],
+            [
+                "cmd": "echo HI", "armed": false, "queued": true, "title": "resumes when the shell is ready",
+                "buttons": ["skip"],
+            ])
         let armed = try terminal(offerAfter: [.output(byteCount: 5)])
-        XCTAssertEqual(facts(armed)["resume"], [
-            "cmd": "echo HI", "armed": true, "queued": false, "title": "resume last agent session?",
-            "buttons": ["⏎ resume", "esc skip"],
-        ])
+        XCTAssertEqual(
+            facts(armed)["resume"],
+            [
+                "cmd": "echo HI", "armed": true, "queued": false, "title": "resume last agent session?",
+                "buttons": ["⏎ resume", "esc skip"],
+            ])
     }
 
     func testS22AHeaderChipIsReportedAsItsCommandAndNoChipHasNoKey() {
@@ -314,19 +333,29 @@ final class DevSnapshotTests: XCTestCase {
 
     func testS22TheRestoreCardReportsItsChoicesOrNone() throws {
         func card(resume: String?) throws -> RestoreCard {
-            try XCTUnwrap(RestoreCard.make(plan: BoardRestore.Plan(
-                terms: [BoardRestore.Term(termID: "a", frame: .zero, z: 0, spawn: SpawnRequest(cwd: "/a", succeeds: "A"), resume: resume)],
-                docs: [], droppedDocPaths: []
-            )))
+            try XCTUnwrap(
+                RestoreCard.make(
+                    plan: BoardRestore.Plan(
+                        terms: [
+                            BoardRestore.Term(
+                                termID: "a", frame: .zero, z: 0, spawn: SpawnRequest(cwd: "/a", succeeds: "A"),
+                                resume: resume)
+                        ],
+                        docs: [], droppedDocPaths: []
+                    )))
         }
-        let choices = fields(fields(DevSnapshot.build(input(restoreCard: try card(resume: "echo HI"))))["restore_card"])["choices"]
+        let choices = fields(
+            fields(DevSnapshot.build(input(restoreCard: try card(resume: "echo HI"))))["restore_card"])["choices"]
         XCTAssertEqual(choices, ["⏎ resume all", "decide per card", "esc skip all"])
-        let none = fields(fields(DevSnapshot.build(input(restoreCard: try card(resume: nil))))["restore_card"])["choices"]
+        let none = fields(fields(DevSnapshot.build(input(restoreCard: try card(resume: nil))))["restore_card"])[
+            "choices"]
         XCTAssertEqual(none, .array([]))
     }
 
     func testS22TheToastsOnScreenAreListedOldestFirst() {
-        XCTAssertEqual(fields(DevSnapshot.build(input(toasts: [ResumeHeaderChip.copiedToast])))["toasts"], ["resume command copied"])
+        XCTAssertEqual(
+            fields(DevSnapshot.build(input(toasts: [ResumeHeaderChip.copiedToast])))["toasts"],
+            ["resume command copied"])
         XCTAssertEqual(fields(DevSnapshot.build(input(toasts: ["a", "b"])))["toasts"], ["a", "b"])
         XCTAssertEqual(fields(DevSnapshot.build(input()))["toasts"], .array([]))
     }
@@ -347,7 +376,8 @@ final class DevSnapshotTests: XCTestCase {
         let card = card(DevSnapshot.build(source), "t-1")
         XCTAssertEqual(card["screen_rect"], ["x": 999, "y": 888, "w": 77, "h": 66])
         XCTAssertEqual(card["board_rect"], ["x": 10, "y": 20, "w": 400, "h": 300])
-        XCTAssertNotEqual(DevSnapshot.screenRect(of: source.cards[0].frame, viewport: source.viewport, viewRect: view), measured)
+        XCTAssertNotEqual(
+            DevSnapshot.screenRect(of: source.cards[0].frame, viewport: source.viewport, viewRect: view), measured)
     }
 
     /// A view that measured zero is an observation and must survive as one.
@@ -434,8 +464,10 @@ final class DevSnapshotTests: XCTestCase {
         let center = CGPoint(x: 500, y: 350)
         let viewportCenter = CGPoint(x: view.midX, y: view.midY)
         for zoom: CGFloat in [0.5, 1, 2.37] {
-            let got = DevSnapshot.screenRect(of: rect, viewport: DevSnapshot.Viewport(zoom: zoom, center: center), viewRect: view)
-            let topLeft = BoardTransform.worldToView(rect.origin, zoom: zoom, center: center, viewportCenter: viewportCenter)
+            let got = DevSnapshot.screenRect(
+                of: rect, viewport: DevSnapshot.Viewport(zoom: zoom, center: center), viewRect: view)
+            let topLeft = BoardTransform.worldToView(
+                rect.origin, zoom: zoom, center: center, viewportCenter: viewportCenter)
             let bottomRight = BoardTransform.worldToView(
                 CGPoint(x: rect.maxX, y: rect.maxY), zoom: zoom, center: center, viewportCenter: viewportCenter
             )
@@ -483,18 +515,21 @@ final class DevSnapshotTests: XCTestCase {
         lastPress: Guard.Press? = Guard.Press(pressMs: 5, route: .guard, ageMs: 3)
     ) -> Guard {
         Guard(
-            retargeted: true, enabled: true, phase: phase, noticeVisible: visible, noticeAlpha: alpha, lastPress: lastPress
+            retargeted: true, enabled: true, phase: phase, noticeVisible: visible, noticeAlpha: alpha,
+            lastPress: lastPress
         )
     }
 
     func testS35TheGuardsFactsRideAlong() {
-        XCTAssertEqual(fields(DevSnapshot.build(input(quitGuard: quitGuard())))["quit_guard"], [
-            "retargeted": true,
-            "enabled": true,
-            "phase": "showing",
-            "notice": ["visible": true, "alpha": 0.5],
-            "last_press": ["press_ms": 5, "route": "guard", "age_ms": 3],
-        ])
+        XCTAssertEqual(
+            fields(DevSnapshot.build(input(quitGuard: quitGuard())))["quit_guard"],
+            [
+                "retargeted": true,
+                "enabled": true,
+                "phase": "showing",
+                "notice": ["visible": true, "alpha": 0.5],
+                "last_press": ["press_ms": 5, "route": "guard", "age_ms": 3],
+            ])
     }
 
     func testTheGuardsOtherStatesAreSpelledAsTheSuiteReadsThem() {
@@ -502,13 +537,15 @@ final class DevSnapshotTests: XCTestCase {
             retargeted: false, enabled: false, phase: .confirming, noticeVisible: true, noticeAlpha: 1,
             lastPress: Guard.Press(pressMs: 123_456, route: .terminate, ageMs: -2)
         )
-        XCTAssertEqual(fields(DevSnapshot.build(input(quitGuard: source)))["quit_guard"], [
-            "retargeted": false,
-            "enabled": false,
-            "phase": "confirming",
-            "notice": ["visible": true, "alpha": 1],
-            "last_press": ["press_ms": 123_456, "route": "terminate", "age_ms": -2],
-        ])
+        XCTAssertEqual(
+            fields(DevSnapshot.build(input(quitGuard: source)))["quit_guard"],
+            [
+                "retargeted": false,
+                "enabled": false,
+                "phase": "confirming",
+                "notice": ["visible": true, "alpha": 1],
+                "last_press": ["press_ms": 123_456, "route": "terminate", "age_ms": -2],
+            ])
         XCTAssertEqual(Guard.Phase.idle.rawValue, "idle")
     }
 
@@ -517,7 +554,8 @@ final class DevSnapshotTests: XCTestCase {
     func testTheToggleAndTheRetargetAreReportedSeparately() {
         func reported(retargeted: Bool, enabled: Bool) -> [String: JSONValue] {
             let source = Guard(
-                retargeted: retargeted, enabled: enabled, phase: .idle, noticeVisible: false, noticeAlpha: 0, lastPress: nil
+                retargeted: retargeted, enabled: enabled, phase: .idle, noticeVisible: false, noticeAlpha: 0,
+                lastPress: nil
             )
             return fields(fields(DevSnapshot.build(input(quitGuard: source)))["quit_guard"])
         }
@@ -594,31 +632,39 @@ final class DevSnapshotTests: XCTestCase {
     /// `smoke.mjs` D8 reads `card` and `tag == "TEXTAREA"`; the class is xterm's
     /// own, which is what the Tauri driver reports there.
     func testAFocusedTerminalIsATextareaWithACaret() {
-        XCTAssertEqual(activeElement(.terminal(card: "t-1", hasSelection: false)), [
-            "card": "t-1", "tag": "TEXTAREA", "classes": ["xterm-helper-textarea"], "selection_type": "Caret",
-        ])
+        XCTAssertEqual(
+            activeElement(.terminal(card: "t-1", hasSelection: false)),
+            [
+                "card": "t-1", "tag": "TEXTAREA", "classes": ["xterm-helper-textarea"], "selection_type": "Caret",
+            ])
     }
 
     /// `smoke.mjs` D5 fails the run unless a right-click leaves a `Range`.
     func testAFocusedTerminalWithASelectionIsARange() {
-        XCTAssertEqual(activeElement(.terminal(card: "t-1", hasSelection: true)), [
-            "card": "t-1", "tag": "TEXTAREA", "classes": ["xterm-helper-textarea"], "selection_type": "Range",
-        ])
+        XCTAssertEqual(
+            activeElement(.terminal(card: "t-1", hasSelection: true)),
+            [
+                "card": "t-1", "tag": "TEXTAREA", "classes": ["xterm-helper-textarea"], "selection_type": "Range",
+            ])
     }
 
     /// `smoke.mjs` D18 reads `tag == "IFRAME"` after `focus <html card>`.
     func testAFocusedHTMLDocumentIsAnIframe() {
-        XCTAssertEqual(activeElement(.htmlDocument(card: "/a/c.html")), [
-            "card": "/a/c.html", "tag": "IFRAME", "classes": ["html-frame"], "selection_type": "None",
-        ])
+        XCTAssertEqual(
+            activeElement(.htmlDocument(card: "/a/c.html")),
+            [
+                "card": "/a/c.html", "tag": "IFRAME", "classes": ["html-frame"], "selection_type": "None",
+            ])
     }
 
     /// `smoke.mjs` D8 reads `card == null` after `focus board`, and D17 reads
     /// `tag == "BODY"` after `focus <markdown card>`.
     func testNoCardHoldingFocusIsTheBody() {
-        XCTAssertEqual(activeElement(.none), [
-            "card": .null, "tag": "BODY", "classes": [], "selection_type": "None",
-        ])
+        XCTAssertEqual(
+            activeElement(.none),
+            [
+                "card": .null, "tag": "BODY", "classes": [], "selection_type": "None",
+            ])
     }
 
     // MARK: - which card holds the keys
@@ -662,10 +708,12 @@ final class DevSnapshotTests: XCTestCase {
 
     func testAnOverlayIsReportedAsADialogWithTheCardItReturnsTheKeysTo() {
         let held = Focus.overlay(.inbox, returnsTo: .terminal(card: "t-1", hasSelection: false))
-        XCTAssertEqual(activeElement(held), [
-            "card": .null, "tag": "DIALOG", "classes": ["tm-overlay", "inbox"], "selection_type": "None",
-            "overlay": "inbox", "returns_to": "t-1",
-        ])
+        XCTAssertEqual(
+            activeElement(held),
+            [
+                "card": .null, "tag": "DIALOG", "classes": ["tm-overlay", "inbox"], "selection_type": "None",
+                "overlay": "inbox", "returns_to": "t-1",
+            ])
         XCTAssertEqual(
             fields(activeElement(.overlay(.restoreCard, returnsTo: .none)))["returns_to"], .null
         )
@@ -778,7 +826,9 @@ final class DevSnapshotTests: XCTestCase {
             DevSnapshot.focusReply(selectedCard: nil, keyboardFocus: .htmlDocument(card: "/a/c.html")),
             [
                 "focused_card": .null,
-                "active_element": ["card": "/a/c.html", "tag": "IFRAME", "classes": ["html-frame"], "selection_type": "None"],
+                "active_element": [
+                    "card": "/a/c.html", "tag": "IFRAME", "classes": ["html-frame"], "selection_type": "None",
+                ],
             ]
         )
     }
@@ -790,7 +840,10 @@ final class DevSnapshotTests: XCTestCase {
         let snapshot = fields(DevSnapshot.build(source))
         XCTAssertEqual(
             DevSnapshot.focusReply(selectedCard: source.selectedCard, keyboardFocus: source.keyboardFocus),
-            ["focused_card": snapshot["focused_card"] ?? "missing", "active_element": snapshot["active_element"] ?? "missing"]
+            [
+                "focused_card": snapshot["focused_card"] ?? "missing",
+                "active_element": snapshot["active_element"] ?? "missing",
+            ]
         )
     }
 
@@ -809,10 +862,11 @@ final class DevSnapshotTests: XCTestCase {
     // MARK: - what is sent is what `--until` evaluates
 
     func testUntilExpressionsResolveAgainstTheBuiltTree() throws {
-        let snapshot = DevSnapshot.build(input(
-            cards: [term(terminal(proc: "sleep", tail: "$ sleep 100")), doc()],
-            quitGuard: quitGuard()
-        ))
+        let snapshot = DevSnapshot.build(
+            input(
+                cards: [term(terminal(proc: "sleep", tail: "$ sleep 100")), doc()],
+                quitGuard: quitGuard()
+            ))
         for source in [
             "viewport.zoom == 1",
             "cards[t-1].board_rect.w ~= 400",
@@ -845,7 +899,9 @@ final class DevSnapshotTests: XCTestCase {
             [
                 "terminal": ["saved": "Menlo", "face": "Menlo-Regular", "size": 16],
                 "interface": ["saved": .null, "face": ".AppleSystemUIFontMonospaced-Regular"],
-                "document": ["saved": .null, "css": #"-apple-system, "SF Pro Text", system-ui, sans-serif"#, "size": 14],
+                "document": [
+                    "saved": .null, "css": #"-apple-system, "SF Pro Text", system-ui, sans-serif"#, "size": 14,
+                ],
             ]
         )
         let all = DevSnapshot.Fonts(
@@ -966,7 +1022,10 @@ final class DevSnapshotTests: XCTestCase {
                 "open": true, "badge": "inbox · 1", "filter": "all",
                 "selected": ["kind": "blocked", "term": "T"],
                 "items": [
-                    ["kind": "blocked", "term": "T", "board": "board-1", "read": false, "title": "report · during claude"],
+                    [
+                        "kind": "blocked", "term": "T", "board": "board-1", "read": false,
+                        "title": "report · during claude",
+                    ],
                     ["kind": "bell", "term": "U", "board": "board-0", "read": true, "title": "bell"],
                 ],
             ]

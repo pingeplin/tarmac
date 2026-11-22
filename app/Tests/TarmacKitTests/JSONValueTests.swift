@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// The JSON tree the card console relay and the QA driver's `--until` read.
@@ -29,8 +30,10 @@ final class JSONValueTests: XCTestCase {
         ]
         XCTAssertEqual(
             JSONValue(foundation: body),
-            ["s": "text", "i": 3, "d": 2.5, "yes": true, "no": false, "nothing": .null,
-             "list": [1, "x"], "nested": ["k": "v"]]
+            [
+                "s": "text", "i": 3, "d": 2.5, "yes": true, "no": false, "nothing": .null,
+                "list": [1, "x"], "nested": ["k": "v"],
+            ]
         )
     }
 

@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// Blocks until `pid` exits and returns its raw wait status.
 private func reap(_ pid: pid_t) -> Int32 {
@@ -34,9 +34,10 @@ final class DaemonSpawnerTests: XCTestCase {
     }
 
     private func sh(_ script: String, environment: [String: String] = [:], logPath: String? = nil) throws -> pid_t {
-        try XCTUnwrap(DaemonSpawner.spawn(
-            program: "/bin/sh", arguments: ["-c", script], environment: environment, logPath: logPath ?? log
-        ))
+        try XCTUnwrap(
+            DaemonSpawner.spawn(
+                program: "/bin/sh", arguments: ["-c", script], environment: environment, logPath: logPath ?? log
+            ))
     }
 
     private func logText(_ path: String? = nil) -> String {
@@ -68,9 +69,10 @@ final class DaemonSpawnerTests: XCTestCase {
     /// The spawned daemon is its own session leader, so a session-wide SIGHUP
     /// aimed at the launching terminal cannot reach it.
     func testTheDaemonStartsItsOwnSession() throws {
-        let pid = try XCTUnwrap(DaemonSpawner.spawn(
-            program: "/bin/sleep", arguments: ["30"], environment: [:], logPath: log
-        ))
+        let pid = try XCTUnwrap(
+            DaemonSpawner.spawn(
+                program: "/bin/sleep", arguments: ["30"], environment: [:], logPath: log
+            ))
         defer {
             kill(pid, SIGKILL)
             _ = reap(pid)
@@ -189,16 +191,18 @@ final class DaemonSpawnerTests: XCTestCase {
     /// A spawn that produced no child reports none, so the caller never latches
     /// onto a daemon that does not exist.
     func testAProgramThatCannotBeLaunchedYieldsNoChild() {
-        XCTAssertNil(DaemonSpawner.spawn(
-            program: dir + "/no-such-tarmacd", environment: [:], logPath: log
-        ))
+        XCTAssertNil(
+            DaemonSpawner.spawn(
+                program: dir + "/no-such-tarmacd", environment: [:], logPath: log
+            ))
     }
 
     /// The observation `DaemonLaunch.priorChildExited` is fed, on real children.
     func testWaitResultTellsALiveChildFromADeadOne() throws {
-        let live = try XCTUnwrap(DaemonSpawner.spawn(
-            program: "/bin/sleep", arguments: ["30"], environment: [:], logPath: log
-        ))
+        let live = try XCTUnwrap(
+            DaemonSpawner.spawn(
+                program: "/bin/sleep", arguments: ["30"], environment: [:], logPath: log
+            ))
         XCTAssertFalse(DaemonLaunch.priorChildExited(waitResult: DaemonSpawner.waitResult(of: live)))
 
         kill(live, SIGKILL)

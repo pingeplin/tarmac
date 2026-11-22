@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// Phase 2c: the persistence-snapshot round-trip (card world frames + board
@@ -150,8 +151,10 @@ final class BoardPersistenceTests: XCTestCase {
         let center = CGPoint(x: 0, y: 0)
         let viewportCenter = CGPoint(x: 400, y: 300)
         let zoom: CGFloat = 0.5
-        let a = BoardTransform.worldToView(CGPoint(x: 0, y: 0), zoom: zoom, center: center, viewportCenter: viewportCenter)
-        let b = BoardTransform.worldToView(CGPoint(x: 100, y: 100), zoom: zoom, center: center, viewportCenter: viewportCenter)
+        let a = BoardTransform.worldToView(
+            CGPoint(x: 0, y: 0), zoom: zoom, center: center, viewportCenter: viewportCenter)
+        let b = BoardTransform.worldToView(
+            CGPoint(x: 100, y: 100), zoom: zoom, center: center, viewportCenter: viewportCenter)
         XCTAssertEqual(b.x - a.x, 50, accuracy: 1e-9)
         XCTAssertEqual(b.y - a.y, 50, accuracy: 1e-9)
     }

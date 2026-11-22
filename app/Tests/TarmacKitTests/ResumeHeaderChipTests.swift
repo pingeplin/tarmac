@@ -1,6 +1,6 @@
 import CoreGraphics
-import XCTest
 import TarmacKit
+import XCTest
 
 /// 2611.0015 S8, S9, S23: the header chip of a terminal with a recorded
 /// resume command, and where that command comes from.

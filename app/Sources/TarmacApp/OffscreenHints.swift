@@ -39,9 +39,11 @@ final class OffscreenHints {
     ) -> [OffscreenHintLayout.PlacedPill] {
         var next: [String: OffscreenHintPill] = [:]
         for hint in hints {
-            guard let placement = BoardWayfinding.hintPlacement(
-                cardCenterView: hint.centerView, viewRect: viewRect, inset: Self.edgeInset
-            ) else { continue }
+            guard
+                let placement = BoardWayfinding.hintPlacement(
+                    cardCenterView: hint.centerView, viewRect: viewRect, inset: Self.edgeInset
+                )
+            else { continue }
             let content = OffscreenHintPill.Content(arrow: placement.edge.arrow, label: hint.label, signal: hint.signal)
             let pill = pills[hint.cardID]
             next[hint.cardID] = pill?.content == content ? pill : makePill(content, cardID: hint.cardID)
@@ -50,14 +52,16 @@ final class OffscreenHints {
         pills = next
 
         let sizes = pills.mapValues(\.size)
-        let placed = OffscreenHintLayout.stackPills(hints, in: viewRect, options: OffscreenHintLayout.Options(
-            edgeInset: Self.edgeInset,
-            edgeMargin: Self.edgeMargin,
-            stackGap: Self.stackGap,
-            pillSize: { sizes[$0.cardID] ?? .zero },
-            obstacles: obstacles,
-            chrome: chrome
-        ))
+        let placed = OffscreenHintLayout.stackPills(
+            hints, in: viewRect,
+            options: OffscreenHintLayout.Options(
+                edgeInset: Self.edgeInset,
+                edgeMargin: Self.edgeMargin,
+                stackGap: Self.stackGap,
+                pillSize: { sizes[$0.cardID] ?? .zero },
+                obstacles: obstacles,
+                chrome: chrome
+            ))
         for position in placed {
             guard let pill = pills[position.cardID] else { continue }
             pill.frame = NSRect(origin: CGPoint(x: position.left, y: position.top), size: pill.size)
@@ -117,9 +121,11 @@ final class OffscreenHintPill: PressControl {
     init(_ content: Content) {
         self.content = content
         let arrow = ChromeLabel(content.arrow, size: Self.fontSize, color: OverlayPalette.hintArrow(content.signal))
-        let label = InlineTextLabel(style: InlineTextLabel.Style(
-            design: Self.fontSize, color: OverlayPalette.hintLabel(content.signal), boxFill: Theme.bg1, boxBorder: Theme.line
-        ))
+        let label = InlineTextLabel(
+            style: InlineTextLabel.Style(
+                design: Self.fontSize, color: OverlayPalette.hintLabel(content.signal), boxFill: Theme.bg1,
+                boxBorder: Theme.line
+            ))
         label.text = content.label
         let arrowSize = arrow.textSize
         let labelSize = label.textSize

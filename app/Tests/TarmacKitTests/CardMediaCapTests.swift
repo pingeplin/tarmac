@@ -1,5 +1,6 @@
 import WebKit
 import XCTest
+
 @testable import TarmacKit
 
 /// The width cap on media in an HTML card (spec 2611.0023), checked in real
@@ -15,18 +16,18 @@ final class CardMediaCapTests: XCTestCase {
     }
 
     private static let prelude = """
-    function box(id) {
-      const z = parseFloat(document.documentElement.style.zoom) || 1;
-      const r = document.getElementById(id).getBoundingClientRect();
-      return [r.left / z, r.top / z, r.width / z, r.height / z];
-    }
-    function isMediaSheet(s) {
-      return !!(s.cssRules[0] && s.cssRules[0].style && s.cssRules[0].style.objectFit === 'contain');
-    }
-    function mediaSheet() {
-      return document.adoptedStyleSheets.find(isMediaSheet);
-    }
-    """
+        function box(id) {
+          const z = parseFloat(document.documentElement.style.zoom) || 1;
+          const r = document.getElementById(id).getBoundingClientRect();
+          return [r.left / z, r.top / z, r.width / z, r.height / z];
+        }
+        function isMediaSheet(s) {
+          return !!(s.cssRules[0] && s.cssRules[0].style && s.cssRules[0].style.objectFit === 'contain');
+        }
+        function mediaSheet() {
+          return document.adoptedStyleSheets.find(isMediaSheet);
+        }
+        """
 
     /// A PNG black but for its right tenth, which is red.
     private static func png(_ width: Int, _ height: Int) -> String {
@@ -52,12 +53,14 @@ final class CardMediaCapTests: XCTestCase {
 
     /// An SVG drawing `width`×`height` user units, black but for its right
     /// tenth, which is red.
-    private static func svg(_ id: String, _ attributes: String, width: Int = 2000, height: Int = 500, inner: String = "") -> String {
+    private static func svg(
+        _ id: String, _ attributes: String, width: Int = 2000, height: Int = 500, inner: String = ""
+    ) -> String {
         let red = width * 9 / 10
         return """
-        <svg id="\(id)" \(attributes)><rect width="\(red)" height="\(height)"/>\
-        <rect x="\(red)" width="\(width - red)" height="\(height)" fill="red"/>\(inner)</svg>
-        """
+            <svg id="\(id)" \(attributes)><rect width="\(red)" height="\(height)"/>\
+            <rect x="\(red)" width="\(width - red)" height="\(height)" fill="red"/>\(inner)</svg>
+            """
     }
 
     private static let control = svg("control", #"viewBox="0 0 2000 500" style="width:100%""#)
@@ -69,16 +72,20 @@ final class CardMediaCapTests: XCTestCase {
     private static let s5 = Medium(id: "m", body: svg("m", #"width="1300" height="325""#, width: 1300, height: 325))
     private static let s6 = Medium(
         id: "m",
-        body: svg("m", #"viewBox="0 0 2000 500""#, inner: svg("inner", #"x="0" y="0" width="2000" height="500" viewBox="0 0 2000 500""#)),
+        body: svg(
+            "m", #"viewBox="0 0 2000 500""#,
+            inner: svg("inner", #"x="0" y="0" width="2000" height="500" viewBox="0 0 2000 500""#)),
         css: "svg { width: 100%; }"
     )
-    private static let s7 = Medium(id: "m", body: """
-    <canvas id="m" width="2000" height="200" style="width:2000px;height:200px"></canvas>
-    <script>
-      const pen = document.getElementById('m').getContext('2d');
-      pen.beginPath(); pen.arc(1000, 100, 90, 0, 2 * Math.PI); pen.fill();
-    </script>
-    """)
+    private static let s7 = Medium(
+        id: "m",
+        body: """
+            <canvas id="m" width="2000" height="200" style="width:2000px;height:200px"></canvas>
+            <script>
+              const pen = document.getElementById('m').getContext('2d');
+              pen.beginPath(); pen.arc(1000, 100, 90, 0, 2 * Math.PI); pen.fill();
+            </script>
+            """)
     private static let s8 = Medium(id: "m", body: #"<img id="m" style="height:400px" src="\#(wide)">"#)
     private static let s9 = Medium(id: "m", body: #"<video id="m" width="2000" height="500"></video>"#)
     private static let s10 = Medium(id: "m", body: #"<div style="width:200px"><img id="m" src="\#(wide)"></div>"#)
@@ -94,22 +101,26 @@ final class CardMediaCapTests: XCTestCase {
     private static let s21 = Medium(id: "m", body: #"<img id="m" width="400" height="400" src="\#(wide)">"#)
     private static let s22 = [
         Medium(id: "tall", body: svg("tall", #"viewBox="0 0 2000 100" height="200""#, height: 100)),
-        Medium(id: "square", body: svg("square", #"viewBox="0 0 100 100" width="300" height="100""#, width: 100, height: 100)),
+        Medium(
+            id: "square",
+            body: svg("square", #"viewBox="0 0 100 100" width="300" height="100""#, width: 100, height: 100)),
     ]
-    private static let s23 = Medium(id: "m", body: """
-    <div id="scroller" style="width:600px;overflow:auto">\(svg("m", #"width="2000" height="500" viewBox="0 0 2000 500""#))</div>
-    """)
+    private static let s23 = Medium(
+        id: "m",
+        body: """
+            <div id="scroller" style="width:600px;overflow:auto">\(svg("m", #"width="2000" height="500" viewBox="0 0 2000 500""#))</div>
+            """)
     private static let s24 = Medium(id: "m", body: #"<canvas id="m" width="2000" height="500"></canvas>"#)
 
     private func card(
         _ body: String, css: String = "", head: String = "", zoom: Double? = nil, fonts: CardFontVariables? = nil
     ) throws -> WKWebView {
         let page = """
-        <!doctype html><script>\(try CardPage.shim(fonts: fonts))</script><html><head><meta charset="utf-8">\(head)<style>
-        html { background: #fff } body { margin: 0; width: 1400px }
-        \(css)
-        </style></head><body>\(body)<div>\(Self.control)</div></body></html>
-        """
+            <!doctype html><script>\(try CardPage.shim(fonts: fonts))</script><html><head><meta charset="utf-8">\(head)<style>
+            html { background: #fff } body { margin: 0; width: 1400px }
+            \(css)
+            </style></head><body>\(body)<div>\(Self.control)</div></body></html>
+            """
         return try CardPage.load(page, zoom: zoom)
     }
 
@@ -185,9 +196,13 @@ final class CardMediaCapTests: XCTestCase {
         return Shot(rep: rep, scale: Double(rep.pixelsWide) / Double(view.bounds.width))
     }
 
-    private func assertRedAtRightEdge(_ view: WKWebView, _ id: String, file: StaticString = #filePath, line: UInt = #line) throws {
+    private func assertRedAtRightEdge(
+        _ view: WKWebView, _ id: String, file: StaticString = #filePath, line: UInt = #line
+    ) throws {
         let b = try box(view, id)
-        XCTAssertTrue(try shot(view).isRed(b[0] + b[2] - 5, b[1] + b[3] / 2), "\(id): red at its right edge", file: file, line: line)
+        XCTAssertTrue(
+            try shot(view).isRed(b[0] + b[2] - 5, b[1] + b[3] / 2), "\(id): red at its right edge", file: file,
+            line: line)
     }
 
     // MARK: - The cap (G1, G2)
@@ -324,16 +339,16 @@ final class CardMediaCapTests: XCTestCase {
 
     func testS17TheCapIsThereBeforeTheBodyIsParsed() throws {
         let probe = """
-        <script>
-          window.seenMaxWidth = (() => {
-            const img = document.createElement('img');
-            document.documentElement.appendChild(img);
-            const value = getComputedStyle(img).maxWidth;
-            img.remove();
-            return value;
-          })();
-        </script>
-        """
+            <script>
+              window.seenMaxWidth = (() => {
+                const img = document.createElement('img');
+                document.documentElement.appendChild(img);
+                const value = getComputedStyle(img).maxWidth;
+                img.remove();
+                return value;
+              })();
+            </script>
+            """
         let view = try card("", head: probe)
         let seen = try XCTUnwrap(eval(view, "window.seenMaxWidth") as? String)
         XCTAssertNotEqual(seen, "none")
@@ -347,17 +362,27 @@ final class CardMediaCapTests: XCTestCase {
         let fontSheet = "document.adoptedStyleSheets.find(s => s.cssRules[0] && s.cssRules[0].selectorText === ':root')"
         _ = try eval(view, "(window.postMessage({ tarmac: 'fonts', vars: \(later.json) }, '*'), 0)")
         try CardPage.spin(
-            until: { (try? self.eval(view, "\(fontSheet).cssRules[0].style.getPropertyValue('--tarmac-prose-size')")) as? String == "20px" },
+            until: {
+                (try? self.eval(view, "\(fontSheet).cssRules[0].style.getPropertyValue('--tarmac-prose-size')"))
+                    as? String == "20px"
+            },
             "the second fonts message"
         )
         let expected = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(later.json.utf8)) as? [String: String])
         for (name, value) in expected {
-            XCTAssertEqual(try eval(view, "\(fontSheet).cssRules[0].style.getPropertyValue(\(json(name))).trim()") as? String, value, name)
+            XCTAssertEqual(
+                try eval(view, "\(fontSheet).cssRules[0].style.getPropertyValue(\(json(name))).trim()") as? String,
+                value, name)
         }
-        XCTAssertEqual(try eval(view, "document.adoptedStyleSheets.filter(isMediaSheet).length") as? Int, 1, "one media sheet")
-        XCTAssertEqual(try eval(view, "document.adoptedStyleSheets.indexOf(mediaSheet())") as? Int, 0, "the media sheet first")
         XCTAssertEqual(
-            try eval(view, "document.adoptedStyleSheets.filter(s => s.cssRules[0] && s.cssRules[0].selectorText === 'li[data-tarmac-marker]').length") as? Int,
+            try eval(view, "document.adoptedStyleSheets.filter(isMediaSheet).length") as? Int, 1, "one media sheet")
+        XCTAssertEqual(
+            try eval(view, "document.adoptedStyleSheets.indexOf(mediaSheet())") as? Int, 0, "the media sheet first")
+        XCTAssertEqual(
+            try eval(
+                view,
+                "document.adoptedStyleSheets.filter(s => s.cssRules[0] && s.cssRules[0].selectorText === 'li[data-tarmac-marker]').length"
+            ) as? Int,
             1, "one marker sheet"
         )
         XCTAssertEqual(
@@ -385,7 +410,11 @@ final class CardMediaCapTests: XCTestCase {
     func testS23AnSVGInAnAuthorsScrollerIsCappedAndTheScrollerNoLongerScrolls() throws {
         let view = try card(Self.s23)
         try assertBox(view, "m", 600, 150)
-        let scroller = try XCTUnwrap(eval(view, "[document.getElementById('scroller').scrollWidth, document.getElementById('scroller').clientWidth]") as? [Double])
+        let scroller = try XCTUnwrap(
+            eval(
+                view,
+                "[document.getElementById('scroller').scrollWidth, document.getElementById('scroller').clientWidth]")
+                as? [Double])
         XCTAssertEqual(scroller[0], scroller[1], "scrollWidth against clientWidth")
         try assertControl(view)
     }
@@ -402,14 +431,21 @@ final class CardMediaCapTests: XCTestCase {
         let inline = Medium(id: "m", body: #"<span style="display:inline-block">\#(sparkline)</span>"#)
         let alone = Medium(id: "m", body: sparkline)
         let video = Medium(id: "m", body: #"<video id="m" height="40"></video>"#)
-        let exact: [(Medium, Double, Double)] = [(short, 160, 40), (inline, 100, 20), (alone, 100, 20), (video, 80, 40)]
-        let media = [Self.s1, Self.s2, Self.s3, Self.s4, Self.s5, Self.s6, Self.s7, Self.s8, Self.s9, Self.s10]
+        let exact: [(Medium, Double, Double)] = [
+            (short, 160, 40), (inline, 100, 20), (alone, 100, 20), (video, 80, 40),
+        ]
+        let media =
+            [Self.s1, Self.s2, Self.s3, Self.s4, Self.s5, Self.s6, Self.s7, Self.s8, Self.s9, Self.s10]
             + Self.s11 + Self.s12 + [Self.s21] + Self.s22 + [Self.s23, Self.s24]
-        for (medium, width, height) in exact.map({ ($0.0, Optional($0.1), Optional($0.2)) }) + media.map({ ($0, nil, nil) }) {
+        for (medium, width, height) in exact.map({ ($0.0, Optional($0.1), Optional($0.2)) })
+            + media.map({ ($0, nil, nil) })
+        {
             let view = try card(medium)
             try assertControl(view)
             let on = try box(view, medium.id)
-            XCTAssertEqual(try eval(view, "(mediaSheet().disabled = true, document.body.offsetWidth, true)") as? Bool, true, "the sheet is off")
+            XCTAssertEqual(
+                try eval(view, "(mediaSheet().disabled = true, document.body.offsetWidth, true)") as? Bool, true,
+                "the sheet is off")
             let off = try box(view, medium.id)
             XCTAssertLessThanOrEqual(on[2], off[2] + 1, "\(medium.body) width")
             XCTAssertLessThanOrEqual(on[3], off[3] + 1, "\(medium.body) height")

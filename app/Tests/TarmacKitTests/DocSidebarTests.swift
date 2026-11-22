@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// 2611.0022 D4–D8: the markdown card's sidebar mode, its width range, what
@@ -83,8 +84,10 @@ final class DocSidebarTests: XCTestCase {
     func test2611_0022S20ResizeStoresTheWidthAndBelowTheMinimumCollapses() {
         XCTAssertEqual(apply(.resize(300), wide).stored.width, 300)
         XCTAssertEqual(apply(.resize(500), wide).stored.width, 420)
-        XCTAssertEqual(apply(.resize(160), wide, stored: Stored(width: 260, open: true)).stored, Stored(width: 160, open: true))
-        XCTAssertEqual(apply(.resize(150), wide, stored: Stored(width: 260, open: true)).stored, Stored(width: 260, open: false))
+        XCTAssertEqual(
+            apply(.resize(160), wide, stored: Stored(width: 260, open: true)).stored, Stored(width: 160, open: true))
+        XCTAssertEqual(
+            apply(.resize(150), wide, stored: Stored(width: 260, open: true)).stored, Stored(width: 260, open: false))
 
         let collapsed = apply(.resize(150), narrow, overlayOpen: true)
         XCTAssertEqual(collapsed.stored, Stored())
@@ -97,7 +100,8 @@ final class DocSidebarTests: XCTestCase {
 
     /// S21
     func test2611_0022S21ResetIsTheStandardWidthOpen() {
-        XCTAssertEqual(apply(.reset, wide, stored: Stored(width: 300, open: false)).stored, Stored(width: 240, open: true))
+        XCTAssertEqual(
+            apply(.reset, wide, stored: Stored(width: 300, open: false)).stored, Stored(width: 240, open: true))
 
         let narrowReset = apply(.reset, narrow, stored: Stored(width: 300))
         XCTAssertEqual(narrowReset.stored.width, 240)
@@ -146,18 +150,26 @@ final class DocSidebarTests: XCTestCase {
             DocSidebar.pageState(cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen)
         }
         typealias State = DocSidebar.PageState
-        XCTAssertEqual(state(wide, stored: Stored(width: 300)), State(mode: "docked", width: 300, maxWidth: 420, resizable: true))
-        XCTAssertEqual(state(700, stored: Stored(width: 400)), State(mode: "docked", width: 308, maxWidth: 308, resizable: true))
-        XCTAssertEqual(state(wide, stored: Stored(open: false)), State(mode: "strip", width: 240, maxWidth: 420, resizable: true))
-        XCTAssertEqual(state(narrow, stored: Stored(width: 420)), State(mode: "strip", width: 339, maxWidth: 339, resizable: true))
-        XCTAssertEqual(state(narrow, overlayOpen: true), State(mode: "overlay", width: 240, maxWidth: 339, resizable: true))
-        XCTAssertEqual(state(200, overlayOpen: true), State(mode: "overlay", width: 147, maxWidth: 147, resizable: false))
+        XCTAssertEqual(
+            state(wide, stored: Stored(width: 300)), State(mode: "docked", width: 300, maxWidth: 420, resizable: true))
+        XCTAssertEqual(
+            state(700, stored: Stored(width: 400)), State(mode: "docked", width: 308, maxWidth: 308, resizable: true))
+        XCTAssertEqual(
+            state(wide, stored: Stored(open: false)), State(mode: "strip", width: 240, maxWidth: 420, resizable: true))
+        XCTAssertEqual(
+            state(narrow, stored: Stored(width: 420)), State(mode: "strip", width: 339, maxWidth: 339, resizable: true))
+        XCTAssertEqual(
+            state(narrow, overlayOpen: true), State(mode: "overlay", width: 240, maxWidth: 339, resizable: true))
+        XCTAssertEqual(
+            state(200, overlayOpen: true), State(mode: "overlay", width: 147, maxWidth: 147, resizable: false))
 
         let arguments = state(wide, stored: Stored(width: 300)).arguments as NSDictionary
-        XCTAssertEqual(arguments, [
-            "mode": "docked", "width": 300, "minWidth": 160, "maxWidth": 420, "resizable": true,
-            "strip": 30, "grip": 8, "side": "left", "thumbReach": 12,
-        ] as NSDictionary)
+        XCTAssertEqual(
+            arguments,
+            [
+                "mode": "docked", "width": 300, "minWidth": 160, "maxWidth": 420, "resizable": true,
+                "strip": 30, "grip": 8, "side": "left", "thumbReach": 12,
+            ] as NSDictionary)
     }
 
     // MARK: - 2611.0024
@@ -231,8 +243,10 @@ final class DocSidebarTests: XCTestCase {
             for stored in [Stored(), Stored(width: 300, open: false), Stored(width: 400, open: true)] {
                 for overlayOpen in [false, true] {
                     let label = "\(cardWidth) \(stored) \(overlayOpen)"
-                    let right = DocSidebar.pageState(cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen, side: .right)
-                    let left = DocSidebar.pageState(cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen, side: .left)
+                    let right = DocSidebar.pageState(
+                        cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen, side: .right)
+                    let left = DocSidebar.pageState(
+                        cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen, side: .left)
                     let none = DocSidebar.pageState(cardWidth: cardWidth, stored: stored, overlayOpen: overlayOpen)
                     XCTAssertEqual(right.side, .right, label)
                     XCTAssertEqual(right.mode, left.mode, label)
@@ -243,13 +257,16 @@ final class DocSidebarTests: XCTestCase {
                 }
             }
         }
-        let arguments = DocSidebar.pageState(
-            cardWidth: wide, stored: Stored(width: 300), overlayOpen: false, side: .right
-        ).arguments as NSDictionary
-        XCTAssertEqual(arguments, [
-            "mode": "docked", "width": 300, "minWidth": 160, "maxWidth": 420, "resizable": true,
-            "strip": 30, "grip": 8, "side": "right", "thumbReach": 12,
-        ] as NSDictionary)
+        let arguments =
+            DocSidebar.pageState(
+                cardWidth: wide, stored: Stored(width: 300), overlayOpen: false, side: .right
+            ).arguments as NSDictionary
+        XCTAssertEqual(
+            arguments,
+            [
+                "mode": "docked", "width": 300, "minWidth": 160, "maxWidth": 420, "resizable": true,
+                "strip": 30, "grip": 8, "side": "right", "thumbReach": 12,
+            ] as NSDictionary)
     }
 
     /// S6a: on a narrow card the overlay's grip at its upper end ends 1 px

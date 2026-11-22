@@ -54,7 +54,8 @@ final class HTMLCardView: NSView, DocCardBody, ThemeFollowing, FontFollowing, WK
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
 
-    private static let dataReads = DispatchQueue(label: "tarmac.card-data", qos: .userInitiated, attributes: .concurrent)
+    private static let dataReads = DispatchQueue(
+        label: "tarmac.card-data", qos: .userInitiated, attributes: .concurrent)
 
     // Read once: every HTML card loads the same host page and script.
     private static let scripts = [BundledResource.web("card-host.js").text]

@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// The colours of every theme. The expected values are the tables of the
@@ -47,10 +48,12 @@ final class PaletteTests: XCTestCase {
         XCTAssertEqual(terminal.cursor, 0xeff0f1)
         XCTAssertEqual(terminal.selection, 0x1abc9c)
         XCTAssertEqual(terminal.selectionAlpha, 0.3)
-        XCTAssertEqual(terminal.ansi, [
-            0x232627, 0xed1515, 0x11d116, 0xf67400, 0x1d99f3, 0x9b59b6, 0x1abc9c, 0xfcfcfc,
-            0x7f8c8d, 0xc0392b, 0x1cdc9a, 0xfdbc4b, 0x3daee9, 0x8e44ad, 0x16a085, 0xffffff,
-        ])
+        XCTAssertEqual(
+            terminal.ansi,
+            [
+                0x232627, 0xed1515, 0x11d116, 0xf67400, 0x1d99f3, 0x9b59b6, 0x1abc9c, 0xfcfcfc,
+                0x7f8c8d, 0xc0392b, 0x1cdc9a, 0xfdbc4b, 0x3daee9, 0x8e44ad, 0x16a085, 0xffffff,
+            ])
     }
 
     /// 2610.0007 S10
@@ -85,10 +88,12 @@ final class PaletteTests: XCTestCase {
         XCTAssertEqual(terminal.cursor, 0x232629)
         XCTAssertEqual(terminal.selection, 0x12846e)
         XCTAssertEqual(terminal.selectionAlpha, 0.3)
-        XCTAssertEqual(terminal.ansi, [
-            0x232627, 0xed1515, 0x0b8a0f, 0xbe5a00, 0x2980b9, 0x9b59b6, 0x12846e, 0x63686d,
-            0x7f8c8d, 0xc0392b, 0x11865e, 0xa36802, 0x147db3, 0x8e44ad, 0x16a085, 0x232629,
-        ])
+        XCTAssertEqual(
+            terminal.ansi,
+            [
+                0x232627, 0xed1515, 0x0b8a0f, 0xbe5a00, 0x2980b9, 0x9b59b6, 0x12846e, 0x63686d,
+                0x7f8c8d, 0xc0392b, 0x11865e, 0xa36802, 0x147db3, 0x8e44ad, 0x16a085, 0x232629,
+            ])
     }
 
     /// S10 — the thumb is the same thumb in every theme, and the selection
@@ -143,10 +148,12 @@ final class PaletteTests: XCTestCase {
         XCTAssertEqual(palette.terminal.foreground, 0x4c4f69)
         XCTAssertEqual(palette.terminal.background, 0xeff1f5)
         XCTAssertEqual(palette.terminal.cursor, 0xdc8a78)
-        XCTAssertEqual(palette.terminal.ansi, [
-            0xbcc0cc, 0xd20f39, 0x40a02b, 0xdf8e1d, 0x1e66f5, 0xea76cb, 0x179299, 0x5c5f77,
-            0xacb0be, 0xe7103f, 0x46b02f, 0xe49931, 0x3878f6, 0xef95d7, 0x19a1a8, 0x6c6f85,
-        ])
+        XCTAssertEqual(
+            palette.terminal.ansi,
+            [
+                0xbcc0cc, 0xd20f39, 0x40a02b, 0xdf8e1d, 0x1e66f5, 0xea76cb, 0x179299, 0x5c5f77,
+                0xacb0be, 0xe7103f, 0x46b02f, 0xe49931, 0x3878f6, 0xef95d7, 0x19a1a8, 0x6c6f85,
+            ])
     }
 
     /// S9
@@ -173,10 +180,12 @@ final class PaletteTests: XCTestCase {
         XCTAssertEqual(palette.terminal.foreground, 0xcdd6f4)
         XCTAssertEqual(palette.terminal.background, 0x1e1e2e)
         XCTAssertEqual(palette.terminal.cursor, 0xf5e0dc)
-        XCTAssertEqual(palette.terminal.ansi, [
-            0x45475a, 0xf38ba8, 0xa6e3a1, 0xf9e2af, 0x89b4fa, 0xf5c2e7, 0x94e2d5, 0xbac2de,
-            0x585b70, 0xf7aec2, 0xc2ecbf, 0xfcd682, 0xaeccfc, 0xf398da, 0xb1eae1, 0xa6adc8,
-        ])
+        XCTAssertEqual(
+            palette.terminal.ansi,
+            [
+                0x45475a, 0xf38ba8, 0xa6e3a1, 0xf9e2af, 0x89b4fa, 0xf5c2e7, 0x94e2d5, 0xbac2de,
+                0x585b70, 0xf7aec2, 0xc2ecbf, 0xfcd682, 0xaeccfc, 0xf398da, 0xb1eae1, 0xa6adc8,
+            ])
     }
 
     /// S9
@@ -203,10 +212,12 @@ final class PaletteTests: XCTestCase {
         XCTAssertEqual(palette.terminal.foreground, 0x1f2328)
         XCTAssertEqual(palette.terminal.background, 0xffffff)
         XCTAssertEqual(palette.terminal.cursor, 0x0969da)
-        XCTAssertEqual(palette.terminal.ansi, [
-            0x24292f, 0xcf222e, 0x116329, 0x4d2d00, 0x0969da, 0x8250df, 0x1b7c83, 0x6e7781,
-            0x57606a, 0xa40e26, 0x1a7f37, 0x633c01, 0x218bff, 0xa475f9, 0x3192aa, 0x8c959f,
-        ])
+        XCTAssertEqual(
+            palette.terminal.ansi,
+            [
+                0x24292f, 0xcf222e, 0x116329, 0x4d2d00, 0x0969da, 0x8250df, 0x1b7c83, 0x6e7781,
+                0x57606a, 0xa40e26, 0x1a7f37, 0x633c01, 0x218bff, 0xa475f9, 0x3192aa, 0x8c959f,
+            ])
     }
 
     /// S9
@@ -233,10 +244,12 @@ final class PaletteTests: XCTestCase {
         XCTAssertEqual(palette.terminal.foreground, 0xe6edf3)
         XCTAssertEqual(palette.terminal.background, 0x0d1117)
         XCTAssertEqual(palette.terminal.cursor, 0x2f81f7)
-        XCTAssertEqual(palette.terminal.ansi, [
-            0x484f58, 0xff7b72, 0x3fb950, 0xd29922, 0x58a6ff, 0xbc8cff, 0x39c5cf, 0xb1bac4,
-            0x6e7681, 0xffa198, 0x56d364, 0xe3b341, 0x79c0ff, 0xd2a8ff, 0x56d4dd, 0xffffff,
-        ])
+        XCTAssertEqual(
+            palette.terminal.ansi,
+            [
+                0x484f58, 0xff7b72, 0x3fb950, 0xd29922, 0x58a6ff, 0xbc8cff, 0x39c5cf, 0xb1bac4,
+                0x6e7681, 0xffa198, 0x56d364, 0xe3b341, 0x79c0ff, 0xd2a8ff, 0x56d4dd, 0xffffff,
+            ])
     }
 
     /// S9
@@ -263,10 +276,12 @@ final class PaletteTests: XCTestCase {
         XCTAssertEqual(palette.terminal.foreground, 0x657b83)
         XCTAssertEqual(palette.terminal.background, 0xfdf6e3)
         XCTAssertEqual(palette.terminal.cursor, 0x657b83)
-        XCTAssertEqual(palette.terminal.ansi, [
-            0x073642, 0xdc322f, 0x859900, 0xb58900, 0x268bd2, 0xd33682, 0x2aa198, 0xbbb5a2,
-            0x002b36, 0xcb4b16, 0x586e75, 0x657b83, 0x839496, 0x6c71c4, 0x93a1a1, 0xfdf6e3,
-        ])
+        XCTAssertEqual(
+            palette.terminal.ansi,
+            [
+                0x073642, 0xdc322f, 0x859900, 0xb58900, 0x268bd2, 0xd33682, 0x2aa198, 0xbbb5a2,
+                0x002b36, 0xcb4b16, 0x586e75, 0x657b83, 0x839496, 0x6c71c4, 0x93a1a1, 0xfdf6e3,
+            ])
     }
 
     /// S9
@@ -293,10 +308,12 @@ final class PaletteTests: XCTestCase {
         XCTAssertEqual(palette.terminal.foreground, 0x839496)
         XCTAssertEqual(palette.terminal.background, 0x002b36)
         XCTAssertEqual(palette.terminal.cursor, 0x839496)
-        XCTAssertEqual(palette.terminal.ansi, [
-            0x073642, 0xdc322f, 0x859900, 0xb58900, 0x268bd2, 0xd33682, 0x2aa198, 0xeee8d5,
-            0x335e69, 0xcb4b16, 0x586e75, 0x657b83, 0x839496, 0x6c71c4, 0x93a1a1, 0xfdf6e3,
-        ])
+        XCTAssertEqual(
+            palette.terminal.ansi,
+            [
+                0x073642, 0xdc322f, 0x859900, 0xb58900, 0x268bd2, 0xd33682, 0x2aa198, 0xeee8d5,
+                0x335e69, 0xcb4b16, 0x586e75, 0x657b83, 0x839496, 0x6c71c4, 0x93a1a1, 0xfdf6e3,
+            ])
     }
 
     /// The lighter of two colours has the lower contrast against white.
@@ -306,7 +323,8 @@ final class PaletteTests: XCTestCase {
 
     /// 2610.0007 S14
     func testS14TheLightPaletteIsLightAndTheDarkOneDark() {
-        let light = ThemeCatalog.standard(for: .light).palette, dark = ThemeCatalog.standard(for: .dark).palette
+        let light = ThemeCatalog.standard(for: .light).palette
+        let dark = ThemeCatalog.standard(for: .dark).palette
 
         XCTAssertTrue(isLighter(light.terminal.background, than: light.terminal.foreground))
         XCTAssertTrue(isLighter(light.bg0, than: light.text))

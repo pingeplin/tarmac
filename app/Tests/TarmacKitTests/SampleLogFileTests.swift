@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// Where the sample log goes and how it is kept from growing (spec 2611.0004),
 /// in a real temporary directory.

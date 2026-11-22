@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// S9–S11, K6, K14: the open switcher's keys.
@@ -224,7 +225,9 @@ final class SwitcherKeysTests: XCTestCase {
     // MARK: ⌘E (S10)
 
     func testCommandESeedsARenameFromTheSelectedRowsLabel() {
-        XCTAssertEqual(handle(letter("e", command), State(selected: 1)).state, State(selected: 1, editing: true, editBuffer: "apex"))
+        XCTAssertEqual(
+            handle(letter("e", command), State(selected: 1)).state,
+            State(selected: 1, editing: true, editBuffer: "apex"))
         XCTAssertEqual(
             handle(letter("e", command), State(selected: 2)).state,
             State(selected: 2, editing: true, editBuffer: "board-2"), "an unnamed board is seeded with its slug"

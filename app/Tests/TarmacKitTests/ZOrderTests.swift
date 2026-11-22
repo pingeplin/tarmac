@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// A press puts a card above every card on the board, whatever its kind.

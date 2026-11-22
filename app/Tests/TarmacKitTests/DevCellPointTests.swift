@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// Where `tarmac dev key <card> contextmenu` right-clicks (spec 2609.0015,
@@ -99,7 +100,8 @@ final class DevCellPointTests: XCTestCase {
     /// coordinates.
     func testTheCellSizeComesFromColsAcrossAndRowsDown() {
         XCTAssertEqual(
-            DevCellPoint.centre(of: Cell(col: 1, row: 2), in: CGRect(x: 0, y: 0, width: 100, height: 60), cols: 10, rows: 3),
+            DevCellPoint.centre(
+                of: Cell(col: 1, row: 2), in: CGRect(x: 0, y: 0, width: 100, height: 60), cols: 10, rows: 3),
             CGPoint(x: 15, y: 50)
         )
     }

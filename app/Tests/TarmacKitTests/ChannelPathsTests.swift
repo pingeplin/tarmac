@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// 2606.0003: per-channel daemon socket path derivation — the Swift mirror of
@@ -134,13 +135,13 @@ final class ChannelPathsTests: XCTestCase {
     /// count (`utf8.count`) and the accept/reject outcome at the same predicate
     /// `connectOnce` enforces (`DaemonClient.fitsUnixSocketPath`).
     func testDevSocketByteBoundary() {
-        let home51 = "/" + String(repeating: "a", count: 50) // 51 bytes
+        let home51 = "/" + String(repeating: "a", count: 50)  // 51 bytes
         XCTAssertEqual(home51.utf8.count, 51)
         let s51 = ChannelPaths.socketPath(override: nil, home: home51, channel: .dev)
         XCTAssertEqual(s51.utf8.count, 103)
         XCTAssertTrue(DaemonClient.fitsUnixSocketPath(s51), "103 bytes is accepted (len < 104)")
 
-        let home52 = "/" + String(repeating: "a", count: 51) // 52 bytes
+        let home52 = "/" + String(repeating: "a", count: 51)  // 52 bytes
         XCTAssertEqual(home52.utf8.count, 52)
         let s52 = ChannelPaths.socketPath(override: nil, home: home52, channel: .dev)
         XCTAssertEqual(s52.utf8.count, 104)
@@ -157,7 +158,7 @@ final class ChannelPathsTests: XCTestCase {
         func perWorktree(_ home: String) -> String {
             home + "/Library/Application Support/tarmac/dev/wt-0123abcd/tarmacd.sock"
         }
-        let home39 = "/" + String(repeating: "a", count: 38) // 39 bytes
+        let home39 = "/" + String(repeating: "a", count: 38)  // 39 bytes
         XCTAssertEqual(home39.utf8.count, 39)
         let p39 = perWorktree(home39)
         XCTAssertEqual(p39.utf8.count, 103)
@@ -165,7 +166,7 @@ final class ChannelPathsTests: XCTestCase {
         // Override wins verbatim (S3/S4): the resolver returns it unchanged.
         XCTAssertEqual(ChannelPaths.socketPath(override: p39, home: "/ignored", channel: .dev), p39)
 
-        let home40 = "/" + String(repeating: "a", count: 39) // 40 bytes
+        let home40 = "/" + String(repeating: "a", count: 39)  // 40 bytes
         XCTAssertEqual(home40.utf8.count, 40)
         let p40 = perWorktree(home40)
         XCTAssertEqual(p40.utf8.count, 104)
@@ -186,7 +187,9 @@ final class ChannelPathsTests: XCTestCase {
     /// `XDG_CONFIG_HOME` is the base, and an empty or a relative one is not;
     /// a debug build adds `/dev`, but never to an override.
     func testConfigDirGrid() {
-        typealias Case = (override: String?, xdg: String?, home: String, channel: ChannelPaths.Channel, expected: String)
+        typealias Case = (
+            override: String?, xdg: String?, home: String, channel: ChannelPaths.Channel, expected: String
+        )
         let cases: [Case] = [
             (nil, nil, "/Users/u", .release, "/Users/u/.config/tarmac"),
             (nil, nil, "/Users/u", .dev, "/Users/u/.config/tarmac/dev"),

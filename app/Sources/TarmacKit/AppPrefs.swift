@@ -72,7 +72,8 @@ public enum AppPrefs {
 
         init(from decoder: Decoder) throws {
             let object = try decoder.container(keyedBy: Key.self)
-            var values = Values(warnBeforeQuit: (try? object.decode(Bool.self, forKey: Key("warn_before_quit"))) ?? true)
+            var values = Values(
+                warnBeforeQuit: (try? object.decode(Bool.self, forKey: Key("warn_before_quit"))) ?? true)
             for role in FontRole.allCases {
                 guard let name = try? object.decode(String.self, forKey: Key(role.prefsKey)),
                     FontRole.isFamilyName(name)
@@ -94,7 +95,8 @@ public enum AppPrefs {
             }
             values.inboxPreviewHeight = (try? object.decode(Double.self, forKey: Key(inboxPreviewHeightKey)))
                 .flatMap(acceptedPreviewHeight)
-            values.docSidebarSide = (try? object.decode(String.self, forKey: Key(docSidebarSideKey)))
+            values.docSidebarSide =
+                (try? object.decode(String.self, forKey: Key(docSidebarSideKey)))
                 .flatMap(DocSidebar.Side.init(rawValue:)) ?? .left
             self.values = values
         }

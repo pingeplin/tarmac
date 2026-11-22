@@ -247,10 +247,10 @@ final class RootView: NSView, FontFollowing, ThemeFollowing {
     }
 }
 
-private extension BoardView {
+extension BoardView {
     /// Puts `sheet` over the provenance edges and under every card. The board
     /// keeps its two layers private, so the edge layer is found by its type.
-    func mountUnderCards(_ sheet: NSView) {
+    fileprivate func mountUnderCards(_ sheet: NSView) {
         guard let edges = subviews.first(where: { $0 is EdgeLayerView }) else { return }
         sheet.frame = bounds
         sheet.autoresizingMask = [.width, .height]

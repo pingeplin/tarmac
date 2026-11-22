@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 final class AppVersionTests: XCTestCase {
     func testABundledAppReportsItsShortVersion() {

@@ -13,6 +13,6 @@ public enum DocFrameRule {
 
     /// The rule list as `WKContentRuleListStore` compiles it.
     public static let json = """
-    [{"trigger": {"url-filter": "^\(ImageProtocol.uriPrefix)", "load-context": ["child-frame"]}, "action": {"type": "block"}}]
-    """
+        [{"trigger": {"url-filter": "^\(ImageProtocol.uriPrefix)", "load-context": ["child-frame"]}, "action": {"type": "block"}}]
+        """
 }

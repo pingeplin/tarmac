@@ -25,7 +25,9 @@ public struct ScrollMetrics: Equatable, Sendable {
             guard let raw = fields[key], case .number(let value)? = JSONValue(foundation: raw) else { return nil }
             return value
         }
-        guard let offset = number("offset"), let visible = number("visible"), let total = number("total") else { return nil }
+        guard let offset = number("offset"), let visible = number("visible"), let total = number("total") else {
+            return nil
+        }
         self.init(offset: offset, visible: visible, total: total)
     }
 

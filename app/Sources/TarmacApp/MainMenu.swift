@@ -16,44 +16,58 @@ enum MainMenu {
         quit.target = quitGuard
         let openSettings = item("Settings…", SettingsWindowController.showAction, ",")
         openSettings.target = settings
-        main.addItem(submenu(name, [
-            item("About \(name)", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
-            .separator(),
-            openSettings,
-            .separator(),
-            submenuItem("Services", services),
-            .separator(),
-            item("Hide \(name)", #selector(NSApplication.hide(_:)), "h"),
-            item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
-            .separator(),
-            quitGuard.warning.menuItem(),
-            quit,
-        ]))
+        main.addItem(
+            submenu(
+                name,
+                [
+                    item("About \(name)", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+                    .separator(),
+                    openSettings,
+                    .separator(),
+                    submenuItem("Services", services),
+                    .separator(),
+                    item("Hide \(name)", #selector(NSApplication.hide(_:)), "h"),
+                    item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
+                    .separator(),
+                    quitGuard.warning.menuItem(),
+                    quit,
+                ]))
 
-        main.addItem(submenu("File", [
-            item("Close Window", #selector(NSWindow.performClose(_:)), "w"),
-        ]))
+        main.addItem(
+            submenu(
+                "File",
+                [
+                    item("Close Window", #selector(NSWindow.performClose(_:)), "w")
+                ]))
 
-        main.addItem(submenu("Edit", [
-            item("Undo", Selector(("undo:")), "z"),
-            item("Redo", Selector(("redo:")), "z", [.command, .shift]),
-            .separator(),
-            item("Cut", #selector(NSText.cut(_:)), "x"),
-            item("Copy", #selector(NSText.copy(_:)), "c"),
-            item("Paste", #selector(NSText.paste(_:)), "v"),
-            item("Select All", #selector(NSText.selectAll(_:)), "a"),
-        ]))
+        main.addItem(
+            submenu(
+                "Edit",
+                [
+                    item("Undo", Selector(("undo:")), "z"),
+                    item("Redo", Selector(("redo:")), "z", [.command, .shift]),
+                    .separator(),
+                    item("Cut", #selector(NSText.cut(_:)), "x"),
+                    item("Copy", #selector(NSText.copy(_:)), "c"),
+                    item("Paste", #selector(NSText.paste(_:)), "v"),
+                    item("Select All", #selector(NSText.selectAll(_:)), "a"),
+                ]))
 
-        main.addItem(submenu("View", [
-            item("Toggle Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
-        ]))
+        main.addItem(
+            submenu(
+                "View",
+                [
+                    item("Toggle Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control])
+                ]))
 
-        let window = submenu("Window", [
-            item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
-            item("Zoom", #selector(NSWindow.performZoom(_:))),
-            .separator(),
-            item("Close Window", #selector(NSWindow.performClose(_:)), "w"),
-        ])
+        let window = submenu(
+            "Window",
+            [
+                item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
+                item("Zoom", #selector(NSWindow.performZoom(_:))),
+                .separator(),
+                item("Close Window", #selector(NSWindow.performClose(_:)), "w"),
+            ])
         NSApp.windowsMenu = window.submenu
         main.addItem(window)
 

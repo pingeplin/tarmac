@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// Spec 2611.0013 S9: the title-bar button's title.
 final class InboxBadgeTests: XCTestCase {

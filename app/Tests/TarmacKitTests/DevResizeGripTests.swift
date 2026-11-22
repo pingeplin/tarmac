@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// `tarmac dev resize <card> <w>x<h>` (spec 2609.0015, #166): the drag on the
@@ -34,9 +35,11 @@ final class DevResizeGripTests: XCTestCase {
 
     func testS44AShrinkingDragMovesUpAndLeft() {
         let steps = DevResizeGrip.drag(at: CGPoint(x: 300, y: 200), by: CGVector(dx: -590, dy: -390))
-        XCTAssertEqual(steps.map(\.location), [
-            CGPoint(x: 300, y: 200), CGPoint(x: -290, y: -190), CGPoint(x: -290, y: -190),
-        ])
+        XCTAssertEqual(
+            steps.map(\.location),
+            [
+                CGPoint(x: 300, y: 200), CGPoint(x: -290, y: -190), CGPoint(x: -290, y: -190),
+            ])
     }
 
     /// The press must land where the card's own hit test finds the bottom-right
@@ -44,7 +47,8 @@ final class DevResizeGripTests: XCTestCase {
     func testThePressPointIsInsideTheBottomRightHandle() {
         for hasClose in [true, false] {
             XCTAssertEqual(
-                DevResizeGrip.pressPoint(.bottomRight, of: CGRect(x: 100, y: 50, width: 400, height: 300), hasClose: hasClose),
+                DevResizeGrip.pressPoint(
+                    .bottomRight, of: CGRect(x: 100, y: 50, width: 400, height: 300), hasClose: hasClose),
                 CGPoint(x: 490, y: 340)
             )
         }
@@ -116,7 +120,8 @@ final class DevResizeGripTests: XCTestCase {
 
     /// A doc card's ✕ sits where a top-right handle would.
     func testACardWithACloseButtonHasNoTopRightPressPoint() {
-        XCTAssertNil(DevResizeGrip.pressPoint(.topRight, of: CGRect(x: 0, y: 0, width: 400, height: 300), hasClose: true))
+        XCTAssertNil(
+            DevResizeGrip.pressPoint(.topRight, of: CGRect(x: 0, y: 0, width: 400, height: 300), hasClose: true))
     }
 
     /// A left or top handle grows the card when dragged left or up, and an edge

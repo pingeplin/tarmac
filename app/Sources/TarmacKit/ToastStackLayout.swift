@@ -16,10 +16,11 @@ public enum ToastStackLayout {
         if let above { bottom = min(bottom, above.minY - gap) }
         var frames: [CGRect] = []
         for size in sizes.reversed() {
-            frames.append(CGRect(
-                x: area.maxX - rightInset - size.width, y: bottom - size.height,
-                width: size.width, height: size.height
-            ))
+            frames.append(
+                CGRect(
+                    x: area.maxX - rightInset - size.width, y: bottom - size.height,
+                    width: size.width, height: size.height
+                ))
             bottom -= size.height + gap
         }
         return frames.reversed()

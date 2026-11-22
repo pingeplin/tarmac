@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// The QA driver's socket (spec 2609.0015, #166; parity rows Q3–Q5): how the
@@ -181,10 +182,12 @@ final class DevSocketTests: XCTestCase {
 
     func testARequestIsAnsweredAndTheConnectionCloses() throws {
         var seen: [DevRequest] = []
-        let result = try exchange({ write(.zoom(z: 0.5), to: $0) }, answer: { request in
-            seen.append(request)
-            return DevReply(ok: true, body: #"{"zoom":0.5}"#)
-        })
+        let result = try exchange(
+            { write(.zoom(z: 0.5), to: $0) },
+            answer: { request in
+                seen.append(request)
+                return DevReply(ok: true, body: #"{"zoom":0.5}"#)
+            })
         XCTAssertEqual(seen, [.zoom(z: 0.5)])
         XCTAssertEqual(result.reply, DevReply(ok: true, body: #"{"zoom":0.5}"#))
         XCTAssertTrue(result.closed)
@@ -195,34 +198,40 @@ final class DevSocketTests: XCTestCase {
     /// noisy.
     func testS69AnEmptyConnectionIsDroppedSilently() throws {
         var asked = false
-        let result = try exchange({ shutdown($0, SHUT_WR) }, answer: { _ in
-            asked = true
-            return DevReply(ok: true, body: "{}")
-        })
+        let result = try exchange(
+            { shutdown($0, SHUT_WR) },
+            answer: { _ in
+                asked = true
+                return DevReply(ok: true, body: "{}")
+            })
         XCTAssertFalse(asked)
         XCTAssertNil(result.reply)
     }
 
     func testS69AnOversizedFrameClosesTheConnection() throws {
         var asked = false
-        let result = try exchange({ client in
-            XCTAssertTrue(DaemonSocket.write(Data([0xFF, 0xFF, 0xFF, 0xFF]), to: client))
-        }, answer: { _ in
-            asked = true
-            return DevReply(ok: true, body: "{}")
-        })
+        let result = try exchange(
+            { client in
+                XCTAssertTrue(DaemonSocket.write(Data([0xFF, 0xFF, 0xFF, 0xFF]), to: client))
+            },
+            answer: { _ in
+                asked = true
+                return DevReply(ok: true, body: "{}")
+            })
         XCTAssertFalse(asked)
         XCTAssertNil(result.reply)
     }
 
     func testAnUndecodableFrameIsABadRequest() throws {
         var asked = false
-        let result = try exchange({ client in
-            XCTAssertTrue(DaemonSocket.write(try! Framing.frame(Data([0xC1])), to: client))
-        }, answer: { _ in
-            asked = true
-            return DevReply(ok: true, body: "{}")
-        })
+        let result = try exchange(
+            { client in
+                XCTAssertTrue(DaemonSocket.write(try! Framing.frame(Data([0xC1])), to: client))
+            },
+            answer: { _ in
+                asked = true
+                return DevReply(ok: true, body: "{}")
+            })
         XCTAssertFalse(asked)
         let reply = try XCTUnwrap(result.reply)
         XCTAssertFalse(reply.ok)

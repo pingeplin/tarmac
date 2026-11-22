@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// The read of a card's data file (spec 2611.0002 S30, S32; 2611.0005 S6,
@@ -97,10 +98,12 @@ final class CardDataReadTests: XCTestCase {
         XCTAssertEqual(away.opened, [])
 
         let other = Disk([html: Data(), "/a/b/other/x.json": Data("[1]".utf8)], links: [link: "/a/b/other/x.json"])
-        XCTAssertEqual(CardDataRead.read(file: link, html: html, resolve: other.resolve, read: other.read), .text("[1]"))
+        XCTAssertEqual(
+            CardDataRead.read(file: link, html: html, resolve: other.resolve, read: other.read), .text("[1]"))
         XCTAssertEqual(other.opened, ["/a/b/other/x.json"])
 
-        let deeper = Disk([html: Data(), "/a/b/sub/stats.json": Data("[2]".utf8)], links: [file: "/a/b/sub/stats.json"])
+        let deeper = Disk(
+            [html: Data(), "/a/b/sub/stats.json": Data("[2]".utf8)], links: [file: "/a/b/sub/stats.json"])
         XCTAssertEqual(read(deeper), .text("[2]"))
         XCTAssertEqual(deeper.opened, ["/a/b/sub/stats.json"])
 
@@ -152,7 +155,8 @@ final class CardDataReadTests: XCTestCase {
     func test2611_0002S30AReadThatFailsGivesItsReason() {
         let disk = holding("{}")
         for error in [FileBytes.NotAFile(), FileBytes.TooLarge(limit: FileBytes.sizeCap)] as [any Error] {
-            let outcome = CardDataRead.read(file: file, html: html, resolve: disk.resolve, read: { _ in .failure(error) })
+            let outcome = CardDataRead.read(
+                file: file, html: html, resolve: disk.resolve, read: { _ in .failure(error) })
             XCTAssertEqual(outcome, .refused(error.localizedDescription))
         }
     }

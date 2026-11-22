@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// 2606.0001: the exit→action decision.

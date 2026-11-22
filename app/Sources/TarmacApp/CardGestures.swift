@@ -27,7 +27,7 @@ extension CardResizeGrip: HoverCursorProviding {
 
     func hoverCursor(at windowPoint: NSPoint) -> NSCursor {
         guard let card = superview as? CardView, let board = card.superview,
-              let handle = card.resizeHandle(at: board.convert(windowPoint, from: nil))
+            let handle = card.resizeHandle(at: board.convert(windowPoint, from: nil))
         else { return .arrow }
         switch CardHandles.cursor(for: handle) {
         case .diagonalDown: return .frameResize(position: .topLeft, directions: .all)

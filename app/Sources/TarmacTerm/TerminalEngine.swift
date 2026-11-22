@@ -99,9 +99,11 @@ public final class TerminalEngine {
     /// a time, so somewhat more is kept. The byte cap libghostty-vt starts with is
     /// lifted, since at ~1000 lines it would bind long before any useful limit.
     public func setScrollbackLimit(lines: Int) throws {
-        try check(ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES, nil), "clear scrollback bytes")
+        try check(
+            ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES, nil), "clear scrollback bytes")
         var limit = lines
-        try check(ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_LINES, &limit), "set scrollback lines")
+        try check(
+            ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_LINES, &limit), "set scrollback lines")
     }
 
     // MARK: program-set state
@@ -188,12 +190,14 @@ public final class TerminalEngine {
         options.trim = true
         var formatter: GhosttyFormatter?
         guard ghostty_formatter_terminal_new(nil, &formatter, terminal, options) == GHOSTTY_SUCCESS,
-              let formatter else { return "" }
+            let formatter
+        else { return "" }
         defer { ghostty_formatter_free(formatter) }
         var buffer: UnsafeMutablePointer<UInt8>?
         var length = 0
         guard ghostty_formatter_format_alloc(formatter, nil, &buffer, &length) == GHOSTTY_SUCCESS,
-              let buffer else { return "" }
+            let buffer
+        else { return "" }
         defer { ghostty_free(nil, buffer, length) }
         return String(decoding: UnsafeBufferPointer(start: buffer, count: length), as: UTF8.self)
     }
@@ -209,7 +213,8 @@ public final class TerminalEngine {
     public func tail(lines: Int) -> String {
         let cursorRow = cursorRow
         guard let start = screenRef(col: 0, row: max(cursorRow - lines + 1, 0)),
-              let end = screenRef(col: cols - 1, row: cursorRow) else { return "" }
+            let end = screenRef(col: cols - 1, row: cursorRow)
+        else { return "" }
         var selection = GhosttySelection()
         selection.size = MemoryLayout<GhosttySelection>.size
         selection.start = start
@@ -229,7 +234,8 @@ public final class TerminalEngine {
         var buffer: UnsafeMutablePointer<UInt8>?
         var length = 0
         guard ghostty_terminal_selection_format_alloc(terminal, nil, options, &buffer, &length) == GHOSTTY_SUCCESS,
-              let buffer else { return nil }
+            let buffer
+        else { return nil }
         defer { ghostty_free(nil, buffer, length) }
         return String(decoding: UnsafeBufferPointer(start: buffer, count: length), as: UTF8.self)
     }

@@ -32,7 +32,7 @@ enum KeyTranslation {
     /// symbol (ㄖ for B under Zhuyin).
     static func latinCharacters(keyCode: UInt16, shift: Bool) -> String? {
         guard let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
-              let property = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
+            let property = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
         else { return nil }
         let layout = Unmanaged<CFData>.fromOpaque(property).takeUnretainedValue() as Data
         var deadKeys: UInt32 = 0

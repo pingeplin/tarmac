@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Spec 2611.0018 D7: the split between the inbox list and the preview pane.

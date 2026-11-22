@@ -45,9 +45,10 @@ final class Demo: NSObject, NSApplicationDelegate {
             // Top-left origin, the form `screencapture -R` takes.
             let content = window.convertToScreen(window.contentLayoutRect)
             let top = screen.frame.maxY - content.maxY
-            FileHandle.standardError.write(Data(
-                "demo: content \(Int(content.minX)),\(Int(top)),\(Int(content.width)),\(Int(content.height))\n".utf8
-            ))
+            FileHandle.standardError.write(
+                Data(
+                    "demo: content \(Int(content.minX)),\(Int(top)),\(Int(content.width)),\(Int(content.height))\n".utf8
+                ))
         }
 
         terminal.onInput = { [client, termID] bytes, _ in client.input(termID: termID, bytes: Data(bytes)) }

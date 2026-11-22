@@ -77,10 +77,12 @@ public enum DocImage {
     /// The HTML/URL-standard set — tab, LF, FF, CR, space. A general trim would also
     /// strip VT and Unicode spaces.
     private static func trimmingASCIIWhitespace(_ text: String) -> String {
-        let isSpace: (Unicode.Scalar) -> Bool = { $0 == "\t" || $0 == "\n" || $0 == "\u{0C}" || $0 == "\r" || $0 == " " }
+        let isSpace: (Unicode.Scalar) -> Bool = {
+            $0 == "\t" || $0 == "\n" || $0 == "\u{0C}" || $0 == "\r" || $0 == " "
+        }
         let scalars = text.unicodeScalars
         guard let first = scalars.firstIndex(where: { !isSpace($0) }),
-              let last = scalars.lastIndex(where: { !isSpace($0) })
+            let last = scalars.lastIndex(where: { !isSpace($0) })
         else { return "" }
         return String(scalars[first...last])
     }

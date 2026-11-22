@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// M3: the term_id → board_id ownership index that routes daemon term frames

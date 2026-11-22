@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// A cull pass reports a card only when its visibility is new or has flipped.

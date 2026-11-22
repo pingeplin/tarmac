@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// 2610.0008: the rules of the Theme pane's list and showcase.
@@ -88,9 +89,10 @@ final class ThemeBrowserTests: XCTestCase {
     private func marks(
         _ themes: [ThemeVariant: String], in library: ThemeLibrary = .shipped
     ) -> [String: [ThemeVariant]] {
-        Dictionary(uniqueKeysWithValues: library.all.map { entry in
-            (entry.id, ThemeBrowser.marks(of: entry) { library.entry(themes[$0], for: $0) })
-        })
+        Dictionary(
+            uniqueKeysWithValues: library.all.map { entry in
+                (entry.id, ThemeBrowser.marks(of: entry) { library.entry(themes[$0], for: $0) })
+            })
     }
 
     private func assertEachAppearanceMarksOneTheme(
@@ -270,7 +272,8 @@ final class ThemeBrowserTests: XCTestCase {
         let breezeLight = ThemeCatalog.standard(for: .light)
 
         XCTAssertEqual(
-            ThemeBrowser.box(shown: dracula, chosen: dracula, for: .light), ThemeBrowser.Box(isOn: true, isEnabled: true)
+            ThemeBrowser.box(shown: dracula, chosen: dracula, for: .light),
+            ThemeBrowser.Box(isOn: true, isEnabled: true)
         )
         XCTAssertEqual(
             ThemeBrowser.box(shown: dracula, chosen: breezeLight, for: .light),

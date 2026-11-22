@@ -1,10 +1,11 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// Issue #438: a dev app shows its own Dock icon; a shipped app keeps the bundle's.
 final class DevIconTests: XCTestCase {
     func testADevLabelAndAnIconPathYieldThePath() {
-        XCTAssertEqual(DevIcon.path(devLabel: "438-dev-icon", iconPath: "/r/Tarmac-dev-1024.png"), "/r/Tarmac-dev-1024.png")
+        XCTAssertEqual(
+            DevIcon.path(devLabel: "438-dev-icon", iconPath: "/r/Tarmac-dev-1024.png"), "/r/Tarmac-dev-1024.png")
     }
 
     func testNoDevLabelYieldsNoIconEvenWithAPath() {

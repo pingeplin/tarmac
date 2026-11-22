@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// The reconnect half of `applyRestore` in `desktop/src/App.tsx`.

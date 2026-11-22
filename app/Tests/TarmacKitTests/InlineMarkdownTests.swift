@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 private func line(_ text: String) -> [InlineRun] { InlineMarkdown.line(text).runs }
@@ -242,7 +243,8 @@ final class InlineMarkdownTests: XCTestCase {
             let text = InlineMarkdown.line(input)
             let oneLine = ChromeText.oneLine(input)
             XCTAssertFalse(text.runs.contains { $0.text.isEmpty }, "k=\(k)")
-            XCTAssertFalse(zip(text.runs, text.runs.dropFirst()).contains { $0.mark == .plain && $1.mark == .plain }, "k=\(k)")
+            XCTAssertFalse(
+                zip(text.runs, text.runs.dropFirst()).contains { $0.mark == .plain && $1.mark == .plain }, "k=\(k)")
             XCTAssertEqual(text.runs.isEmpty, oneLine.isEmpty, "k=\(k)")
             XCTAssertLessThanOrEqual(text.plain.unicodeScalars.count, oneLine.unicodeScalars.count, "k=\(k)")
             XCTAssertEqual(text.plain, ChromeText.oneLine(text.plain), "k=\(k)")

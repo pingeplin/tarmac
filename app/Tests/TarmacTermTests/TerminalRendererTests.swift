@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacTerm
 
 @MainActor
@@ -25,7 +26,8 @@ final class TerminalRendererTests: XCTestCase {
         let cell = fonts.metrics.cell
         let padding = TerminalPadding(top: 0, left: 0, bottom: 0, right: 0)
         let bounds = CGSize(width: cell.width * CGFloat(cols), height: cell.height * CGFloat(rows))
-        let layout = try XCTUnwrap(TerminalGridLayout(bounds: bounds, cell: cell, padding: padding, pixelsPerPoint: scale))
+        let layout = try XCTUnwrap(
+            TerminalGridLayout(bounds: bounds, cell: cell, padding: padding, pixelsPerPoint: scale))
 
         let engine = try TerminalEngine(cols: cols, rows: rows)
         try engine.apply(theme)
@@ -171,7 +173,8 @@ final class TerminalRendererTests: XCTestCase {
     func testSelectionTintsTheSelectedCells() throws {
         let canvas = try render("abcdef") { selection, surface in
             selection.press(SurfacePoint(x: 1, y: 5), time: 1, surface: surface)
-            selection.drag(SurfacePoint(x: Double(surface.cellWidth) / surface.pixelsPerPoint * 2.9, y: 5), surface: surface)
+            selection.drag(
+                SurfacePoint(x: Double(surface.cellWidth) / surface.pixelsPerPoint * 2.9, y: 5), surface: surface)
         }
         let tinted = theme.background.blended(with: theme.selection, alpha: theme.selectionAlpha)
         XCTAssertTrue(canvas.colours(inCols: 0..<3, row: 0).contains(tinted))
@@ -195,11 +198,12 @@ struct Canvas {
     init(size: CGSize, scale: CGFloat, fill: RGB, layout: TerminalGridLayout) throws {
         let width = Int((size.width * scale).rounded(.up))
         let height = Int((size.height * scale).rounded(.up))
-        context = try XCTUnwrap(CGContext(
-            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ))
+        context = try XCTUnwrap(
+            CGContext(
+                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
         context.setFillColor(fill.cgColor)
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         // Top-down points, like a flipped NSView's drawing context.

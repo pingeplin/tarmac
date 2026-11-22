@@ -64,7 +64,9 @@ public enum DevTypePlan {
         let steps = text.unicodeScalars.enumerated().map { index, scalar -> Step in
             let char = String(scalar)
             if let combo = controlCombo(scalar) {
-                guard case .stroke(let stroke) = DevKeyCombo.parse(combo) else { return .drop(index: index, char: char) }
+                guard case .stroke(let stroke) = DevKeyCombo.parse(combo) else {
+                    return .drop(index: index, char: char)
+                }
                 return .key(index: index, char: char, stroke: stroke)
             }
             guard mode == .key else { return .insert(index: index, char: char) }

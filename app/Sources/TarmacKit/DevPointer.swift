@@ -102,7 +102,9 @@ public enum DevPointer {
     /// window where a point reaches it, else on the control itself. Never the
     /// press handling alone: a click is what the verb is for.
     public static func controlPress(among candidates: [Candidate]) -> Press {
-        if let reachable = candidates.first(where: \.reachable) { return Press(point: reachable.point, delivery: .window) }
+        if let reachable = candidates.first(where: \.reachable) {
+            return Press(point: reachable.point, delivery: .window)
+        }
         return Press(point: candidates.first?.point ?? .zero, delivery: .target)
     }
 }

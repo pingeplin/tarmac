@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Host side of the HTML-card console relay: validating the shim's postMessage
@@ -151,7 +152,8 @@ final class CardConsoleTests: XCTestCase {
     }
 
     func test2611_0002S19ANullOrAbsentDataNamesNoFile() {
-        XCTAssertEqual(parse(["tarmac": "ready", "meta": NSNull(), "data": NSNull(), "load": 2]), .ready(meta: nil, load: 2))
+        XCTAssertEqual(
+            parse(["tarmac": "ready", "meta": NSNull(), "data": NSNull(), "load": 2]), .ready(meta: nil, load: 2))
         XCTAssertEqual(parse(["tarmac": "ready", "meta": NSNull(), "load": 2]), .ready(meta: nil, data: nil, load: 2))
     }
 
@@ -282,13 +284,15 @@ final class CardConsoleTests: XCTestCase {
         for dropped in [nil, -3, 1.5, "12", NSNull()] as [Any?] {
             var payload: [String: Any] = ["tarmac": "console", "level": "log", "args": ["a"]]
             payload["dropped"] = dropped
-            XCTAssertEqual(parse(payload), .console(CardConsole.Entry(level: .log, args: ["a"])), "\(String(describing: dropped))")
+            XCTAssertEqual(
+                parse(payload), .console(CardConsole.Entry(level: .log, args: ["a"])), "\(String(describing: dropped))")
         }
     }
 
     func testWhatThePageCutIsCountedInTheMark() {
         var buffer = CardConsole.Buffer()
-        buffer.push(CardConsole.Entry(level: .error, args: [.string(String(repeating: "x", count: 1000))], dropped: 500))
+        buffer.push(
+            CardConsole.Entry(level: .error, args: [.string(String(repeating: "x", count: 1000))], dropped: 500))
 
         XCTAssertEqual(
             buffer.entries,

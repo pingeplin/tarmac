@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Where a card's web view may navigate. A card never navigates itself away:
@@ -62,7 +63,8 @@ final class CardNavigationTests: XCTestCase {
         XCTAssertEqual(CardNavigation.doc(load("about:blank"), framesGuarded: false), .allow)
         XCTAssertEqual(CardNavigation.doc(later("about:blank", target: .subframe), framesGuarded: false), .allow)
         XCTAssertEqual(CardNavigation.doc(later("about:srcdoc", target: .subframe), framesGuarded: false), .allow)
-        XCTAssertEqual(CardNavigation.doc(later("https://example.com", target: .mainFrame), framesGuarded: false), .cancel)
+        XCTAssertEqual(
+            CardNavigation.doc(later("https://example.com", target: .mainFrame), framesGuarded: false), .cancel)
     }
 
     func testAnEmptyOrInlineFrameOfADocMayLoad() {
@@ -106,7 +108,10 @@ final class CardNavigationTests: XCTestCase {
     }
 
     func testTheCardsFrameNeverLeavesTheCardScheme() {
-        for url in ["https://example.com", "http://example.com", "file:///etc/passwd", "tarmac-card://img/%2Fa.png", "data:text/html,x"] {
+        for url in [
+            "https://example.com", "http://example.com", "file:///etc/passwd", "tarmac-card://img/%2Fa.png",
+            "data:text/html,x",
+        ] {
             XCTAssertEqual(CardNavigation.htmlCard(later(url, target: .subframe)), .cancel, url)
         }
     }

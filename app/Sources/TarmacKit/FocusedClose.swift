@@ -34,7 +34,8 @@ public enum FocusedClose {
         case .doc:
             return .closeDoc
         case .term:
-            return .closeTerminal(replace: TermExit.decide(code: 0, otherLiveTerminals: otherLiveTerminals) == .removeAndReplace)
+            return .closeTerminal(
+                replace: TermExit.decide(code: 0, otherLiveTerminals: otherLiveTerminals) == .removeAndReplace)
         }
     }
 }

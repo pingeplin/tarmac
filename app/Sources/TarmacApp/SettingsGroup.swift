@@ -52,12 +52,13 @@ enum SettingsGroup {
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 6
-        NSLayoutConstraint.activate([label, box].flatMap {
-            [
-                $0.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
-                $0.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
-            ]
-        })
+        NSLayoutConstraint.activate(
+            [label, box].flatMap {
+                [
+                    $0.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
+                    $0.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
+                ]
+            })
         return stack
     }
 

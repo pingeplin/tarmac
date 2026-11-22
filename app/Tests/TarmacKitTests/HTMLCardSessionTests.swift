@@ -1,9 +1,10 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// A card's file for the tests that do not look at where it is.
-private extension HTMLCardSession {
-    init() { self.init(html: "/a/b/dash.html") }
+extension HTMLCardSession {
+    fileprivate init() { self.init(html: "/a/b/dash.html") }
 }
 
 /// What the host does with each message from an HTML card's document, and what
@@ -422,7 +423,8 @@ final class HTMLCardSessionTests: XCTestCase {
     func test2611_0002S30AFailedReadDeliversNothingAndSaysWhy() throws {
         let reasons = [
             CardDataRead.leadsOutside, FileBytes.NotAFile().localizedDescription,
-            FileBytes.TooLarge(limit: FileBytes.sizeCap).localizedDescription, CardDataRead.notUTF8, CardDataRead.notJSON,
+            FileBytes.TooLarge(limit: FileBytes.sizeCap).localizedDescription, CardDataRead.notUTF8,
+            CardDataRead.notJSON,
         ]
         for reason in reasons {
             var session = card().0
@@ -568,7 +570,8 @@ final class HTMLCardSessionTests: XCTestCase {
 
     private func overLimit(_ effects: [[Effect]]) -> [Int: [Effect]] {
         var given: [Int: [Effect]] = [:]
-        for (index, each) in effects.enumerated() where each.contains(where: {
+        for (index, each) in effects.enumerated()
+        where each.contains(where: {
             if case .pendingOverLimit = $0 { return true } else { return false }
         }) {
             given[index + 1] = each

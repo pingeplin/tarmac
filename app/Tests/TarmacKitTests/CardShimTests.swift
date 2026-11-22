@@ -1,5 +1,6 @@
 import JavaScriptCore
 import XCTest
+
 @testable import TarmacKit
 
 /// The HTML card shim as it ships (`TarmacApp/Resources/Web/card_shim.js`),
@@ -38,257 +39,257 @@ final class CardShimTests: XCTestCase {
     /// element, and the one query the default colour scheme asks. Without it
     /// the document is the one every test before spec 2610.0007 runs in.
     private static let page = """
-    (function (meta, omitNative, withHead, dataMeta) {
-      const listeners = new Map();
-      const docListeners = new Map();
-      const posted = [];
-      const rootWrites = [];
-      const style = { setProperty(...args) { rootWrites.push(["setProperty", ...args]); } };
-      const observers = [];
-      const sheets = [];
+        (function (meta, omitNative, withHead, dataMeta) {
+          const listeners = new Map();
+          const docListeners = new Map();
+          const posted = [];
+          const rootWrites = [];
+          const style = { setProperty(...args) { rootWrites.push(["setProperty", ...args]); } };
+          const observers = [];
+          const sheets = [];
 
-      const frames = new Map();
-      const timeouts = new Map();
-      const intervals = new Map();
+          const frames = new Map();
+          const timeouts = new Map();
+          const intervals = new Map();
 
-      let rafSeq = \(rafIdBase);
-      let timeoutSeq = \(timeoutIdBase);
-      let intervalSeq = \(intervalIdBase);
+          let rafSeq = \(rafIdBase);
+          let timeoutSeq = \(timeoutIdBase);
+          let intervalSeq = \(intervalIdBase);
 
-      const calls = {
-        requestAnimationFrame: [],
-        cancelAnimationFrame: [],
-        setTimeout: [],
-        clearTimeout: [],
-        setInterval: [],
-        clearInterval: [],
-      };
+          const calls = {
+            requestAnimationFrame: [],
+            cancelAnimationFrame: [],
+            setTimeout: [],
+            clearTimeout: [],
+            setInterval: [],
+            clearInterval: [],
+          };
 
-      const parent = { postMessage(data) { posted.push(data); } };
-      const add = (map, type, fn) => map.set(type, [...(map.get(type) ?? []), fn]);
-      const emit = (map, type, event) => { for (const fn of map.get(type) ?? []) fn(event); };
+          const parent = { postMessage(data) { posted.push(data); } };
+          const add = (map, type, fn) => map.set(type, [...(map.get(type) ?? []), fn]);
+          const emit = (map, type, event) => { for (const fn of map.get(type) ?? []) fn(event); };
 
-      Object.assign(globalThis, {
-        window: globalThis,
-        location: { href: "tarmac-card://doc/card.html?v=1" },
-        parent,
-        addEventListener: (type, fn) => add(listeners, type, fn),
-        removeEventListener() {},
-        dispatchEvent(event) {
-          emit(listeners, event.type, event);
-          return true;
-        },
-        CustomEvent: class {
-          constructor(type, init) {
-            this.type = type;
-            this.detail = init ? init.detail : null;
+          Object.assign(globalThis, {
+            window: globalThis,
+            location: { href: "tarmac-card://doc/card.html?v=1" },
+            parent,
+            addEventListener: (type, fn) => add(listeners, type, fn),
+            removeEventListener() {},
+            dispatchEvent(event) {
+              emit(listeners, event.type, event);
+              return true;
+            },
+            CustomEvent: class {
+              constructor(type, init) {
+                this.type = type;
+                this.detail = init ? init.detail : null;
+              }
+            },
+            scrollBy() {},
+
+            requestAnimationFrame(cb) {
+              const id = rafSeq++;
+              frames.set(id, cb);
+              calls.requestAnimationFrame.push(id);
+              return id;
+            },
+            cancelAnimationFrame(id) {
+              calls.cancelAnimationFrame.push(id);
+              frames.delete(id);
+            },
+            setTimeout(cb, delay, ...args) {
+              const id = timeoutSeq++;
+              timeouts.set(id, { cb, args });
+              calls.setTimeout.push({ id, delay, args });
+              return id;
+            },
+            clearTimeout(id) {
+              calls.clearTimeout.push(id);
+              timeouts.delete(id);
+            },
+            setInterval(cb, delay) {
+              const id = intervalSeq++;
+              intervals.set(id, cb);
+              calls.setInterval.push({ id, delay });
+              return id;
+            },
+            clearInterval(id) {
+              calls.clearInterval.push(id);
+              intervals.delete(id);
+            },
+
+            console: { log() {}, info() {}, warn() {}, error() {} },
+
+            ResizeObserver: class {
+              constructor(callback) {
+                this.callback = callback;
+                this.observed = [];
+                observers.push(this);
+              }
+              observe(target) { this.observed.push(target); }
+            },
+
+            document: {
+              documentElement: { style, setAttribute(...args) { rootWrites.push(["setAttribute", ...args]); } },
+              addEventListener: (type, fn) => add(docListeners, type, fn),
+              querySelector(sel) {
+                if (sel === 'meta[name="tarmac-zoom"]' && meta !== null) return { content: meta };
+                if (sel === 'meta[name="tarmac-data"]' && dataMeta !== null) return { content: dataMeta };
+                return null;
+              },
+            },
+          });
+          // A constructed stylesheet with the text and the rules it was given,
+          // and the shim as far as it had come when the sheet was made. Left out,
+          // as in an engine without them, when `omitNative` is CSSStyleSheet. Its
+          // `replaceSync` throws for a text `h.refuse` names, and records it.
+          const refused = [];
+          if (omitNative !== "CSSStyleSheet") {
+            document.adoptedStyleSheets = [];
+            globalThis.CSSStyleSheet = class {
+              constructor() {
+                this.cssRules = [];
+                this.atConstruction = { posted: [...posted], listeners: [...listeners.keys()] };
+                sheets.push(this);
+              }
+              replaceSync(text) {
+                if (h.refuse && h.refuse(text)) {
+                  refused.push(text);
+                  throw new Error("refused");
+                }
+                this.text = text;
+                this.cssRules = text === ":root{}" ? [{ selectorText: ":root", style: { values: {}, setProperty(name, value) { this.values[name] = value; } } }] : [];
+              }
+            };
           }
-        },
-        scrollBy() {},
+          const watchers = [];
+          let parse;
+          if (withHead) {
+            const stockLog = console.log;
+            // What the window had seen of the shim when the head got its first
+            // child. It is read from what the stand-in already keeps, so the
+            // document without a head is not changed to record an order.
+            const seen = () => [
+              ...(posted.length === 0 ? [] : ["parent postMessage"]),
+              ...(console.log === stockLog ? [] : ["console"]),
+              ...[...listeners.keys()].map((type) => `window ${type}`),
+              ...[...docListeners.keys()].map((type) => `document ${type}`),
+              ...observers.map(() => "ResizeObserver"),
+              ...watchers.map(() => "MutationObserver"),
+              ...sheets.map(() => "CSSStyleSheet"),
+            ];
+            // `changes` is the head's history in order: an `append` is a script's
+            // (the shim's), a `parse` is the test's.
+            const head = {
+              children: [],
+              changes: [],
+              before: null,
+              appendChild(el) {
+                head.before ??= seen();
+                head.children.push(el);
+                head.changes.push(`append ${el.localName}`);
+                return el;
+              },
+            };
+            const element = (localName, attributes) => ({
+              localName,
+              ...attributes,
+              remove() {
+                const at = head.children.indexOf(this);
+                if (at < 0) return;
+                head.children.splice(at, 1);
+                head.changes.push(`remove ${localName}`);
+              },
+            });
 
-        requestAnimationFrame(cb) {
-          const id = rafSeq++;
-          frames.set(id, cb);
-          calls.requestAnimationFrame.push(id);
-          return id;
-        },
-        cancelAnimationFrame(id) {
-          calls.cancelAnimationFrame.push(id);
-          frames.delete(id);
-        },
-        setTimeout(cb, delay, ...args) {
-          const id = timeoutSeq++;
-          timeouts.set(id, { cb, args });
-          calls.setTimeout.push({ id, delay, args });
-          return id;
-        },
-        clearTimeout(id) {
-          calls.clearTimeout.push(id);
-          timeouts.delete(id);
-        },
-        setInterval(cb, delay) {
-          const id = intervalSeq++;
-          intervals.set(id, cb);
-          calls.setInterval.push({ id, delay });
-          return id;
-        },
-        clearInterval(id) {
-          calls.clearInterval.push(id);
-          intervals.delete(id);
-        },
+            document.head = head;
+            document.createElement = (localName) => element(localName);
+            // `meta[name="x"]` and `meta[name="x" i]`, told apart as an engine
+            // tells them: a name matches in any letter case only with the `i`.
+            document.querySelectorAll = (selector) => {
+              const [, name, anyCase] = /^meta\\[name="([^"]*)"( i)?\\]$/.exec(selector) ?? [];
+              if (name === undefined) return [];
+              const fold = (text) => (anyCase ? text.toLowerCase() : text);
+              return head.children.filter(
+                (el) => el.localName === "meta" && typeof el.name === "string" && fold(el.name) === fold(name)
+              );
+            };
+            globalThis.MutationObserver = class {
+              constructor(callback) {
+                this.callback = callback;
+                this.observed = [];
+                this.connected = false;
+                watchers.push(this);
+              }
+              observe(target, options) {
+                this.observed.push({ target, options });
+                this.connected = true;
+              }
+              disconnect() { this.connected = false; }
+            };
+            // The parser, or a script of the author, puts an element in the head.
+            // An observer hears of it only while it is connected.
+            parse = (localName, attributes) => {
+              const el = element(localName, attributes);
+              head.children.push(el);
+              head.changes.push(`parse ${localName}`);
+              for (const watcher of watchers.filter((each) => each.connected)) {
+                watcher.callback([{ type: "childList", target: head, addedNodes: [el] }], watcher);
+              }
+              return el;
+            };
+          }
+          if (omitNative) delete globalThis[omitNative];
 
-        console: { log() {}, info() {}, warn() {}, error() {} },
-
-        ResizeObserver: class {
-          constructor(callback) {
-            this.callback = callback;
-            this.observed = [];
-            observers.push(this);
-          }
-          observe(target) { this.observed.push(target); }
-        },
-
-        document: {
-          documentElement: { style, setAttribute(...args) { rootWrites.push(["setAttribute", ...args]); } },
-          addEventListener: (type, fn) => add(docListeners, type, fn),
-          querySelector(sel) {
-            if (sel === 'meta[name="tarmac-zoom"]' && meta !== null) return { content: meta };
-            if (sel === 'meta[name="tarmac-data"]' && dataMeta !== null) return { content: dataMeta };
-            return null;
-          },
-        },
-      });
-      // A constructed stylesheet with the text and the rules it was given,
-      // and the shim as far as it had come when the sheet was made. Left out,
-      // as in an engine without them, when `omitNative` is CSSStyleSheet. Its
-      // `replaceSync` throws for a text `h.refuse` names, and records it.
-      const refused = [];
-      if (omitNative !== "CSSStyleSheet") {
-        document.adoptedStyleSheets = [];
-        globalThis.CSSStyleSheet = class {
-          constructor() {
-            this.cssRules = [];
-            this.atConstruction = { posted: [...posted], listeners: [...listeners.keys()] };
-            sheets.push(this);
-          }
-          replaceSync(text) {
-            if (h.refuse && h.refuse(text)) {
-              refused.push(text);
-              throw new Error("refused");
-            }
-            this.text = text;
-            this.cssRules = text === ":root{}" ? [{ selectorText: ":root", style: { values: {}, setProperty(name, value) { this.values[name] = value; } } }] : [];
-          }
-        };
-      }
-      const watchers = [];
-      let parse;
-      if (withHead) {
-        const stockLog = console.log;
-        // What the window had seen of the shim when the head got its first
-        // child. It is read from what the stand-in already keeps, so the
-        // document without a head is not changed to record an order.
-        const seen = () => [
-          ...(posted.length === 0 ? [] : ["parent postMessage"]),
-          ...(console.log === stockLog ? [] : ["console"]),
-          ...[...listeners.keys()].map((type) => `window ${type}`),
-          ...[...docListeners.keys()].map((type) => `document ${type}`),
-          ...observers.map(() => "ResizeObserver"),
-          ...watchers.map(() => "MutationObserver"),
-          ...sheets.map(() => "CSSStyleSheet"),
-        ];
-        // `changes` is the head's history in order: an `append` is a script's
-        // (the shim's), a `parse` is the test's.
-        const head = {
-          children: [],
-          changes: [],
-          before: null,
-          appendChild(el) {
-            head.before ??= seen();
-            head.children.push(el);
-            head.changes.push(`append ${el.localName}`);
-            return el;
-          },
-        };
-        const element = (localName, attributes) => ({
-          localName,
-          ...attributes,
-          remove() {
-            const at = head.children.indexOf(this);
-            if (at < 0) return;
-            head.children.splice(at, 1);
-            head.changes.push(`remove ${localName}`);
-          },
-        });
-
-        document.head = head;
-        document.createElement = (localName) => element(localName);
-        // `meta[name="x"]` and `meta[name="x" i]`, told apart as an engine
-        // tells them: a name matches in any letter case only with the `i`.
-        document.querySelectorAll = (selector) => {
-          const [, name, anyCase] = /^meta\\[name="([^"]*)"( i)?\\]$/.exec(selector) ?? [];
-          if (name === undefined) return [];
-          const fold = (text) => (anyCase ? text.toLowerCase() : text);
-          return head.children.filter(
-            (el) => el.localName === "meta" && typeof el.name === "string" && fold(el.name) === fold(name)
-          );
-        };
-        globalThis.MutationObserver = class {
-          constructor(callback) {
-            this.callback = callback;
-            this.observed = [];
-            this.connected = false;
-            watchers.push(this);
-          }
-          observe(target, options) {
-            this.observed.push({ target, options });
-            this.connected = true;
-          }
-          disconnect() { this.connected = false; }
-        };
-        // The parser, or a script of the author, puts an element in the head.
-        // An observer hears of it only while it is connected.
-        parse = (localName, attributes) => {
-          const el = element(localName, attributes);
-          head.children.push(el);
-          head.changes.push(`parse ${localName}`);
-          for (const watcher of watchers.filter((each) => each.connected)) {
-            watcher.callback([{ type: "childList", target: head, addedNodes: [el] }], watcher);
-          }
-          return el;
-        };
-      }
-      if (omitNative) delete globalThis[omitNative];
-
-      globalThis.h = {
-        posted,
-        style,
-        rootWrites,
-        sheets,
-        refuse: null,
-        refused,
-        calls,
-        send: (data, source = parent) => emit(listeners, "message", { source, data }),
-        fire: (type, event) => emit(listeners, type, event),
-        // Where the shim listens for a scroll is its own business, so the
-        // event goes to both; the document is the root's own target.
-        scroll(target = document) {
-          emit(docListeners, "scroll", { target });
-          emit(listeners, "scroll", { target });
-        },
-        observers,
-        watchers,
-        parse,
-        domReady: () => emit(docListeners, "DOMContentLoaded", {}),
-        driveFrame(ts) {
-          const due = [...frames.entries()].sort((a, b) => a[0] - b[0]);
-          frames.clear();
-          for (const [, cb] of due) cb(ts);
-        },
-        fireTimeout(id) {
-          const entry = timeouts.get(id);
-          if (!entry) throw new Error(`no pending native timeout ${id}`);
-          timeouts.delete(id);
-          entry.cb(...entry.args);
-        },
-        drainTimeouts() {
-          for (const id of [...timeouts.keys()].sort((a, b) => a - b)) {
-            const entry = timeouts.get(id);
-            if (!entry) continue;
-            timeouts.delete(id);
-            entry.cb(...entry.args);
-          }
-        },
-        tickInterval(id) {
-          const cb = intervals.get(id);
-          if (!cb) throw new Error(`no armed native interval ${id}`);
-          cb();
-        },
-        pendingFrameIds: () => [...frames.keys()],
-        pendingTimeoutIds: () => [...timeouts.keys()],
-      };
-    })
-    """
+          globalThis.h = {
+            posted,
+            style,
+            rootWrites,
+            sheets,
+            refuse: null,
+            refused,
+            calls,
+            send: (data, source = parent) => emit(listeners, "message", { source, data }),
+            fire: (type, event) => emit(listeners, type, event),
+            // Where the shim listens for a scroll is its own business, so the
+            // event goes to both; the document is the root's own target.
+            scroll(target = document) {
+              emit(docListeners, "scroll", { target });
+              emit(listeners, "scroll", { target });
+            },
+            observers,
+            watchers,
+            parse,
+            domReady: () => emit(docListeners, "DOMContentLoaded", {}),
+            driveFrame(ts) {
+              const due = [...frames.entries()].sort((a, b) => a[0] - b[0]);
+              frames.clear();
+              for (const [, cb] of due) cb(ts);
+            },
+            fireTimeout(id) {
+              const entry = timeouts.get(id);
+              if (!entry) throw new Error(`no pending native timeout ${id}`);
+              timeouts.delete(id);
+              entry.cb(...entry.args);
+            },
+            drainTimeouts() {
+              for (const id of [...timeouts.keys()].sort((a, b) => a - b)) {
+                const entry = timeouts.get(id);
+                if (!entry) continue;
+                timeouts.delete(id);
+                entry.cb(...entry.args);
+              }
+            },
+            tickInterval(id) {
+              const cb = intervals.get(id);
+              if (!cb) throw new Error(`no armed native interval ${id}`);
+              cb();
+            },
+            pendingFrameIds: () => [...frames.keys()],
+            pendingTimeoutIds: () => [...timeouts.keys()],
+          };
+        })
+        """
 
     /// A stand-in window with the shim loaded in it. Every expression read
     /// back is JavaScript, evaluated in that window.
@@ -365,7 +366,10 @@ final class CardShimTests: XCTestCase {
 
     /// The `ready` of a document that names no data file (spec 2611.0002).
     private static func ready(meta: String?) -> [String: Any] {
-        ["tarmac": "ready", "meta": meta as Any? ?? NSNull(), "data": NSNull(), "source": "tarmac-card://doc/card.html?v=1"]
+        [
+            "tarmac": "ready", "meta": meta as Any? ?? NSNull(), "data": NSNull(),
+            "source": "tarmac-card://doc/card.html?v=1",
+        ]
     }
 
     private func source() throws -> String { try CardShimSource.text() }
@@ -431,19 +435,21 @@ final class CardShimTests: XCTestCase {
     /// are, card code can no longer reach the wrappers at all.
     func testS6CancelsAndResumesThroughCapturedReferencesAfterACardReplacesThem() throws {
         let shim = try loadShim()
-        shim.run("""
-        var ran = [];
-        window.requestAnimationFrame(() => ran.push("frame"));
-        var timeoutId = window.setTimeout(() => ran.push("timeout"), 5);
-        """)
+        shim.run(
+            """
+            var ran = [];
+            window.requestAnimationFrame(() => ran.push("frame"));
+            var timeoutId = window.setTimeout(() => ran.push("timeout"), 5);
+            """)
         let nativeFrameId = try shim.id("h.calls.requestAnimationFrame[0]")
 
-        shim.run("""
-        var boom = () => { throw new Error("card replaced a scheduler global"); };
-        window.requestAnimationFrame = boom;
-        window.setTimeout = boom;
-        window.cancelAnimationFrame = boom;
-        """)
+        shim.run(
+            """
+            var boom = () => { throw new Error("card replaced a scheduler global"); };
+            window.requestAnimationFrame = boom;
+            window.setTimeout = boom;
+            window.cancelAnimationFrame = boom;
+            """)
 
         shim.pause()
         XCTAssertTrue(try shim.ids("h.calls.cancelAnimationFrame").contains(nativeFrameId), "S6: cancel")
@@ -487,10 +493,11 @@ final class CardShimTests: XCTestCase {
         let shim = try loadShim()
         shim.run("var ran = []; window.requestAnimationFrame(() => ran.push('pre'));")
         shim.pause()
-        shim.run("""
-        window.requestAnimationFrame(() => ran.push("mid"));
-        window.requestAnimationFrame(() => ran.push("post"));
-        """)
+        shim.run(
+            """
+            window.requestAnimationFrame(() => ran.push("mid"));
+            window.requestAnimationFrame(() => ran.push("post"));
+            """)
 
         let nativeCallsBefore = try shim.count("h.calls.requestAnimationFrame")
         shim.resume()
@@ -503,12 +510,13 @@ final class CardShimTests: XCTestCase {
     func testS10CancelAnimationFrameOnAHeldIdDropsOnlyThatCallback() throws {
         let shim = try loadShim()
         shim.pause()
-        shim.run("""
-        var ran = [];
-        var doomed = window.requestAnimationFrame(() => ran.push("doomed"));
-        window.requestAnimationFrame(() => ran.push("kept"));
-        window.cancelAnimationFrame(doomed);
-        """)
+        shim.run(
+            """
+            var ran = [];
+            var doomed = window.requestAnimationFrame(() => ran.push("doomed"));
+            window.requestAnimationFrame(() => ran.push("kept"));
+            window.cancelAnimationFrame(doomed);
+            """)
         shim.resumeAndDrain()
 
         XCTAssertEqual(try shim.strings("ran"), ["kept"], "S10")
@@ -639,20 +647,22 @@ final class CardShimTests: XCTestCase {
 
     func testS20BothFamiliesFlushInIssueOrderWithinEachFamily() throws {
         let shim = try loadShim()
-        shim.run("""
-        var ran = [];
-        var a = window.setTimeout(() => ran.push("tA"), 16);
-        var b = window.setTimeout(() => ran.push("tB"), 16);
-        window.requestAnimationFrame(() => ran.push("fX"));
-        """)
+        shim.run(
+            """
+            var ran = [];
+            var a = window.setTimeout(() => ran.push("tA"), 16);
+            var b = window.setTimeout(() => ran.push("tB"), 16);
+            window.requestAnimationFrame(() => ran.push("fX"));
+            """)
 
         shim.pause()
-        shim.run("""
-        h.fireTimeout(a);
-        h.fireTimeout(b);
-        window.requestAnimationFrame(() => ran.push("fY"));
-        window.requestAnimationFrame(() => ran.push("fZ"));
-        """)
+        shim.run(
+            """
+            h.fireTimeout(a);
+            h.fireTimeout(b);
+            window.requestAnimationFrame(() => ran.push("fY"));
+            window.requestAnimationFrame(() => ran.push("fZ"));
+            """)
 
         shim.resumeAndDrain()
 
@@ -684,11 +694,12 @@ final class CardShimTests: XCTestCase {
 
     func testS22ARepeatPauseReCancelsNothingAndDoesNotDuplicateDeliveries() throws {
         let shim = try loadShim()
-        shim.run("""
-        var ran = [];
-        window.requestAnimationFrame(() => ran.push("frame"));
-        var t = window.setTimeout(() => ran.push("timeout"), 16);
-        """)
+        shim.run(
+            """
+            var ran = [];
+            window.requestAnimationFrame(() => ran.push("frame"));
+            var t = window.setTimeout(() => ran.push("timeout"), 16);
+            """)
 
         shim.pause()
         shim.run("h.fireTimeout(t)")
@@ -708,11 +719,12 @@ final class CardShimTests: XCTestCase {
     /// native timers fire.
     func testS23AResumeWhileRunningTouchesNothingTheCardAlreadyHasInFlight() throws {
         let shim = try loadShim()
-        shim.run("""
-        var ran = [];
-        window.requestAnimationFrame(() => ran.push("frame"));
-        var t = window.setTimeout(() => ran.push("timeout"), 16);
-        """)
+        shim.run(
+            """
+            var ran = [];
+            window.requestAnimationFrame(() => ran.push("frame"));
+            var t = window.setTimeout(() => ran.push("timeout"), 16);
+            """)
 
         let framesBefore = try shim.count("h.calls.requestAnimationFrame")
         let timeoutsBefore = try shim.count("h.calls.setTimeout")
@@ -846,22 +858,24 @@ final class CardShimTests: XCTestCase {
     /// them itself.
     func testS42DoesNotStrandTheRestOfTheQueueInEitherFamily() throws {
         let shim = try loadShim()
-        shim.run("""
-        var ran = [];
-        var t1 = window.setTimeout(() => ran.push("t1"), 16);
-        var t2 = window.setTimeout(() => { throw new Error("boom-timeout"); }, 16);
-        var t3 = window.setTimeout(() => ran.push("t3"), 16);
-        """)
+        shim.run(
+            """
+            var ran = [];
+            var t1 = window.setTimeout(() => ran.push("t1"), 16);
+            var t2 = window.setTimeout(() => { throw new Error("boom-timeout"); }, 16);
+            var t3 = window.setTimeout(() => ran.push("t3"), 16);
+            """)
         shim.pause()
-        shim.run("""
-        h.fireTimeout(t1);
-        h.fireTimeout(t2);
-        h.fireTimeout(t3);
+        shim.run(
+            """
+            h.fireTimeout(t1);
+            h.fireTimeout(t2);
+            h.fireTimeout(t3);
 
-        window.requestAnimationFrame(() => ran.push("f1"));
-        window.requestAnimationFrame(() => { throw new Error("boom-frame"); });
-        window.requestAnimationFrame(() => ran.push("f3"));
-        """)
+            window.requestAnimationFrame(() => ran.push("f1"));
+            window.requestAnimationFrame(() => { throw new Error("boom-frame"); });
+            window.requestAnimationFrame(() => ran.push("f3"));
+            """)
 
         shim.resumeAndDrain()
 
@@ -885,12 +899,13 @@ final class CardShimTests: XCTestCase {
 
     func testS40ForwardsEveryCancelToItsCapturedNativeAndRunsNothing() throws {
         let shim = try loadShim()
-        shim.run("""
-        var ran = [];
-        var frame = window.requestAnimationFrame(() => ran.push("frame"));
-        var timeout = window.setTimeout(() => ran.push("timeout"), 16);
-        var interval = window.setInterval(() => ran.push("interval"), 16);
-        """)
+        shim.run(
+            """
+            var ran = [];
+            var frame = window.requestAnimationFrame(() => ran.push("frame"));
+            var timeout = window.setTimeout(() => ran.push("timeout"), 16);
+            var interval = window.setInterval(() => ran.push("interval"), 16);
+            """)
 
         let nativeFrame = try shim.id("h.calls.requestAnimationFrame[0]")
         let nativeTimeout = try shim.id("h.calls.setTimeout[0].id")
@@ -912,12 +927,13 @@ final class CardShimTests: XCTestCase {
         let shim = try loadShim()
         shim.pause()
 
-        shim.run("""
-        window.console.log("x");
-        h.fire("error", { message: "boom" });
-        h.fire("unhandledrejection", { reason: "nope" });
-        h.fire("keydown", { key: "Escape" });
-        """)
+        shim.run(
+            """
+            window.console.log("x");
+            h.fire("error", { message: "boom" });
+            h.fire("unhandledrejection", { reason: "nope" });
+            h.fire("keydown", { key: "Escape" });
+            """)
 
         XCTAssertTrue(try shim.hasPosted(["tarmac": "console", "level": "log", "args": ["x"]]), "S26: console")
         XCTAssertTrue(try shim.hasPosted(["tarmac": "console", "level": "error", "args": ["boom"]]), "S26: error")
@@ -1101,10 +1117,11 @@ final class CardShimTests: XCTestCase {
     /// is asked for as "left top behavior".
     private func loadScrollableShim() throws -> Shim {
         let shim = try loadShim()
-        shim.run("""
-        var scrolledTo = []; window.scrollX = 12;
-        window.scrollTo = (to) => scrolledTo.push([to.left, to.top, to.behavior].join(' '));
-        """)
+        shim.run(
+            """
+            var scrolledTo = []; window.scrollX = 12;
+            window.scrollTo = (to) => scrolledTo.push([to.left, to.top, to.behavior].join(' '));
+            """)
         return shim
     }
 
@@ -1146,7 +1163,8 @@ final class CardShimTests: XCTestCase {
         let culled = try natives()
         shim.run("h.send({ tarmac: 'scrollTo', y: 600 })")
         XCTAssertEqual(try natives(), culled, "culled")
-        XCTAssertEqual(try shim.strings("scrolledTo"), ["12 300 instant", "12 600 instant"], "a culled card still scrolls")
+        XCTAssertEqual(
+            try shim.strings("scrolledTo"), ["12 300 instant", "12 600 instant"], "a culled card still scrolls")
     }
 
     func test2610S25AWindowWithNoResizeObserverStillReports() throws {
@@ -1173,7 +1191,8 @@ final class CardShimTests: XCTestCase {
     // What the engine does with the meta is QA (2610.0007 S62–S66):
     // JavaScriptCore has no CSS.
 
-    private static let headElements = "document.head.children.map((el) => [el.localName, el.name, el.content].join(' '))"
+    private static let headElements =
+        "document.head.children.map((el) => [el.localName, el.name, el.content].join(' '))"
     private static let defaultScheme = "meta color-scheme light dark"
 
     /// A shim in a document with a head, and `scheme`: the head's first child
@@ -1200,13 +1219,14 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(shim.flag("h.watchers[0].observed[0].options.childList"), true, "childList")
         XCTAssertEqual(shim.flag("h.watchers[0].observed[0].options.subtree"), true, "subtree")
 
-        shim.run("""
-        h.parse("meta", { charset: "utf-8" });
-        h.parse("title");
-        h.parse("meta", { name: "viewport", content: "width=device-width" });
-        h.parse("meta", { name: "tarmac-zoom", content: "reveal" });
-        h.parse("style");
-        """)
+        shim.run(
+            """
+            h.parse("meta", { charset: "utf-8" });
+            h.parse("title");
+            h.parse("meta", { name: "viewport", content: "width=device-width" });
+            h.parse("meta", { name: "tarmac-zoom", content: "reveal" });
+            h.parse("style");
+            """)
 
         XCTAssertEqual(shim.flag("document.head.children[0] === scheme"), true, "2610.0007 S68: the default")
         XCTAssertEqual(try shim.count("document.head.children"), 6, "2610.0007 S68: the head")
@@ -1237,7 +1257,8 @@ final class CardShimTests: XCTestCase {
     /// to": an observer that is still connected would take the default away.
     func test2610_0007S69DOMContentLoadedEndsTheWatchAndKeepsTheDefault() throws {
         let shim = try loadShimInADocumentWithAHead()
-        XCTAssertEqual(shim.flag("h.watchers[0].connected"), true, "2610.0007 S69: watching while the document is parsed")
+        XCTAssertEqual(
+            shim.flag("h.watchers[0].connected"), true, "2610.0007 S69: watching while the document is parsed")
 
         shim.run("h.domReady()")
         XCTAssertEqual(shim.flag("h.watchers[0].connected"), false, "2610.0007 S69: still watching")
@@ -1276,7 +1297,8 @@ final class CardShimTests: XCTestCase {
     /// The properties of the one `:root` rule of the font sheet: the adopted
     /// sheet whose first rule is `:root`.
     private func declared(_ shim: Shim) throws -> [String: String] {
-        let found = "document.adoptedStyleSheets.find((s) => s.cssRules && s.cssRules[0] && s.cssRules[0].selectorText === ':root')"
+        let found =
+            "document.adoptedStyleSheets.find((s) => s.cssRules && s.cssRules[0] && s.cssRules[0].selectorText === ':root')"
         let json = shim.run("JSON.stringify(\(found).cssRules[0].style.values)")
         let text = try XCTUnwrap(json.isString ? json.toString() : nil, "no rule is declared")
         return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: String])
@@ -1310,7 +1332,8 @@ final class CardShimTests: XCTestCase {
         sendFonts(shim, Self.otherFonts.json)
 
         XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S11: the rule holds the message")
-        XCTAssertEqual(try shim.strings("Object.keys(h.style)"), ["setProperty"], "S11: the root's style holds no value")
+        XCTAssertEqual(
+            try shim.strings("Object.keys(h.style)"), ["setProperty"], "S11: the root's style holds no value")
         XCTAssertEqual(try shim.count("h.rootWrites"), 0, "S11: no write on the root")
         XCTAssertEqual(try shim.strings(Self.headElements), [Self.defaultScheme], "S11: the head")
     }
@@ -1319,14 +1342,17 @@ final class CardShimTests: XCTestCase {
         let shim = try loadShim(head: true)
         XCTAssertEqual(try shim.count("h.sheets"), 1, "S12: the media sheet only is made")
         XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 1, "S12: the media sheet only is adopted")
-        XCTAssertEqual(shim.flag("h.sheets.some((s) => s.cssRules.some((r) => r.selectorText === ':root'))"), false, "S12: no font sheet is made")
+        XCTAssertEqual(
+            shim.flag("h.sheets.some((s) => s.cssRules.some((r) => r.selectorText === ':root'))"), false,
+            "S12: no font sheet is made")
         shim.run("h.domReady()")
         XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "S12: the rest of the shim")
     }
 
     func test2610_0010S13AWindowWithNoConstructedStylesheetsLoadsAndStillWorks() throws {
         let shim = try loadShim(omitting: "CSSStyleSheet", fonts: Self.fonts)
-        XCTAssertNil(shim.thrown("h.send({ tarmac: 'fonts', vars: { '--tarmac-prose-size': '20px' } })"), "S13: a message")
+        XCTAssertNil(
+            shim.thrown("h.send({ tarmac: 'fonts', vars: { '--tarmac-prose-size': '20px' } })"), "S13: a message")
         shim.run("h.domReady()")
         XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "S13: ready")
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
@@ -1338,7 +1364,8 @@ final class CardShimTests: XCTestCase {
     func test2610_0010S14TheFontsBlockRunsAfterTheStartedPostAndBeforeTheFirstListener() throws {
         let shim = try loadShim(head: true, fonts: Self.fonts)
         XCTAssertEqual(try shim.count("h.sheets"), 2, "S14: the media sheet and the font sheet")
-        XCTAssertEqual(try shim.strings(Self.headElements), [Self.defaultScheme], "S14: the block added no head element")
+        XCTAssertEqual(
+            try shim.strings(Self.headElements), [Self.defaultScheme], "S14: the block added no head element")
         XCTAssertEqual(try shim.posted().count, 1, "S14: one message by now")
         XCTAssertEqual(
             shim.run("JSON.stringify(h.sheets[1].atConstruction.posted)").toString(),
@@ -1370,10 +1397,12 @@ final class CardShimTests: XCTestCase {
 
     func test2610_0010S18AnEntryIsSkippedUnlessItsNameStartsWithTarmacAndItsValueIsAString() throws {
         let shim = try loadShim(fonts: Self.fonts)
-        sendFonts(shim, """
-        { 'color': 'red', '--other': 'x', '--tarmac-prose-size': 20, '--tarmac-mono-font': null,
-          '--tarmac-prose-font': 'serif' }
-        """)
+        sendFonts(
+            shim,
+            """
+            { 'color': 'red', '--other': 'x', '--tarmac-prose-size': 20, '--tarmac-mono-font': null,
+              '--tarmac-prose-font': 'serif' }
+            """)
         var expected = try vars(Self.fonts)
         expected["--tarmac-prose-font"] = "serif"
         XCTAssertEqual(try declared(shim), expected)
@@ -1398,7 +1427,9 @@ final class CardShimTests: XCTestCase {
             shim.run("h.domReady()")
             XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S19: after it")
             XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 2, "S19: the sheets")
-            XCTAssertEqual(shim.flag("document.adoptedStyleSheets[0].page === true"), pageSheets > 0, "S19: the page's own sheet first")
+            XCTAssertEqual(
+                shim.flag("document.adoptedStyleSheets[0].page === true"), pageSheets > 0,
+                "S19: the page's own sheet first")
         }
     }
 
@@ -1453,7 +1484,8 @@ final class CardShimTests: XCTestCase {
 
     func testALiveTimeoutKeepsItsExtraArguments() throws {
         let shim = try loadShim()
-        shim.run("var seen = []; var id = window.setTimeout((...args) => seen.push(args), 16, 'a', 7); h.fireTimeout(id);")
+        shim.run(
+            "var seen = []; var id = window.setTimeout((...args) => seen.push(args), 16, 'a', 7); h.fireTimeout(id);")
         XCTAssertEqual(shim.run("seen").toArray() as NSArray?, [["a", 7]])
     }
 
@@ -1476,7 +1508,8 @@ final class CardShimTests: XCTestCase {
 
     func testCancellingASpentOrHeldFrameIdReachesNoNative() throws {
         let shim = try loadShim()
-        shim.run("var spent = window.requestAnimationFrame(() => {}); h.driveFrame(1); window.cancelAnimationFrame(spent);")
+        shim.run(
+            "var spent = window.requestAnimationFrame(() => {}); h.driveFrame(1); window.cancelAnimationFrame(spent);")
         XCTAssertEqual(try shim.ids("h.calls.cancelAnimationFrame"), [], "a spent id")
 
         shim.pause()
@@ -1756,7 +1789,9 @@ final class CardShimTests: XCTestCase {
     /// throws, so a text after the first is heard only past that guard.
     func test2611_0003S39AListenerThatThrowsDoesNotStopTheNextText() throws {
         let shim = try loadShim()
-        shim.run("var events = []; window.addEventListener('tarmac:push', (e) => { events.push(e); throw new Error('boom'); });")
+        shim.run(
+            "var events = []; window.addEventListener('tarmac:push', (e) => { events.push(e); throw new Error('boom'); });"
+        )
         sendEvents(shim, "['[1]', '[2]']")
         XCTAssertEqual(json(shim, "events.map((e) => e.detail)"), "[[1],[2]]")
     }
@@ -1785,32 +1820,33 @@ final class CardShimTests: XCTestCase {
     /// the shim reads none of this until a zoom arrives.
     private func loadShimWithAListItem() throws -> Shim {
         let shim = try loadShim(head: true)
-        shim.run("""
-        (() => {
-          const attrs = new Map();
-          h.li = {
-            nodeType: 1, localName: "li",
-            hasAttribute: (n) => attrs.has(n),
-            getAttribute: (n) => (attrs.has(n) ? attrs.get(n) : null),
-            setAttribute: (n, v) => attrs.set(n, String(v)),
-            removeAttribute: (n) => attrs.delete(n),
-          };
-          const query = document.querySelectorAll;
-          document.querySelectorAll = (selector) => (selector === "li" ? [h.li] : query(selector));
-          const replace = CSSStyleSheet.prototype.replaceSync;
-          CSSStyleSheet.prototype.replaceSync = function (text) {
-            if (text.startsWith("li[data-tarmac-marker]")) this.cssRules = [{ selectorText: "li[data-tarmac-marker]" }];
-            else replace.call(this, text);
-          };
-          const sheeted = () => (document.adoptedStyleSheets || [])
-            .some((sheet) => sheet.cssRules[0] && sheet.cssRules[0].selectorText === "li[data-tarmac-marker]");
-          globalThis.getComputedStyle = (el, pseudo) => pseudo ? { content: pseudo === "::marker" ? "normal" : "none" } : {
-            display: "list-item", listStylePosition: "outside", listStyleImage: "none",
-            direction: "ltr", writingMode: "horizontal-tb",
-            listStyleType: el.hasAttribute("data-tarmac-marker") && sheeted() ? "none" : "disc",
-          };
-        })()
-        """)
+        shim.run(
+            """
+            (() => {
+              const attrs = new Map();
+              h.li = {
+                nodeType: 1, localName: "li",
+                hasAttribute: (n) => attrs.has(n),
+                getAttribute: (n) => (attrs.has(n) ? attrs.get(n) : null),
+                setAttribute: (n, v) => attrs.set(n, String(v)),
+                removeAttribute: (n) => attrs.delete(n),
+              };
+              const query = document.querySelectorAll;
+              document.querySelectorAll = (selector) => (selector === "li" ? [h.li] : query(selector));
+              const replace = CSSStyleSheet.prototype.replaceSync;
+              CSSStyleSheet.prototype.replaceSync = function (text) {
+                if (text.startsWith("li[data-tarmac-marker]")) this.cssRules = [{ selectorText: "li[data-tarmac-marker]" }];
+                else replace.call(this, text);
+              };
+              const sheeted = () => (document.adoptedStyleSheets || [])
+                .some((sheet) => sheet.cssRules[0] && sheet.cssRules[0].selectorText === "li[data-tarmac-marker]");
+              globalThis.getComputedStyle = (el, pseudo) => pseudo ? { content: pseudo === "::marker" ? "normal" : "none" } : {
+                display: "list-item", listStylePosition: "outside", listStyleImage: "none",
+                direction: "ltr", writingMode: "horizontal-tb",
+                listStyleType: el.hasAttribute("data-tarmac-marker") && sheeted() ? "none" : "disc",
+              };
+            })()
+            """)
         return shim
     }
 
@@ -1818,7 +1854,8 @@ final class CardShimTests: XCTestCase {
         let shim = try loadShimWithAListItem()
         shim.run("h.domReady()")
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
-        XCTAssertEqual(shim.run("h.li.getAttribute('data-tarmac-marker')").toString(), "disc", "S15: the control is marked")
+        XCTAssertEqual(
+            shim.run("h.li.getAttribute('data-tarmac-marker')").toString(), "disc", "S15: the control is marked")
     }
 
     func test2611_0019S15WithoutANativeTheZoomStillAppliesAndNothingIsMarked() throws {
@@ -1861,8 +1898,14 @@ final class CardShimTests: XCTestCase {
         shim.run("h.domReady()")
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
         XCTAssertEqual(try shim.count("h.watchers"), 2, "S16: one more observer")
-        XCTAssertEqual(shim.flag("h.watchers[1].observed.length === 1 && h.watchers[1].observed[0].target === document.documentElement"), true)
-        XCTAssertEqual(shim.flag("h.watchers[1].observed[0].options.childList === true && h.watchers[1].observed[0].options.subtree === true"), true)
+        XCTAssertEqual(
+            shim.flag(
+                "h.watchers[1].observed.length === 1 && h.watchers[1].observed[0].target === document.documentElement"),
+            true)
+        XCTAssertEqual(
+            shim.flag(
+                "h.watchers[1].observed[0].options.childList === true && h.watchers[1].observed[0].options.subtree === true"
+            ), true)
         XCTAssertEqual(try shim.count("h.sheets"), 2, "S16: one marker sheet")
 
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
@@ -1885,7 +1928,8 @@ final class CardShimTests: XCTestCase {
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
         let posts = try shim.posted().count
         shim.run("globalThis.getComputedStyle = () => { throw new Error('style') }")
-        shim.run("h.parse('li', { nodeType: 1, isConnected: true, hasAttribute: () => false, querySelectorAll: () => [] })")
+        shim.run(
+            "h.parse('li', { nodeType: 1, isConnected: true, hasAttribute: () => false, querySelectorAll: () => [] })")
         XCTAssertEqual(try shim.posted().count, posts, "S26: nothing posted")
     }
 
@@ -1918,11 +1962,15 @@ final class CardShimTests: XCTestCase {
         let cases: [(String, Shim)] = [
             ("no CSSStyleSheet", try loadShim(omitting: "CSSStyleSheet")),
             ("no adoptedStyleSheets", try loadShim(before: "delete document.adoptedStyleSheets")),
-            ("the media rule throws", try loadShim(fonts: Self.fonts, before: "h.refuse = (text) => text.includes('object-fit')")),
+            (
+                "the media rule throws",
+                try loadShim(fonts: Self.fonts, before: "h.refuse = (text) => text.includes('object-fit')")
+            ),
         ]
         for (name, shim) in cases {
             shim.run("h.domReady()")
-            XCTAssertEqual(try shim.posted().map { $0["tarmac"] as? String }, ["started", "ready"], "S19 \(name): posted")
+            XCTAssertEqual(
+                try shim.posted().map { $0["tarmac"] as? String }, ["started", "ready"], "S19 \(name): posted")
             shim.run("h.send({ tarmac: 'zoom', z: 3 })")
             XCTAssertEqual(shim.number("h.style.zoom"), 3, "S19 \(name): zoom")
             XCTAssertEqual(try shim.posted().count, 2, "S19 \(name): nothing more posted")
@@ -1936,9 +1984,9 @@ final class CardShimTests: XCTestCase {
         let shim = try loadShim()
         XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 1, "S20: one sheet")
         let rules = """
-        :where(svg[viewBox], img, video, canvas) { max-width: min(100%, 1080px); object-fit: contain; }
-        :where(img[width], svg[viewBox][width], video[width]) { height: auto; }
-        """
+            :where(svg[viewBox], img, video, canvas) { max-width: min(100%, 1080px); object-fit: contain; }
+            :where(img[width], svg[viewBox][width], video[width]) { height: auto; }
+            """
         XCTAssertEqual(
             shim.run("document.adoptedStyleSheets[0].text.replace(/\\s/g, '')").toString(),
             rules.filter { !$0.isWhitespace }

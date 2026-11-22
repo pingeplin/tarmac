@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// 2609.0016: the notice's placement decisions, ported from the Rust
 /// `quit_notice.rs` tests.

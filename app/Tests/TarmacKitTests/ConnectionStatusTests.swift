@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// The exact status values `bridge.rs` emits and `App.tsx` starts from.
 final class ConnectionStatusTests: XCTestCase {
@@ -23,7 +23,8 @@ final class ConnectionStatusTests: XCTestCase {
         )
         XCTAssertEqual(
             ConnectionStatus.connectFailed("no daemon on the dev channel at /x/tarmacd.sock"),
-            ConnectionStatus(connected: false, reason: "connect failed: no daemon on the dev channel at /x/tarmacd.sock")
+            ConnectionStatus(
+                connected: false, reason: "connect failed: no daemon on the dev channel at /x/tarmacd.sock")
         )
     }
 

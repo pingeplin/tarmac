@@ -200,10 +200,11 @@ public final class DaemonClient: @unchecked Sendable {
         inheritCwdFrom: String? = nil,
         succeeds: String? = nil
     ) {
-        send(.spawnTerm(
-            termID: termID, cols: cols, rows: rows, cwd: cwd, cmd: cmd,
-            boardID: boardID, inheritCwdFrom: inheritCwdFrom, succeeds: succeeds
-        ))
+        send(
+            .spawnTerm(
+                termID: termID, cols: cols, rows: rows, cwd: cwd, cmd: cmd,
+                boardID: boardID, inheritCwdFrom: inheritCwdFrom, succeeds: succeeds
+            ))
     }
 
     public func input(termID: String, bytes: Data, typed: Bool = false) {

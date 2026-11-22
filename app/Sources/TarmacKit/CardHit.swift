@@ -13,7 +13,8 @@ public enum CardHit: Equatable, Sendable {
         _ point: CGPoint, thumb: CGRect?, grabbable: Bool, handle: CardResize.Handle?
     ) -> CardHit {
         if grabbable, let thumb,
-           point.x >= thumb.minX, point.x < thumb.maxX, point.y >= thumb.minY, point.y < thumb.maxY {
+            point.x >= thumb.minX, point.x < thumb.maxX, point.y >= thumb.minY, point.y < thumb.maxY
+        {
             return .thumb
         }
         return handle.map(CardHit.handle) ?? .content

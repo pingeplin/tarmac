@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// The app's own `app-prefs.json`. The first part is spec 2609.0016's, ported
@@ -41,7 +42,8 @@ final class AppPrefsTests: XCTestCase {
 
     /// S26 — the bytes QA reads in `.dev/config/app-prefs.json`, and the round trip.
     func testTheSavedBytesAreExactAndReadBack() {
-        let off = AppPrefs.Values(warnBeforeQuit: false), on = AppPrefs.Values(warnBeforeQuit: true)
+        let off = AppPrefs.Values(warnBeforeQuit: false)
+        let on = AppPrefs.Values(warnBeforeQuit: true)
         XCTAssertEqual(AppPrefs.encode(off), data(#"{"warn_before_quit":false}"#))
         XCTAssertEqual(AppPrefs.encode(on), data(#"{"warn_before_quit":true}"#))
         XCTAssertFalse(AppPrefs.warnBeforeQuit(from: AppPrefs.encode(off)))
@@ -139,7 +141,8 @@ final class AppPrefsTests: XCTestCase {
 
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), bytes)
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: legacy)), bytes)
-        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: path)[.type] as? FileAttributeType, .typeRegular)
+        XCTAssertEqual(
+            try FileManager.default.attributesOfItem(atPath: path)[.type] as? FileAttributeType, .typeRegular)
         let after = try FileManager.default.attributesOfItem(atPath: legacy)
         XCTAssertEqual(after[.systemFileNumber] as? Int, before[.systemFileNumber] as? Int)
         XCTAssertEqual(after[.modificationDate] as? Date, before[.modificationDate] as? Date)
@@ -149,10 +152,12 @@ final class AppPrefsTests: XCTestCase {
 
     func testTheFileInTheConfigDirectoryWinsOverTheOldOne() throws {
         let dir = try scratchDirectory()
-        let legacy = dir + "/old/app-prefs.json", path = dir + "/config/app-prefs.json"
+        let legacy = dir + "/old/app-prefs.json"
+        let path = dir + "/config/app-prefs.json"
         try FileManager.default.createDirectory(atPath: dir + "/old", withIntermediateDirectories: true)
         try FileManager.default.createDirectory(atPath: dir + "/config", withIntermediateDirectories: true)
-        let oldBytes = data(#"{"warn_before_quit":false}"#), newBytes = data(#"{"warn_before_quit":true}"#)
+        let oldBytes = data(#"{"warn_before_quit":false}"#)
+        let newBytes = data(#"{"warn_before_quit":true}"#)
         try newBytes.write(to: URL(fileURLWithPath: path))
         try oldBytes.write(to: URL(fileURLWithPath: legacy))
 
@@ -194,7 +199,9 @@ final class AppPrefsTests: XCTestCase {
         let all = Values(fonts: [.interface: "Monaco", .document: "Georgia", .terminal: "Menlo"])
         XCTAssertEqual(
             AppPrefs.encode(all),
-            data(#"{"warn_before_quit":true,"terminal_font":"Menlo","interface_font":"Monaco","document_font":"Georgia"}"#)
+            data(
+                #"{"warn_before_quit":true,"terminal_font":"Menlo","interface_font":"Monaco","document_font":"Georgia"}"#
+            )
         )
     }
 
@@ -208,7 +215,8 @@ final class AppPrefsTests: XCTestCase {
     func testSavedFontChoicesReadBackFromDisk() throws {
         let dir = try scratchDirectory()
         let path = dir + "/app-prefs.json"
-        let values = Values(warnBeforeQuit: false, fonts: [.terminal: "Menlo", .interface: "Monaco", .document: "Georgia"])
+        let values = Values(
+            warnBeforeQuit: false, fonts: [.terminal: "Menlo", .interface: "Monaco", .document: "Georgia"])
         try AppPrefs.save(values, to: path)
         XCTAssertEqual(AppPrefs.load(from: path), values)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir), ["app-prefs.json"])
@@ -445,7 +453,8 @@ final class AppPrefsTests: XCTestCase {
 
     func testAnInterfaceSizeOutOfItsRangeOrNotANumberIsNoSize() {
         for value in ["7.5", "16.5", "32", "10.25", "0", "-12", #""12""#, "true", "null"] {
-            let file = data(#"{"warn_before_quit":false,"interface_font_size":"# + value + #","document_font_size":18}"#)
+            let file = data(
+                #"{"warn_before_quit":false,"interface_font_size":"# + value + #","document_font_size":18}"#)
             XCTAssertTrue(StrictJSON.isValid(file), value)
             XCTAssertEqual(AppPrefs.decode(file), Values(warnBeforeQuit: false, fontSizes: [.document: 18]), value)
         }
@@ -674,7 +683,8 @@ final class AppPrefsTests: XCTestCase {
 
     /// S23
     func testAThemeKeyReadsAsTheThemeOfItsAppearance() {
-        let file = #"{"warn_before_quit":false,"theme":"auto","theme_light":"github-light","#
+        let file =
+            #"{"warn_before_quit":false,"theme":"auto","theme_light":"github-light","#
             + #""theme_dark":"solarized-dark"}"#
 
         XCTAssertEqual(
@@ -800,7 +810,8 @@ final class AppPrefsTests: XCTestCase {
     /// S26 — and a theme saved must not drop another preference.
     func testChangingAThemeKeepsTheGuardAFontASizeTheAppearanceAndTheOtherTheme() throws {
         let path = try scratchDirectory() + "/app-prefs.json"
-        let before = #"{"warn_before_quit":false,"terminal_font":"Menlo","terminal_font_size":20,"#
+        let before =
+            #"{"warn_before_quit":false,"terminal_font":"Menlo","terminal_font_size":20,"#
             + #""theme":"auto","theme_light":"github-light"}"#
         try data(before).write(to: URL(fileURLWithPath: path))
 
@@ -820,7 +831,8 @@ final class AppPrefsTests: XCTestCase {
     /// S27 — whole, the file reads with its themes and the guard off, so a
     /// lenient parser fails here.
     func testADamagedFileHasNoThemes() {
-        let whole = #"{"warn_before_quit":false,"theme":"auto","theme_light":"github-light","#
+        let whole =
+            #"{"warn_before_quit":false,"theme":"auto","theme_light":"github-light","#
             + #""theme_dark":"solarized-dark"}"#
         XCTAssertEqual(AppPrefs.decode(data(whole)).themes, [.light: "github-light", .dark: "solarized-dark"])
 
@@ -840,7 +852,8 @@ final class InboxPreviewHeightPrefsTests: XCTestCase {
         let values = AppPrefs.Values(fonts: [.terminal: "Menlo"], theme: .light, inboxPreviewHeight: 180)
         let bytes = AppPrefs.encode(values)
         XCTAssertEqual(
-            bytes, data(#"{"warn_before_quit":true,"terminal_font":"Menlo","theme":"light","inbox_preview_height":180}"#)
+            bytes,
+            data(#"{"warn_before_quit":true,"terminal_font":"Menlo","theme":"light","inbox_preview_height":180}"#)
         )
         XCTAssertEqual(AppPrefs.decode(bytes), values)
     }
@@ -854,12 +867,14 @@ final class InboxPreviewHeightPrefsTests: XCTestCase {
     }
 
     func testS16WithNoHeightTheBytesAreThoseOfBefore() {
-        XCTAssertEqual(AppPrefs.encode(AppPrefs.Values(theme: .light)), data(#"{"warn_before_quit":true,"theme":"light"}"#))
+        XCTAssertEqual(
+            AppPrefs.encode(AppPrefs.Values(theme: .light)), data(#"{"warn_before_quit":true,"theme":"light"}"#))
     }
 
     func testS23AHeightOutOfItsRangeOrNotANumberIsNoHeight() {
         for value in ["50", "3000", #""236""#, "true", "null"] {
-            let read = AppPrefs.decode(data(#"{"warn_before_quit":false,"theme":"light","inbox_preview_height":\#(value)}"#))
+            let read = AppPrefs.decode(
+                data(#"{"warn_before_quit":false,"theme":"light","inbox_preview_height":\#(value)}"#))
             XCTAssertNil(read.inboxPreviewHeight, value)
             XCTAssertFalse(read.warnBeforeQuit, value)
             XCTAssertEqual(read.theme, .light, value)
@@ -890,10 +905,11 @@ final class DocSidebarSidePrefsTests: XCTestCase {
         XCTAssertEqual(text(Values(docSidebarSide: .left)), #"{"warn_before_quit":true}"#)
         XCTAssertEqual(text(Values(docSidebarSide: .right)), #"{"warn_before_quit":true,"doc_sidebar_side":"right"}"#)
         XCTAssertEqual(
-            text(Values(
-                warnBeforeQuit: false, fonts: [.terminal: "Menlo"], theme: .light, inboxPreviewHeight: 180,
-                docSidebarSide: .right
-            )),
+            text(
+                Values(
+                    warnBeforeQuit: false, fonts: [.terminal: "Menlo"], theme: .light, inboxPreviewHeight: 180,
+                    docSidebarSide: .right
+                )),
             #"{"warn_before_quit":false,"terminal_font":"Menlo","theme":"light","inbox_preview_height":180,"#
                 + #""doc_sidebar_side":"right"}"#
         )
@@ -908,7 +924,8 @@ final class DocSidebarSidePrefsTests: XCTestCase {
         }
         XCTAssertEqual(AppPrefs.decode(data(#"{"doc_sidebar_side":"left"}"#)).docSidebarSide, .left)
         for value in [#""Right""#, #""middle""#, #""""#, "1", "true", "null", #"["right"]"#] {
-            let read = AppPrefs.decode(data(#"{"warn_before_quit":false,"theme":"light","doc_sidebar_side":\#(value)}"#))
+            let read = AppPrefs.decode(
+                data(#"{"warn_before_quit":false,"theme":"light","doc_sidebar_side":\#(value)}"#))
             XCTAssertEqual(read.docSidebarSide, .left, value)
             XCTAssertFalse(read.warnBeforeQuit, value)
             XCTAssertEqual(read.theme, .light, value)

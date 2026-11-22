@@ -52,8 +52,10 @@ public enum Placement {
         let pitchX = size.width + gapX
         let pitchY = size.height + gapY
         let o = owner.insetBy(dx: -CGFloat(ring) * pitchX, dy: -CGFloat(ring) * pitchY)
-        let right = o.maxX + gapX, left = o.minX - pitchX
-        let below = o.maxY + gapY, above = o.minY - pitchY
+        let right = o.maxX + gapX
+        let left = o.minX - pitchX
+        let below = o.maxY + gapY
+        let above = o.minY - pitchY
         let rows = Array(stride(from: o.minY, to: o.maxY, by: pitchY))
         let cols = Array(stride(from: o.minX, to: o.maxX, by: pitchX))
         var origins: [CGPoint] = []

@@ -131,15 +131,20 @@ public struct Inbox: Equatable, Sendable {
     public mutating func apply(_ frame: TermReportFrame, fallbackBoard: String?) -> Bool {
         guard let report = frame.report else { return reportEnded(termID: frame.termID) }
         guard let boardID = frame.boardID ?? fallbackBoard else { return false }
-        return put(Item(
-            kind: .report(report.kind), termID: frame.termID, boardID: boardID, atMs: report.atMs, proc: report.proc,
-            cwd: frame.cwd, text: report.text, read: report.read
-        ))
+        return put(
+            Item(
+                kind: .report(report.kind), termID: frame.termID, boardID: boardID, atMs: report.atMs,
+                proc: report.proc,
+                cwd: frame.cwd, text: report.text, read: report.read
+            ))
     }
 
     @discardableResult
     public mutating func bell(termID: String, boardID: String, proc: String?, cwd: String?, nowMs: UInt64) -> Bool {
-        put(Item(kind: .bell, termID: termID, boardID: boardID, atMs: nowMs, proc: proc, cwd: cwd, text: nil, read: false))
+        put(
+            Item(
+                kind: .bell, termID: termID, boardID: boardID, atMs: nowMs, proc: proc, cwd: cwd, text: nil, read: false
+            ))
     }
 
     /// The terminal's report ended with no frame: it was lost, or it exited.

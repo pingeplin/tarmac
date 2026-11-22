@@ -154,7 +154,9 @@ final class TerminalSelection {
         }
     }
 
-    private func set<Value>(_ event: GhosttySelectionGestureEvent, _ option: GhosttySelectionGestureEventOption, _ value: inout Value) {
+    private func set<Value>(
+        _ event: GhosttySelectionGestureEvent, _ option: GhosttySelectionGestureEventOption, _ value: inout Value
+    ) {
         ghostty_selection_gesture_event_set(event, option, &value)
     }
 

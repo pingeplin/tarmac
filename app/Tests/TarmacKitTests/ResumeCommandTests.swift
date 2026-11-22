@@ -1,6 +1,6 @@
 import Foundation
-import XCTest
 import TarmacKit
+import XCTest
 
 /// 2611.0011 S31: `tarmac-protocol`'s `tests/fixtures/resume_cmd_cases.json`,
 /// the table its own `s31_the_resume_command_check` runs, so both languages
@@ -29,7 +29,8 @@ final class ResumeCommandTests: XCTestCase {
 
     private func cases() throws -> [(cmd: String, cause: String?)] {
         let fixture = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
             .appendingPathComponent("core/crates/tarmac-protocol/tests/fixtures/resume_cmd_cases.json")
         let table = try JSONDecoder().decode(Table.self, from: Data(contentsOf: fixture))
         return table.cases.map { c in

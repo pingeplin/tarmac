@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// The app's table of data-file registrations (spec 2611.0002 S47–S50).
@@ -46,7 +47,8 @@ final class CardDataRegistrationsTests: XCTestCase {
         var table = table()
         table.set(nil, for: dash0)
         XCTAssertEqual(table.cards(reading: "/a/stats.json"), [dash1])
-        XCTAssertFalse(table.resent.contains(.dataFile(boardID: "board-0", path: "/a/dash.html", file: "/a/stats.json")))
+        XCTAssertFalse(
+            table.resent.contains(.dataFile(boardID: "board-0", path: "/a/dash.html", file: "/a/stats.json")))
         XCTAssertEqual(table.resent.count, 2)
 
         table.forget(board: "board-1")
@@ -63,7 +65,7 @@ final class CardDataRegistrationsTests: XCTestCase {
     }
 }
 
-private extension Message {
+extension Message {
     /// `Message` is not `Hashable`; its description tells two apart.
-    var debugText: String { String(describing: self) }
+    fileprivate var debugText: String { String(describing: self) }
 }

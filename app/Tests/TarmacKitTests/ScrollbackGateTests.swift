@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// The hold/release rule ported from `desktop/src-tauri/src/bridge.rs`, with its

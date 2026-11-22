@@ -67,7 +67,8 @@ public enum JSONValue: Equatable, Sendable {
         case .string(let value): Self.quoted(value)
         case .array(let items): "[" + items.map(\.jsonString).joined(separator: ",") + "]"
         case .object(let fields):
-            "{" + fields.sorted { $0.key < $1.key }
+            "{"
+                + fields.sorted { $0.key < $1.key }
                 .map { "\(Self.quoted($0.key)):\($0.value.jsonString)" }
                 .joined(separator: ",") + "}"
         }

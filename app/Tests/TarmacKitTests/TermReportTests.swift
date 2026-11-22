@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// Spec 2611.0009: a `term_report` frame, and the report it gives.
 final class TermReportTests: XCTestCase {

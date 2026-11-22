@@ -139,12 +139,13 @@ final class ThemePane: NSObject {
         let pane = NSStackView(views: groups)
         pane.orientation = .vertical
         pane.spacing = 10
-        NSLayoutConstraint.activate(groups.flatMap {
-            [
-                $0.leadingAnchor.constraint(equalTo: pane.leadingAnchor),
-                $0.trailingAnchor.constraint(equalTo: pane.trailingAnchor),
-            ]
-        })
+        NSLayoutConstraint.activate(
+            groups.flatMap {
+                [
+                    $0.leadingAnchor.constraint(equalTo: pane.leadingAnchor),
+                    $0.trailingAnchor.constraint(equalTo: pane.trailingAnchor),
+                ]
+            })
         return pane
     }
 
@@ -155,12 +156,13 @@ final class ThemePane: NSObject {
         let columns = NSStackView(views: [list.view, rule, showcase()])
         columns.spacing = 0
         columns.alignment = .top
-        NSLayoutConstraint.activate([list.view, rule].flatMap {
-            [
-                $0.topAnchor.constraint(equalTo: columns.topAnchor),
-                $0.bottomAnchor.constraint(equalTo: columns.bottomAnchor),
-            ]
-        })
+        NSLayoutConstraint.activate(
+            [list.view, rule].flatMap {
+                [
+                    $0.topAnchor.constraint(equalTo: columns.topAnchor),
+                    $0.bottomAnchor.constraint(equalTo: columns.bottomAnchor),
+                ]
+            })
         return SettingsGroup.box(holding: columns, margins: .zero)
     }
 

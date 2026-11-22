@@ -31,10 +31,11 @@ public struct ToastQueue: Equatable, Sendable {
         nowMs: Int
     ) {
         let (expiresAtMs, overflowed) = nowMs.addingReportingOverflow(Self.ttlMs)
-        toasts.append(Toast(
-            id: id, icon: icon, title: title, bodyLines: bodyLines,
-            expiresAtMs: overflowed ? .max : expiresAtMs
-        ))
+        toasts.append(
+            Toast(
+                id: id, icon: icon, title: title, bodyLines: bodyLines,
+                expiresAtMs: overflowed ? .max : expiresAtMs
+            ))
         if toasts.count > Self.maxToasts { toasts.removeFirst(toasts.count - Self.maxToasts) }
     }
 

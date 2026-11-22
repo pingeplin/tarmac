@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// How often the app writes a sample line (spec 2611.0004, *The timer*).
 final class SampleIntervalTests: XCTestCase {

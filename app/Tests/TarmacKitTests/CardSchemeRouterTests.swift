@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// The one call a scheme handler makes. Ports `lib.rs`'s `respond_card_scheme`
@@ -46,7 +47,8 @@ final class CardSchemeRouterTests: XCTestCase {
     func testTheDocHostPlacesTheShimAfterALeadingDoctype() {
         let path = "/tmp/s15.html"
         let disk = SchemeFixtures.Disk([path: Data("<!doctype html><p>hi</p>".utf8)])
-        let resp = CardSchemeRouter.respond(url: SchemeFixtures.docURI(path), shim: "SHIM", read: disk.read, resolve: disk.resolve)
+        let resp = CardSchemeRouter.respond(
+            url: SchemeFixtures.docURI(path), shim: "SHIM", read: disk.read, resolve: disk.resolve)
 
         XCTAssertEqual(text(resp), "<!doctype html><script>SHIM</script>\n<p>hi</p>")
     }
@@ -84,7 +86,10 @@ final class CardSchemeRouterTests: XCTestCase {
 
     func testARejectionNeverReadsTheDisk() {
         let disk = SchemeFixtures.Disk()
-        for url in ["tarmac-card://other/x", "tarmac-card://doc/%FF", "tarmac-card://img/%2Ftmp%2Fa.html", "tarmac-card://img/%FF"] {
+        for url in [
+            "tarmac-card://other/x", "tarmac-card://doc/%FF", "tarmac-card://img/%2Ftmp%2Fa.html",
+            "tarmac-card://img/%FF",
+        ] {
             XCTAssertGreaterThanOrEqual(respond(url, disk: disk).status, 400, url)
         }
         XCTAssertEqual(disk.opened, [])
@@ -120,7 +125,9 @@ final class CardSchemeRouterTests: XCTestCase {
     func testAFragmentIsCutWhereverItSitsAmongTheQuery() {
         let path = "/tmp/a.html"
         let enc = SchemeFixtures.encoded(path)
-        for url in ["tarmac-card://doc/\(enc)?v=1#frag", "tarmac-card://doc/\(enc)#frag?v=1", "tarmac-card://doc/\(enc)#a#b"] {
+        for url in [
+            "tarmac-card://doc/\(enc)?v=1#frag", "tarmac-card://doc/\(enc)#frag?v=1", "tarmac-card://doc/\(enc)#a#b",
+        ] {
             XCTAssertEqual(CardSchemeRouter.route(url: url), .doc(.read(path: path)), url)
         }
     }
@@ -222,14 +229,19 @@ final class CardSchemeRouterTests: XCTestCase {
     /// A sandboxed frame's origin is opaque, and it says so.
     func testAnOpaqueOriginIsAnOriginToo() {
         let disk = SchemeFixtures.Disk(["/tmp/a.png": Data([1])])
-        XCTAssertEqual(respond(SchemeFixtures.imgURI("/tmp/a.png"), headers: ["Origin": "null"], serving: .img, disk: disk).status, 403)
-        XCTAssertEqual(respond(SchemeFixtures.imgURI("/tmp/a.png"), headers: ["Origin": ""], serving: .img, disk: disk).status, 403)
+        XCTAssertEqual(
+            respond(SchemeFixtures.imgURI("/tmp/a.png"), headers: ["Origin": "null"], serving: .img, disk: disk).status,
+            403)
+        XCTAssertEqual(
+            respond(SchemeFixtures.imgURI("/tmp/a.png"), headers: ["Origin": ""], serving: .img, disk: disk).status, 403
+        )
     }
 
     func testTheOriginHeaderIsFoundWhateverItsCase() {
         let disk = SchemeFixtures.Disk(["/tmp/a.png": Data([1])])
         for name in ["origin", "ORIGIN", "oRiGiN"] {
-            let resp = respond(SchemeFixtures.imgURI("/tmp/a.png"), headers: [name: framedPage], serving: .img, disk: disk)
+            let resp = respond(
+                SchemeFixtures.imgURI("/tmp/a.png"), headers: [name: framedPage], serving: .img, disk: disk)
             XCTAssertEqual(resp.status, 403, name)
         }
     }
@@ -240,7 +252,8 @@ final class CardSchemeRouterTests: XCTestCase {
             "Accept": "image/webp,image/png,*/*;q=0.5", "Referer": framedPage + "/", "X-Origin": framedPage,
             "Original": "x", "Sec-Fetch-Site": "cross-site",
         ]
-        XCTAssertEqual(respond(SchemeFixtures.imgURI("/tmp/a.png"), headers: headers, serving: .img, disk: disk).status, 200)
+        XCTAssertEqual(
+            respond(SchemeFixtures.imgURI("/tmp/a.png"), headers: headers, serving: .img, disk: disk).status, 200)
     }
 
     // MARK: - Symlinks
@@ -264,7 +277,8 @@ final class CardSchemeRouterTests: XCTestCase {
 
     /// A card is whatever file was opened as one; only an image has a kind to keep.
     func testACardDocumentIsReadAsNamed() {
-        let disk = SchemeFixtures.Disk(["/tmp/real.txt": Data("<p>x</p>".utf8)], links: ["/tmp/card.html": "/tmp/real.txt"])
+        let disk = SchemeFixtures.Disk(
+            ["/tmp/real.txt": Data("<p>x</p>".utf8)], links: ["/tmp/card.html": "/tmp/real.txt"])
         XCTAssertEqual(respond(SchemeFixtures.docURI("/tmp/card.html"), serving: .doc, disk: disk).status, 200)
         XCTAssertEqual(disk.opened, ["/tmp/card.html"])
     }

@@ -57,9 +57,11 @@ final class CardSchemeHandler: NSObject, WKURLSchemeHandler {
         with response: CardProtocol.Response
     ) {
         guard let task = pending.finish(ticket) else { return }
-        guard let head = HTTPURLResponse(
-            url: url, statusCode: response.status, httpVersion: "HTTP/1.1", headerFields: response.headers
-        ) else {
+        guard
+            let head = HTTPURLResponse(
+                url: url, statusCode: response.status, httpVersion: "HTTP/1.1", headerFields: response.headers
+            )
+        else {
             task.didFailWithError(URLError(.badServerResponse))
             return
         }

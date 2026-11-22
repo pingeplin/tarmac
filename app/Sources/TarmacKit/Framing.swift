@@ -37,7 +37,8 @@ public enum Framing {
         public mutating func nextFrame() throws -> Data? {
             guard buffer.count >= 4 else { return nil }
             let s = buffer.startIndex
-            let n = (UInt32(buffer[s]) << 24)
+            let n =
+                (UInt32(buffer[s]) << 24)
                 | (UInt32(buffer[s + 1]) << 16)
                 | (UInt32(buffer[s + 2]) << 8)
                 | UInt32(buffer[s + 3])

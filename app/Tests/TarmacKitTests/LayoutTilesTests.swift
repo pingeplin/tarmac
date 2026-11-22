@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// The board ↔ layout-tile codec: `build` (persist) and `parse` (restore), and
@@ -85,9 +86,11 @@ final class LayoutTilesTests: XCTestCase {
         )
         XCTAssertEqual(
             parsed.docs,
-            [LayoutTiles.ParsedDoc(
-                path: "/a.md", frame: CGRect(x: 600, y: 80, width: 392, height: 310), z: 1, attached: true
-            )]
+            [
+                LayoutTiles.ParsedDoc(
+                    path: "/a.md", frame: CGRect(x: 600, y: 80, width: 392, height: 310), z: 1, attached: true
+                )
+            ]
         )
     }
 
@@ -148,7 +151,7 @@ final class LayoutTilesTests: XCTestCase {
 
     func testADocTileMarkedShelfFalseIsKept() {
         let parsed = LayoutTiles.parse([
-            LayoutTile(kind: "doc", path: "/a.md", x: 1, y: 2, w: 3, h: 4, shelf: false),
+            LayoutTile(kind: "doc", path: "/a.md", x: 1, y: 2, w: 3, h: 4, shelf: false)
         ])
         XCTAssertEqual(
             parsed.docs,

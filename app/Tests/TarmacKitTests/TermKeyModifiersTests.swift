@@ -1,8 +1,10 @@
 import XCTest
+
 @testable import TarmacKit
 
 final class TermKeyModifiersTests: XCTestCase {
-    private func flags(shift: Bool = false, control: Bool = false, option: Bool = false, command: Bool = false) -> UInt {
+    private func flags(shift: Bool = false, control: Bool = false, option: Bool = false, command: Bool = false) -> UInt
+    {
         TermKeyBinding.modifierFlags(shift: shift, control: control, option: option, command: command)
     }
 

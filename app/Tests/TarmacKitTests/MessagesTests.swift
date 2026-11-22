@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// What `Message` refuses in a frame it knows (spec 2611.0003 S41).
@@ -37,7 +38,8 @@ final class MessagesTests: XCTestCase {
 
     // 2611.0013 S37: an older daemon's frame (vector 22's bytes) has no place.
     func testS37ATermReportWithNoBoardAndNoCwdDecodesWithBothNil() throws {
-        let v22 = hexData("""
+        let v22 = hexData(
+            """
             87 a1 74 ab 74 65 72 6d 5f 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31
             a4 6b 69 6e 64 a4 64 6f 6e 65 a4 74 65 78 74 a2 6f 6b
             a5 61 74 5f 6d 73 cf 00 00 01 8b cf e5 68 00

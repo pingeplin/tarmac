@@ -184,7 +184,8 @@ public enum DevSnapshot {
         /// `overlay` is up, `overlayOwner` is the card it took them from.
         public init(responder: KeyHolder?, overlay: Overlay?, overlayOwner: KeyHolder?) {
             if let overlay {
-                self = .overlay(overlay, returnsTo: KeyboardFocus(responder: overlayOwner, overlay: nil, overlayOwner: nil))
+                self = .overlay(
+                    overlay, returnsTo: KeyboardFocus(responder: overlayOwner, overlay: nil, overlayOwner: nil))
                 return
             }
             switch responder {

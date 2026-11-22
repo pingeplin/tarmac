@@ -72,11 +72,12 @@ extension AppController {
     /// which runs now or at its card's first output; `skip all` skips each;
     /// `decide per card` leaves them. Then the card closes.
     func chooseOnRestoreCard(_ action: RestoreCard.Choice.Action) {
-        let event: ResumeOffer.Event? = switch action {
-        case .resumeAll: .request
-        case .skipAll: .skip
-        case .perCard: nil
-        }
+        let event: ResumeOffer.Event? =
+            switch action {
+            case .resumeAll: .request
+            case .skipAll: .skip
+            case .perCard: nil
+            }
         if let event {
             for termID in activeBoard.sessionOrder {
                 guard let s = activeBoard.sessions[termID], s.resumeOffer != nil else { continue }
@@ -161,12 +162,14 @@ extension AppController {
     /// took with it (`RestartNotice`), once per connection. What was restored
     /// is the restore card's (#358), not the toast's.
     private func notifyRestored(tiles: [LayoutTile], liveTerms: Set<String>) {
-        guard let notice = RestartNotice.make(
-            replaced: client.daemonReplaced,
-            tileTermIDs: LayoutTiles.parse(tiles).terms.map(\.termID),
-            liveTerms: liveTerms,
-            alreadyNotified: daemonSession.restartNotified
-        ) else { return }
+        guard
+            let notice = RestartNotice.make(
+                replaced: client.daemonReplaced,
+                tileTermIDs: LayoutTiles.parse(tiles).terms.map(\.termID),
+                liveTerms: liveTerms,
+                alreadyNotified: daemonSession.restartNotified
+            )
+        else { return }
         daemonSession.restartNotified = true
         rootView.toasts.show(title: notice.title, bodyLines: [notice.body])
     }
@@ -184,7 +187,8 @@ extension AppController {
                 setRecordedResume(s, ResumeCommand.accepted(board.termRecords[termID]?.resume?.cmd), on: board)
             }
         }
-        let outcome = ReconnectRestore.reconcile(board.reconnectTerms, liveTerms: liveTerms, replayFollows: replayFollows)
+        let outcome = ReconnectRestore.reconcile(
+            board.reconnectTerms, liveTerms: liveTerms, replayFollows: replayFollows)
         markLost(outcome.lost, on: board)
         let offered = offerReopens(on: board)
         if outcome.daemonRestarted, !daemonSession.restartNotified {

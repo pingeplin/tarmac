@@ -77,8 +77,9 @@ final class TerminalRenderer {
         }
         for span in hoveredLink where rows.contains(span.row) {
             let origin = layout.rect(col: span.cols.lowerBound, row: span.row).origin
-            drawRule(.single, y: origin.y + fonts.metrics.underlineOffset, x: origin.x,
-                     span: span.cols.count, layout: layout, colour: frame.foreground, pixels: pixels, in: context)
+            drawRule(
+                .single, y: origin.y + fonts.metrics.underlineOffset, x: origin.x,
+                span: span.cols.count, layout: layout, colour: frame.foreground, pixels: pixels, in: context)
         }
         if let position = frame.cursor, rows.contains(position.row) {
             drawCursor(position, frame: frame, layout: layout, display: cursor, pixels: pixels, in: context)
@@ -113,7 +114,8 @@ final class TerminalRenderer {
             let colour = background(cells[start], selected: selection?.contains(start) == true, frame: frame)
             var end = start + 1
             while end < cells.count,
-                  background(cells[end], selected: selection?.contains(end) == true, frame: frame) == colour {
+                background(cells[end], selected: selection?.contains(end) == true, frame: frame) == colour
+            {
                 end += 1
             }
             context.setFillColor(colour.cgColor)
@@ -144,16 +146,19 @@ final class TerminalRenderer {
             }
             let decoration = cell.style.underlineColor ?? foreground
             if cell.style.underline != .none {
-                drawRule(cell.style.underline, y: origin.y + metrics.underlineOffset, x: origin.x,
-                         span: span, layout: layout, colour: decoration, pixels: pixels, in: context)
+                drawRule(
+                    cell.style.underline, y: origin.y + metrics.underlineOffset, x: origin.x,
+                    span: span, layout: layout, colour: decoration, pixels: pixels, in: context)
             }
             if flags.contains(.strikethrough) {
-                drawRule(.single, y: origin.y + metrics.strikethroughOffset, x: origin.x,
-                         span: span, layout: layout, colour: foreground, pixels: pixels, in: context)
+                drawRule(
+                    .single, y: origin.y + metrics.strikethroughOffset, x: origin.x,
+                    span: span, layout: layout, colour: foreground, pixels: pixels, in: context)
             }
             if flags.contains(.overline) {
-                drawRule(.single, y: origin.y, x: origin.x,
-                         span: span, layout: layout, colour: foreground, pixels: pixels, in: context)
+                drawRule(
+                    .single, y: origin.y, x: origin.x,
+                    span: span, layout: layout, colour: foreground, pixels: pixels, in: context)
             }
         }
     }
@@ -215,7 +220,10 @@ final class TerminalRenderer {
         let top = pixels.snap(y)
         context.setFillColor(cgColor(colour))
         func rule(_ offset: CGFloat) {
-            context.fill(CGRect(x: pixels.snap(x), y: top + offset, width: pixels.snap(x + width) - pixels.snap(x), height: thickness))
+            context.fill(
+                CGRect(
+                    x: pixels.snap(x), y: top + offset, width: pixels.snap(x + width) - pixels.snap(x),
+                    height: thickness))
         }
         switch style {
         case .none:
@@ -248,7 +256,8 @@ final class TerminalRenderer {
             let dash = style == .dotted ? thickness : layout.cell.width / 3
             var offset: CGFloat = 0
             while offset < width {
-                context.fill(CGRect(x: pixels.snap(x + offset), y: top, width: min(dash, width - offset), height: thickness))
+                context.fill(
+                    CGRect(x: pixels.snap(x + offset), y: top, width: min(dash, width - offset), height: thickness))
                 offset += dash * 2
             }
         }
@@ -262,7 +271,9 @@ final class TerminalRenderer {
     ) {
         guard display != .hidden else { return }
         let col = cursor.onWideTail ? cursor.col - 1 : cursor.col
-        guard frame.rows.indices.contains(cursor.row), frame.rows[cursor.row].cells.indices.contains(col) else { return }
+        guard frame.rows.indices.contains(cursor.row), frame.rows[cursor.row].cells.indices.contains(col) else {
+            return
+        }
         let cell = frame.rows[cursor.row].cells[col]
         let rect = pixels.snap(layout.rect(col: col, row: cursor.row, span: cell.width == .wide ? 2 : 1))
         let colour = frame.cursorColor ?? theme.cursor
@@ -279,15 +290,17 @@ final class TerminalRenderer {
         case .block:
             context.fill(rect)
             if !cell.text.isEmpty, cell.text != " " {
-                draw(cell.text, flags: cell.style.flags, colour: colours(cell, frame: frame).background,
-                     at: rect.origin, pixels: pixels, in: context)
+                draw(
+                    cell.text, flags: cell.style.flags, colour: colours(cell, frame: frame).background,
+                    at: rect.origin, pixels: pixels, in: context)
             }
         case .hollowBlock:
             context.setStrokeColor(colour.cgColor)
             context.setLineWidth(stroke)
             context.stroke(rect.insetBy(dx: stroke / 2, dy: stroke / 2))
         case .bar:
-            context.fill(CGRect(x: rect.minX, y: rect.minY, width: max(pixels.snap(1.5), pixels.pixel), height: rect.height))
+            context.fill(
+                CGRect(x: rect.minX, y: rect.minY, width: max(pixels.snap(1.5), pixels.pixel), height: rect.height))
         case .underline:
             let height = max(pixels.snap(2), pixels.pixel)
             context.fill(CGRect(x: rect.minX, y: rect.maxY - height, width: rect.width, height: height))
@@ -315,10 +328,11 @@ final class TerminalRenderer {
         context.fill(CGRect(x: box.minX, y: box.maxY - thickness, width: box.width, height: thickness))
         guard caret else { return }
         context.setFillColor((frame.cursorColor ?? theme.cursor).cgColor)
-        context.fill(CGRect(
-            x: pixels.snap(box.minX + preeditOffset(preedit.text, utf16Index: preedit.caret)), y: box.minY,
-            width: max(pixels.snap(1.5), pixels.pixel), height: box.height
-        ))
+        context.fill(
+            CGRect(
+                x: pixels.snap(box.minX + preeditOffset(preedit.text, utf16Index: preedit.caret)), y: box.minY,
+                width: max(pixels.snap(1.5), pixels.pixel), height: box.height
+            ))
     }
 
     /// How far into the composing text a UTF-16 offset lies, in points.
@@ -353,7 +367,8 @@ private struct PixelGrid {
     }
 
     func snap(_ rect: CGRect) -> CGRect {
-        let minX = snap(rect.minX), minY = snap(rect.minY)
+        let minX = snap(rect.minX)
+        let minY = snap(rect.minY)
         return CGRect(x: minX, y: minY, width: snap(rect.maxX) - minX, height: snap(rect.maxY) - minY)
     }
 }

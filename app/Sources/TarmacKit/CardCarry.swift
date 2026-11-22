@@ -25,8 +25,10 @@ public struct CardCarry<ID: Hashable> {
         guard card == owner else { return [:] }
         return satellites.mapValues { s in
             CGPoint(
-                x: s.minX + Self.shift(s.minX, s.maxX, from: (ownerFrame.minX, ownerFrame.maxX), to: (frame.minX, frame.maxX)),
-                y: s.minY + Self.shift(s.minY, s.maxY, from: (ownerFrame.minY, ownerFrame.maxY), to: (frame.minY, frame.maxY))
+                x: s.minX
+                    + Self.shift(s.minX, s.maxX, from: (ownerFrame.minX, ownerFrame.maxX), to: (frame.minX, frame.maxX)),
+                y: s.minY
+                    + Self.shift(s.minY, s.maxY, from: (ownerFrame.minY, ownerFrame.maxY), to: (frame.minY, frame.maxY))
             )
         }
     }

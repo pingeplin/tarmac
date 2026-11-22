@@ -90,10 +90,12 @@ public enum BoardRestore {
                 resume = ResumeCommand.accepted(record?.resume?.cmd)
             }
             if let persisted = tile.termID { restoredID[persisted] = termID }
-            terms.append(Term(
-                termID: termID, frame: tile.frame ?? TermPlacement.restoredFrame(index: index), z: tile.z, spawn: spawn,
-                resume: resume
-            ))
+            terms.append(
+                Term(
+                    termID: termID, frame: tile.frame ?? TermPlacement.restoredFrame(index: index), z: tile.z,
+                    spawn: spawn,
+                    resume: resume
+                ))
         }
         if terms.isEmpty {
             terms.append(Term(termID: mint(), frame: Placement.termFrame, z: 0, spawn: SpawnRequest()))
@@ -118,10 +120,12 @@ public enum BoardRestore {
                 frame = Placement.scatterFrame(slot: scatterSlot)
                 scatterSlot += 1
             }
-            placed.append(Doc(
-                path: tile.path, frame: frame, z: tile.z, ownerTermID: owner, attached: tile.attached && owner != nil,
-                sidebar: tile.sidebar
-            ))
+            placed.append(
+                Doc(
+                    path: tile.path, frame: frame, z: tile.z, ownerTermID: owner,
+                    attached: tile.attached && owner != nil,
+                    sidebar: tile.sidebar
+                ))
         }
         return Plan(terms: terms, docs: placed, droppedDocPaths: dropped)
     }

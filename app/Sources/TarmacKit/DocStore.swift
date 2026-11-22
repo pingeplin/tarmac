@@ -1,7 +1,7 @@
 import Foundation
 
-public extension RestoreDoc {
-    var fileName: String {
+extension RestoreDoc {
+    public var fileName: String {
         (path as NSString).lastPathComponent
     }
 }

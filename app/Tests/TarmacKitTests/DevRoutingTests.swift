@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+
 @testable import TarmacKit
 
 /// What each QA-driver verb acts on, and which preconditions are checked before
@@ -32,12 +33,13 @@ final class DevRoutingTests: XCTestCase {
     }
 
     private func docs(html: CGRect? = nil, markdown: CGRect? = nil, borrowed: String? = nil) -> DevRouting.Context {
-        context(cards: [
-            Card(id: "t-1", kind: .term, frame: frame),
-            Card(id: "/a/b.md", kind: .doc, frame: markdown ?? frame),
-            Card(id: "/a/c.html", kind: .doc, frame: html ?? frame),
-            Card(id: "/a/C.HTM", kind: .doc, frame: frame),
-        ], borrowed: borrowed)
+        context(
+            cards: [
+                Card(id: "t-1", kind: .term, frame: frame),
+                Card(id: "/a/b.md", kind: .doc, frame: markdown ?? frame),
+                Card(id: "/a/c.html", kind: .doc, frame: html ?? frame),
+                Card(id: "/a/C.HTM", kind: .doc, frame: frame),
+            ], borrowed: borrowed)
     }
 
     private func route(_ request: DevRequest, _ context: DevRouting.Context? = nil) -> Route {
@@ -137,7 +139,8 @@ final class DevRoutingTests: XCTestCase {
         let aViewportAway = CGRect(x: 1_501, y: 0, width: 400, height: 300)
         let focus = DevRequest.focus(card: "t-1")
         XCTAssertEqual(route(focus, context(cards: terminal(onScreen))), .focusTerminal(card: "t-1", takesKeys: true))
-        XCTAssertEqual(route(focus, context(cards: terminal(pastTheEdge))), .focusTerminal(card: "t-1", takesKeys: true))
+        XCTAssertEqual(
+            route(focus, context(cards: terminal(pastTheEdge))), .focusTerminal(card: "t-1", takesKeys: true))
         XCTAssertEqual(
             route(focus, context(cards: terminal(aViewportAway))), .focusTerminal(card: "t-1", takesKeys: false)
         )
@@ -161,7 +164,8 @@ final class DevRoutingTests: XCTestCase {
     func testS37TypeAndKeyGoToTheFocusedTerminal() {
         let focused = context(keyboardFocus: "t-1")
         XCTAssertEqual(route(.type(card: "t-1", text: "hi"), focused), .type(card: "t-1", text: "hi"))
-        guard case .key(card: "t-1", combo: "ctrl+c", let stroke) = route(.key(card: "t-1", combo: "ctrl+c"), focused) else {
+        guard case .key(card: "t-1", combo: "ctrl+c", let stroke) = route(.key(card: "t-1", combo: "ctrl+c"), focused)
+        else {
             return XCTFail("ctrl+c did not route to a key stroke")
         }
         XCTAssertEqual(DevKeyCombo.parse("ctrl+c"), .stroke(stroke))
@@ -181,7 +185,9 @@ final class DevRoutingTests: XCTestCase {
     func testS38ResizeDragsTheCardFromItsCurrentSizeToTheRequestedOne() {
         XCTAssertEqual(
             route(.resize(card: "t-1", w: 800, h: 600), docs()),
-            .resize(card: "t-1", from: CGSize(width: 400, height: 300), to: CGSize(width: 800, height: 600), takesKeys: true)
+            .resize(
+                card: "t-1", from: CGSize(width: 400, height: 300), to: CGSize(width: 800, height: 600), takesKeys: true
+            )
         )
     }
 
@@ -312,7 +318,8 @@ final class DevRoutingTests: XCTestCase {
     func testS41ADocCardStillResizes() {
         XCTAssertEqual(
             route(.resize(card: "/a/b.md", w: 1, h: 2)),
-            .resize(card: "/a/b.md", from: CGSize(width: 1, height: 1), to: CGSize(width: 1, height: 2), takesKeys: true)
+            .resize(
+                card: "/a/b.md", from: CGSize(width: 1, height: 1), to: CGSize(width: 1, height: 2), takesKeys: true)
         )
     }
 
@@ -373,7 +380,8 @@ final class DevRoutingTests: XCTestCase {
             route(focus, context(cards: cards, zoom: 1, center: CGPoint(x: 2500, y: 0))),
             .focusHTML(card: "/a/c.html", borrow: true)
         )
-        XCTAssertEqual(refusal(focus, context(cards: cards, zoom: 1, center: CGPoint(x: 0, y: 2500)))?.code, .cardHidden)
+        XCTAssertEqual(
+            refusal(focus, context(cards: cards, zoom: 1, center: CGPoint(x: 0, y: 2500)))?.code, .cardHidden)
     }
 
     func testS8CardHiddenIsFocusOnAnHTMLCardAndNothingElse() {
@@ -444,7 +452,8 @@ final class DevRoutingTests: XCTestCase {
         let cardSet = "resume, skip, resume_chip"
         let restoreSet = "resume_all, decide_per_card, skip_all, veil"
         for (request, names) in [
-            (click("t-1", "nonsense"), cardSet), (click("t-1", "resume_all"), cardSet), (click(nil, "resume"), restoreSet),
+            (click("t-1", "nonsense"), cardSet), (click("t-1", "resume_all"), cardSet),
+            (click(nil, "resume"), restoreSet),
         ] {
             let error = refusal(request, up)
             XCTAssertEqual(error?.code, .badRequest, "\(request)")
@@ -470,8 +479,12 @@ final class DevRoutingTests: XCTestCase {
 
     func testS37AnAbsentControlOfACardIsNoSuchControlNamingWhatIsPresent() {
         absent(click("t-1", "resume"), clickContext(controls: []), card: "t-1", present: [])
-        absent(click("t-1", "resume"), clickContext(controls: [.panel(.skip), .resumeChip]), card: "t-1", present: ["skip", "resume_chip"])
-        absent(click("t-1", "resume_chip"), clickContext(controls: [.panel(.resume), .panel(.skip)]), card: "t-1", present: ["resume", "skip"])
+        absent(
+            click("t-1", "resume"), clickContext(controls: [.panel(.skip), .resumeChip]), card: "t-1",
+            present: ["skip", "resume_chip"])
+        absent(
+            click("t-1", "resume_chip"), clickContext(controls: [.panel(.resume), .panel(.skip)]), card: "t-1",
+            present: ["resume", "skip"])
     }
 
     func testS37AnAbsentRestoreCardControlIsNoSuchControlWithANullCard() {
@@ -486,7 +499,8 @@ final class DevRoutingTests: XCTestCase {
         XCTAssertEqual(refusal(click("nope", "resume"), clickContext())?.code, .noSuchCard)
         XCTAssertEqual(refusal(click("/a/b.md", "resume"), clickContext())?.code, .unsupportedCardKind)
         XCTAssertEqual(refusal(click("nope", "resume"), clickContext(restoreCard: allChoices))?.code, .noSuchCard)
-        XCTAssertEqual(refusal(click("/a/b.md", "resume"), clickContext(restoreCard: allChoices))?.code, .unsupportedCardKind)
+        XCTAssertEqual(
+            refusal(click("/a/b.md", "resume"), clickContext(restoreCard: allChoices))?.code, .unsupportedCardKind)
     }
 
     func testS38TheRestoreCardCoversEveryCardControlBeforeItsPresenceIsAsked() {
@@ -501,7 +515,9 @@ final class DevRoutingTests: XCTestCase {
 
     func testS38ACulledCardIsCardHiddenOnlyWhenTheControlIsPresent() {
         XCTAssertEqual(refusal(click("t-1", "resume"), clickContext(frame: culled))?.code, .cardHidden)
-        XCTAssertEqual(refusal(click("t-1", "resume"), clickContext(controls: [.panel(.skip)], frame: culled))?.code, .noSuchControl)
+        XCTAssertEqual(
+            refusal(click("t-1", "resume"), clickContext(controls: [.panel(.skip)], frame: culled))?.code,
+            .noSuchControl)
         XCTAssertEqual(route(click("t-1", "resume"), clickContext()), .click(card: "t-1", control: .panel(.resume)))
     }
 

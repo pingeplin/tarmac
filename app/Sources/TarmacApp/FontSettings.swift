@@ -43,6 +43,7 @@ final class FontSettings {
     /// Reads the one saved family from the Mac, not the whole font list.
     private func resolve(_ role: FontRole) {
         let saved = saved[role]
-        Theme.fontFamilies[role] = role.familyInEffect(saved: saved, installed: saved.flatMap(InstalledFonts.family(named:)))
+        Theme.fontFamilies[role] = role.familyInEffect(
+            saved: saved, installed: saved.flatMap(InstalledFonts.family(named:)))
     }
 }

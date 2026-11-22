@@ -19,19 +19,25 @@ enum InstalledFonts {
     /// A family's regular face, or its bold one; nil when the Mac has no such
     /// family. One with no bold gives its regular face.
     static func face(of family: String, bold: Bool = false, size: CGFloat) -> NSFont? {
-        NSFontManager.shared.font(withFamily: family, traits: bold ? .boldFontMask : [], weight: bold ? 9 : 5, size: size)
+        NSFontManager.shared.font(
+            withFamily: family, traits: bold ? .boldFontMask : [], weight: bold ? 9 : 5, size: size)
     }
 
     /// A member is `[PostScript name, style, weight, traits]`. Which of them
     /// speaks for the family is `InstalledFamily`'s decision.
     private static func facts(of family: String) -> InstalledFamily? {
         let members = NSFontManager.shared.availableMembers(ofFontFamily: family) ?? []
-        return InstalledFamily(name: family, faces: members.compactMap { member in
-            guard member.count >= 4, let weight = member[2] as? Int, let traits = member[3] as? UInt else { return nil }
-            let mask = NSFontTraitMask(rawValue: traits)
-            return InstalledFamily.Face(
-                weight: weight, italic: mask.contains(.italicFontMask), fixedPitch: mask.contains(.fixedPitchFontMask)
-            )
-        })
+        return InstalledFamily(
+            name: family,
+            faces: members.compactMap { member in
+                guard member.count >= 4, let weight = member[2] as? Int, let traits = member[3] as? UInt else {
+                    return nil
+                }
+                let mask = NSFontTraitMask(rawValue: traits)
+                return InstalledFamily.Face(
+                    weight: weight, italic: mask.contains(.italicFontMask),
+                    fixedPitch: mask.contains(.fixedPitchFontMask)
+                )
+            })
     }
 }

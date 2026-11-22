@@ -16,10 +16,11 @@ public enum DevTargetPoints {
         var points = [CGPoint(x: rect.midX, y: rect.midY)]
         for row in 0..<gridSide {
             for col in 0..<gridSide {
-                points.append(CGPoint(
-                    x: rect.minX + (CGFloat(col) + 0.5) * cell.width,
-                    y: rect.minY + (CGFloat(row) + 0.5) * cell.height
-                ))
+                points.append(
+                    CGPoint(
+                        x: rect.minX + (CGFloat(col) + 0.5) * cell.width,
+                        y: rect.minY + (CGFloat(row) + 0.5) * cell.height
+                    ))
             }
         }
         return points

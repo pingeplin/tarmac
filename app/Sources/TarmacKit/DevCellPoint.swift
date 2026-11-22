@@ -32,7 +32,11 @@ public enum DevCellPoint {
     /// before it, so a trailing space can carry one and still show nothing.
     public static func lastWrittenCell(in rows: [[String]]) -> Cell? {
         for (row, cells) in rows.enumerated().reversed() {
-            guard let col = cells.lastIndex(where: { $0.unicodeScalars.first.map { !$0.properties.isWhitespace } ?? false }) else { continue }
+            guard
+                let col = cells.lastIndex(where: {
+                    $0.unicodeScalars.first.map { !$0.properties.isWhitespace } ?? false
+                })
+            else { continue }
             return Cell(col: col, row: row)
         }
         return nil

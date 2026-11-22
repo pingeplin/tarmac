@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Reading a card's file as the Tauri backend's `std::fs::read` does: the path
@@ -176,8 +177,10 @@ final class FileBytesTests: XCTestCase {
     func testLinksAreFollowedToTheEndThroughALinkedDirectory() throws {
         try FileManager.default.createDirectory(atPath: directory + "/real", withIntermediateDirectories: true)
         try Data("x".utf8).write(to: URL(fileURLWithPath: directory + "/real/secret.txt"))
-        try FileManager.default.createSymbolicLink(atPath: directory + "/real/second.png", withDestinationPath: "secret.txt")
-        try FileManager.default.createSymbolicLink(atPath: directory + "/real/first.png", withDestinationPath: "second.png")
+        try FileManager.default.createSymbolicLink(
+            atPath: directory + "/real/second.png", withDestinationPath: "secret.txt")
+        try FileManager.default.createSymbolicLink(
+            atPath: directory + "/real/first.png", withDestinationPath: "second.png")
         try FileManager.default.createSymbolicLink(atPath: directory + "/assets", withDestinationPath: "real")
 
         let file = try FileBytes.resolved(path: directory + "/assets/first.png").get()
@@ -189,8 +192,10 @@ final class FileBytesTests: XCTestCase {
         try FileManager.default.createSymbolicLink(atPath: directory + "/loop.png", withDestinationPath: "loop.png")
 
         XCTAssertEqual(why(FileBytes.resolved(path: directory + "/nope.png")), "No such file or directory (os error 2)")
-        XCTAssertEqual(why(FileBytes.resolved(path: directory + "/dangling.png")), "No such file or directory (os error 2)")
-        XCTAssertEqual(why(FileBytes.resolved(path: directory + "/loop.png")), "Too many levels of symbolic links (os error 62)")
+        XCTAssertEqual(
+            why(FileBytes.resolved(path: directory + "/dangling.png")), "No such file or directory (os error 2)")
+        XCTAssertEqual(
+            why(FileBytes.resolved(path: directory + "/loop.png")), "Too many levels of symbolic links (os error 62)")
     }
 
     func testARefusedFileLeavesNoDescriptorOpen() throws {

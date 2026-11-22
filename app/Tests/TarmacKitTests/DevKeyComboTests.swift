@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// `tarmac dev key <card> "<combo>"` (spec 2609.0015, #166): a closed grammar, so
@@ -29,39 +30,50 @@ final class DevKeyComboTests: XCTestCase {
     // MARK: - S9–S12 the named keys
 
     func testS9EnterIsReturnWithNoModifiers() {
-        XCTAssertEqual(stroke("enter"), DevKeyStroke(
-            keyCode: VK.returnKey, modifierFlags: [], characters: "\r", charactersIgnoringModifiers: "\r"
-        ))
+        XCTAssertEqual(
+            stroke("enter"),
+            DevKeyStroke(
+                keyCode: VK.returnKey, modifierFlags: [], characters: "\r", charactersIgnoringModifiers: "\r"
+            ))
     }
 
     func testS10ControlCCarriesTheControlCharacterAndThePlainLetter() {
-        XCTAssertEqual(stroke("ctrl+c"), DevKeyStroke(
-            keyCode: ansi("c"), modifierFlags: .control, characters: "\u{03}", charactersIgnoringModifiers: "c"
-        ))
+        XCTAssertEqual(
+            stroke("ctrl+c"),
+            DevKeyStroke(
+                keyCode: ansi("c"), modifierFlags: .control, characters: "\u{03}", charactersIgnoringModifiers: "c"
+            ))
     }
 
     func testS11ShiftEnterSetsShiftOnTheSameKey() {
-        XCTAssertEqual(stroke("shift+enter"), DevKeyStroke(
-            keyCode: VK.returnKey, modifierFlags: .shift, characters: "\r", charactersIgnoringModifiers: "\r"
-        ))
+        XCTAssertEqual(
+            stroke("shift+enter"),
+            DevKeyStroke(
+                keyCode: VK.returnKey, modifierFlags: .shift, characters: "\r", charactersIgnoringModifiers: "\r"
+            ))
     }
 
     func testS12EscapeIsTheEscapeKey() {
-        XCTAssertEqual(stroke("escape"), DevKeyStroke(
-            keyCode: VK.escape, modifierFlags: [], characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}"
-        ))
+        XCTAssertEqual(
+            stroke("escape"),
+            DevKeyStroke(
+                keyCode: VK.escape, modifierFlags: [], characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}"
+            ))
     }
 
     /// The app's key bindings match on the key code and an exact modifier set
     /// (#21), so the planned stroke is fed to the real rule rather than restated.
     func testS12bAltLeftIsTheStrokeTheWordMotionBindingMatches() throws {
         let planned = try XCTUnwrap(stroke("alt+left"))
-        XCTAssertEqual(planned, DevKeyStroke(
-            keyCode: VK.leftArrow, modifierFlags: [.option, .function, .numericPad],
-            characters: "\u{F702}", charactersIgnoringModifiers: "\u{F702}"
-        ))
         XCTAssertEqual(
-            TermKeyBinding.bytes(keyCode: planned.keyCode, modifierFlags: planned.modifierFlags.rawValue, composing: false),
+            planned,
+            DevKeyStroke(
+                keyCode: VK.leftArrow, modifierFlags: [.option, .function, .numericPad],
+                characters: "\u{F702}", charactersIgnoringModifiers: "\u{F702}"
+            ))
+        XCTAssertEqual(
+            TermKeyBinding.bytes(
+                keyCode: planned.keyCode, modifierFlags: planned.modifierFlags.rawValue, composing: false),
             [0x1b, 0x62]
         )
     }
@@ -70,9 +82,11 @@ final class DevKeyComboTests: XCTestCase {
     /// `not_focused` precondition for a later verb; that is documented, not
     /// enforced by the grammar.
     func testS12cAltTabPlansLikeAnyOtherCombo() {
-        XCTAssertEqual(stroke("alt+tab"), DevKeyStroke(
-            keyCode: VK.tab, modifierFlags: .option, characters: "\t", charactersIgnoringModifiers: "\t"
-        ))
+        XCTAssertEqual(
+            stroke("alt+tab"),
+            DevKeyStroke(
+                keyCode: VK.tab, modifierFlags: .option, characters: "\t", charactersIgnoringModifiers: "\t"
+            ))
     }
 
     // MARK: - S13 the whole accepted set
@@ -83,7 +97,9 @@ final class DevKeyComboTests: XCTestCase {
         ("ctrl+shift+", [.control, .shift]), ("ctrl+alt+", [.control, .option]), ("alt+shift+", [.option, .shift]),
         ("shift+alt+ctrl+", [.control, .shift, .option]),
     ]
-    private static let chordModifierSets = modifierSets.filter { $0.flags.contains(.control) || $0.flags.contains(.option) }
+    private static let chordModifierSets = modifierSets.filter {
+        $0.flags.contains(.control) || $0.flags.contains(.option)
+    }
     private static let intent: DevKeyStroke.ModifierFlags = [.shift, .control, .option]
 
     func testS13EveryNamedKeyTakesEveryModifierSet() throws {
@@ -124,9 +140,12 @@ final class DevKeyComboTests: XCTestCase {
             ("right", VK.rightArrow, "\u{F703}", arrow),
         ]
         for (combo, keyCode, characters, flags) in rows {
-            XCTAssertEqual(stroke(combo), DevKeyStroke(
-                keyCode: keyCode, modifierFlags: flags, characters: characters, charactersIgnoringModifiers: characters
-            ), combo)
+            XCTAssertEqual(
+                stroke(combo),
+                DevKeyStroke(
+                    keyCode: keyCode, modifierFlags: flags, characters: characters,
+                    charactersIgnoringModifiers: characters
+                ), combo)
         }
     }
 
@@ -222,7 +241,8 @@ final class DevKeyComboTests: XCTestCase {
 
     /// `CTRL+C` pins that the grammar is lowercase-only rather than case-folded.
     func testS15MalformedCombosAreBadComboNeverANeighbour() {
-        for combo in ["ctrl+", "", "frobnicate", "CTRL+C", "ctrl+shift", "+", "ctrl++c", "ctrl+C", "ctrl+ab", "ctrl+é"] {
+        for combo in ["ctrl+", "", "frobnicate", "CTRL+C", "ctrl+shift", "+", "ctrl++c", "ctrl+C", "ctrl+ab", "ctrl+é"]
+        {
             XCTAssertEqual(refusal(combo)?.code, .badCombo, combo)
         }
     }

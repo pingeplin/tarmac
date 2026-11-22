@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import TarmacKit
 
 /// Spec 2610.0009: what the text of a theme file gives, why a file is
@@ -68,13 +69,16 @@ final class ThemeFileTests: XCTestCase {
 
     /// S7
     func testS7AnEmptyValueTakesAway() {
-        for second in ["cursor-color =", "cursor-color = \"\"", "cursor-color = cell-foreground", "cursor-color = cell-background"] {
+        for second in [
+            "cursor-color =", "cursor-color = \"\"", "cursor-color = cell-foreground", "cursor-color = cell-background",
+        ] {
             let colours = parsed(ThemeFixture.text("cursor-color = #ff0000", second))
             XCTAssertNotNil(colours, second)
             XCTAssertNil(colours?.cursor, second)
         }
         XCTAssertEqual(
-            parsed(ThemeFixture.text("palette = 1=#111111", "palette = 2=#222222", "palette =", "palette = 3=#333333"))?.ansi,
+            parsed(ThemeFixture.text("palette = 1=#111111", "palette = 2=#222222", "palette =", "palette = 3=#333333"))?
+                .ansi,
             [3: 0x333333]
         )
         XCTAssertEqual(parsed(ThemeFixture.text("tarmac-repo = 0=#111111", "tarmac-repo ="))?.repo, [:])
@@ -305,7 +309,8 @@ final class ThemeFileTests: XCTestCase {
 
         let palette = ThemeFile.palette(from: colours)
 
-        XCTAssertEqual(palette.terminal.ansi, Self.breezeDarkANSI.enumerated().map { $0.offset == 6 ? 0xff00ff : $0.element })
+        XCTAssertEqual(
+            palette.terminal.ansi, Self.breezeDarkANSI.enumerated().map { $0.offset == 6 ? 0xff00ff : $0.element })
         XCTAssertEqual(palette.agent, 0xff00ff)
     }
 
@@ -389,7 +394,8 @@ final class ThemeFileTests: XCTestCase {
             ["text on bg0", "muted on bg0", "text on bg1", "muted on bg1", "text on bg2", "muted on bg2"]
         )
         XCTAssertEqual(
-            subjects(findings, .terminal), ["ansi 7 on background", "ansi 15 on background", "foreground on background"]
+            subjects(findings, .terminal),
+            ["ansi 7 on background", "ansi 15 on background", "foreground on background"]
         )
     }
 }

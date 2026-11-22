@@ -1,5 +1,5 @@
-import XCTest
 import TarmacKit
+import XCTest
 
 /// Spec 2611.0009: what a terminal card's report chip shows.
 final class ReportChipTests: XCTestCase {

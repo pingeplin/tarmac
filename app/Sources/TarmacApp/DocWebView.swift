@@ -8,7 +8,8 @@ import WebKit
 /// takes keyboard focus when it is pressed.
 @MainActor
 final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, DocSidebarSideFollowing,
-    WKNavigationDelegate {
+    WKNavigationDelegate
+{
     /// Where a clicked http(s) link goes.
     var openExternal: (URL) -> Void = { NSWorkspace.shared.open($0) }
 
@@ -90,7 +91,8 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, DocS
         editing.onMessage = { [weak self] message in self?.isEditingText = message.body as? Bool ?? false }
         webView.configuration.userContentController.add(scrolled, contentWorld: CardWebView.world, name: "docScroll")
         scrolled.onMessage = { [weak self] message in self?.scrollReported(message) }
-        webView.configuration.userContentController.add(sidebarActions, contentWorld: CardWebView.world, name: "docSidebar")
+        webView.configuration.userContentController.add(
+            sidebarActions, contentWorld: CardWebView.world, name: "docSidebar")
         sidebarActions.onMessage = { [weak self] message in self?.sidebarReported(message) }
         host.onResize = { [weak self] size in self?.layoutPage(viewport: size) }
         addSubview(host)
@@ -250,10 +252,12 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, DocS
     private func layoutPage(viewport: CGSize) {
         overlayOpen = DocSidebar.overlayOpen(overlayOpen, cardWidth: cardWidth)
         guard pageLoaded else { return }
-        webView.runInCardWorld("tarmacDoc.layout(zoom, cardWidth, height, state)", arguments: [
-            "zoom": Double(host.settledZoom), "cardWidth": cardWidth, "height": Double(viewport.height),
-            "state": sidebarState().arguments,
-        ])
+        webView.runInCardWorld(
+            "tarmacDoc.layout(zoom, cardWidth, height, state)",
+            arguments: [
+                "zoom": Double(host.settledZoom), "cardWidth": cardWidth, "height": Double(viewport.height),
+                "state": sidebarState().arguments,
+            ])
     }
 
     /// The `src` each image of a render is loaded from: a local file through
@@ -272,7 +276,7 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, DocS
     /// Only an absolute http(s) one opens, and every other is inert.
     private func linkClicked(_ message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, let href = message.body as? String,
-              let url = ExternalLink.destination(href: href)
+            let url = ExternalLink.destination(href: href)
         else { return }
         openExternal(url)
     }

@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import XCTest
+
 @testable import TarmacKit
 
 /// The kit restates AppKit's modifier bits and key characters, and the tests
@@ -94,8 +95,8 @@ final class DevKeyNativeConstantsTests: XCTestCase {
     private func usLayout() throws -> Data {
         let filter = [kTISPropertyInputSourceID as String: "com.apple.keylayout.US"] as CFDictionary
         guard let sources = TISCreateInputSourceList(filter, true)?.takeRetainedValue() as? [TISInputSource],
-              let source = sources.first,
-              let raw = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
+            let source = sources.first,
+            let raw = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
         else { throw XCTSkip("the US keyboard layout is not installed") }
         return Unmanaged<CFData>.fromOpaque(raw).takeUnretainedValue() as Data
     }
