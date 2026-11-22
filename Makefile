@@ -1,6 +1,6 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: setup core ghostty-vt app test docs-check arch-check check-test fmt fmt-check lint dco-check run qa qa-quit qa-resume kill-daemon bundle dmg release
+.PHONY: setup core ghostty-vt app test docs-check arch-check check-test mutants fmt fmt-check lint dco-check run qa qa-quit qa-resume kill-daemon bundle dmg release
 
 # The dev channel: one directory that holds this worktree's own daemon socket,
 # state, driver socket and config directory. Everything that launches or drives
@@ -101,6 +101,17 @@ lint: $(if $(filter rust swift,$(ONLY)),,ghostty-vt)
 # Plain node and sub-second, like docs-check, so it runs in `test`.
 arch-check:
 	cd $(ROOT) && node scripts/check/arch.mjs
+
+# Mutation testing for the Rust workspace (scripts/check/mutants.mjs, spec
+# 2611.0032): cargo-mutants changes one expression at a time in the Rust lines
+# this branch changed since BASE and runs the tests; a change that no test saw
+# fails. The script gives the tool a new empty HOME and a short list of
+# variables, so a mutant cannot reach the real home. ALL=1 runs the whole
+# workspace (hours; SHARD=k/n takes one part), JOBS=n sets the parallel runs
+# (default 2), REPORT=1 words a survivor and passes. Not part of `test`: a
+# mutant costs a build and a test run. CI runs it on every PR (mutants.yml).
+mutants:
+	cd $(ROOT) && node scripts/check/mutants.mjs --base $(BASE)$(if $(ALL), --all)$(if $(SHARD), --shard $(SHARD))$(if $(JOBS), --jobs $(JOBS))$(if $(REPORT), --report)
 
 # The unit tests of the check scripts themselves. They make small git
 # repositories in the temp directory and run the real formatter there.
