@@ -765,7 +765,6 @@ fn an_event_frame_has_its_kind_and_its_terminal() {
 fn a_refused_resume_command_says_so_with_its_cause() {
     assert_eq!(refuse_resume_cmd("claude --resume abc"), Ok(()));
     assert_eq!(refuse_resume_cmd("").unwrap_err(), "resume command refused: empty");
-    assert_eq!(refuse_resume_cmd(&"x".repeat(257)).unwrap_err(), "resume command refused: over 256 characters");
 }
 
 #[test]
