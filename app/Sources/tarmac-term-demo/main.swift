@@ -14,7 +14,7 @@ import TarmacTerm
 
 @MainActor
 final class Demo: NSObject, NSApplicationDelegate {
-    let client = DaemonClient()
+    let client = DaemonClient(signal: { _, _ in })
     let termID = BootTerminal.mint()
     // predates the lint; decided in #476
     // swift-format-ignore: NeverUseImplicitlyUnwrappedOptionals

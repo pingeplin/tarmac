@@ -46,6 +46,11 @@ public final class DaemonClient: @unchecked Sendable {
         public static let standard = Timing()
     }
 
+    /// Sends a signal to a process. The client is given it and holds no
+    /// `kill(2)` of its own, so a test decides which pid a signal may reach
+    /// (#491); there is no default for the same reason.
+    public typealias Signal = @Sendable (_ pid: pid_t, _ signal: Int32) -> Void
+
     public let socketPath: String
     public let channel: ChannelPaths.Channel
     /// Sent as `hello.app_version`, and compared with `hello_ok.daemon_version`
@@ -61,6 +66,7 @@ public final class DaemonClient: @unchecked Sendable {
     private let executableDir: String
     private let timing: Timing
     private let deliveryQueue: DispatchQueue
+    private let signal: Signal
     private let writeQueue = DispatchQueue(label: "tarmac.daemon.write")
     private let wake = DispatchSemaphore(value: 0)
 
@@ -91,7 +97,8 @@ public final class DaemonClient: @unchecked Sendable {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         executableDir: String = DaemonClient.runningExecutableDir,
         timing: Timing = .standard,
-        deliveryQueue: DispatchQueue = .main
+        deliveryQueue: DispatchQueue = .main,
+        signal: @escaping Signal
     ) {
         self.socketPath = socketPath ?? Self.resolveSocketPath(env: environment, channel: channel)
         self.channel = channel
@@ -100,6 +107,7 @@ public final class DaemonClient: @unchecked Sendable {
         self.executableDir = executableDir
         self.timing = timing
         self.deliveryQueue = deliveryQueue
+        self.signal = signal
     }
 
     public static var runningExecutableDir: String {
@@ -384,7 +392,7 @@ public final class DaemonClient: @unchecked Sendable {
         let spawnedChild = liveChild().map(Int.init)
         stateLock.unlock()
         if let pid = DaemonLaunch.restartTarget(reportedPid: reportedPid, spawnedChildPid: spawnedChild) {
-            kill(pid_t(pid), SIGTERM)
+            signal(pid_t(pid), SIGTERM)
         }
         let deadline = Date().addingTimeInterval(timing.restartWaitBudget)
         while FileManager.default.fileExists(atPath: socketPath), Date() < deadline {
