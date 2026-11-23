@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import "./test-env.mjs";
+
 import { failure } from "./report.mjs";
 
 test("a failure names the rule, the places, the reason and the next two commands", () => {

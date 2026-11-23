@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { after, test } from "node:test";
 
+import "./test-env.mjs";
+
 import { VERSION } from "./mutants.mjs";
 
 const HERE = import.meta.dirname;

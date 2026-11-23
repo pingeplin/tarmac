@@ -2,6 +2,12 @@ ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 .PHONY: setup core ghostty-vt app test docs-check arch-check check-test mutants fmt fmt-check lint dco-check run qa qa-quit qa-resume kill-daemon bundle dmg release
 
+# git gives a hook the variables that name its repository, and the pre-push hook
+# runs `make test`. A test that starts a git of its own (a fixture repository)
+# would then write to the repository of the hook (#502). No recipe here needs
+# them: each one names its directory.
+unexport GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_IMPLICIT_WORK_TREE GIT_CONFIG
+
 # The dev channel: one directory that holds this worktree's own daemon socket,
 # state, driver socket and config directory. Everything that launches or drives
 # a dev build goes through these, so `make run DEV_DIR=<dir>` is a second, whole
