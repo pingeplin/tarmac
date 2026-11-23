@@ -54,7 +54,7 @@ public final class TerminalEngine {
     public init(cols: Int, rows: Int) throws {
         var handle: GhosttyTerminal?
         try check(ghostty_terminal_new(nil, &handle, UInt16(cols), UInt16(rows)), "terminal_new")
-        // predates the lint; decided in #476
+        // check throws unless ghostty_terminal_new succeeded, and a success always stores the handle
         // swift-format-ignore: NeverForceUnwrap
         terminal = handle!
         self.cols = cols

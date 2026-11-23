@@ -71,8 +71,7 @@ mod tests {
         let payload = encode(&Msg::Ack).unwrap();
         let mut buf = Vec::new();
         write_sync(&mut buf, &payload).unwrap();
-        #[expect(clippy::cast_possible_truncation, reason = "predates the lint; decided in #470")]
-        let len = payload.len() as u32;
+        let len = u32::try_from(payload.len()).unwrap();
         assert_eq!(&buf[..4], &len.to_be_bytes());
         let mut cursor = io::Cursor::new(buf);
         assert_eq!(read_sync(&mut cursor).unwrap(), payload);

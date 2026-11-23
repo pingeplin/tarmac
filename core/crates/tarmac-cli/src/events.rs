@@ -58,9 +58,14 @@ fn stopped(stop: Stop) -> i32 {
     1
 }
 
-#[expect(clippy::cast_possible_truncation, reason = "predates the lint; decided in #470")]
 fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+    epoch_ms(SystemTime::now())
+}
+
+/// `t` in ms since the epoch; 0 for a time before it or past `u64` ms, as the
+/// daemon gives a time.
+fn epoch_ms(t: SystemTime) -> u64 {
+    t.duration_since(UNIX_EPOCH).ok().and_then(|d| u64::try_from(d.as_millis()).ok()).unwrap_or(0)
 }
 
 /// What `events` asks for: the `--kind`s in their order (`None` is all) and
@@ -251,6 +256,16 @@ fn decoded(payload: &[u8]) -> Result<Msg, Stop> {
 mod tests {
     use super::*;
     use crate::fixtures::args;
+    use std::time::Duration;
+
+    #[test]
+    fn a_time_is_milliseconds_since_the_epoch_or_zero() {
+        assert_eq!(epoch_ms(UNIX_EPOCH + Duration::from_millis(1_700_000_000_123)), 1_700_000_000_123);
+        assert_eq!(epoch_ms(UNIX_EPOCH + Duration::from_millis(u64::MAX)), u64::MAX);
+        assert_eq!(epoch_ms(UNIX_EPOCH - Duration::from_millis(1)), 0, "before the epoch");
+        let past = UNIX_EPOCH + Duration::from_millis(u64::MAX) + Duration::from_millis(2);
+        assert_eq!(epoch_ms(past), 0, "past u64 milliseconds, not a wrapped number");
+    }
 
     fn text(msg: &Msg, snapshot: bool) -> String {
         serde_json::to_string(&Line::of(msg, snapshot, 9).unwrap()).unwrap()
@@ -357,7 +372,7 @@ mod tests {
     fn a_lost_daemon_before_the_deadline_is_a_failure_not_late() {
         let (mut cli, daemon) = daemon_wrote(&[]);
         drop(daemon);
-        let far = Instant::now() + std::time::Duration::from_secs(60);
+        let far = Instant::now() + Duration::from_secs(60);
         assert!(failed(next(&mut cli, Some(far))).starts_with("daemon connection lost"));
     }
 

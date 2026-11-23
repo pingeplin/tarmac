@@ -41,7 +41,7 @@ pub(crate) fn process_name(pid: libc::pid_t) -> Option<String> {
 #[cfg(target_os = "macos")]
 fn sysctl(mib: &mut [libc::c_int], buf: &mut [u8]) -> Option<usize> {
     let mut size = buf.len();
-    #[expect(clippy::cast_possible_truncation, reason = "predates the lint; decided in #470")]
+    #[expect(clippy::cast_possible_truncation, reason = "each caller passes a 2- to 4-int literal mib")]
     // SAFETY: `mib` names `mib.len()` ints; `buf` is `size` bytes, and sysctl
     // writes at most `size` bytes and sets `size` to the count written.
     let ret = unsafe {
@@ -119,7 +119,7 @@ pub(crate) fn pid_cwd(pid: libc::pid_t) -> Option<String> {
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_possible_wrap,
-        reason = "predates the lint; decided in #470"
+        reason = "the size of a fixed libc struct, a few KiB"
     )]
     let size = size_of::<libc::proc_vnodepathinfo>() as libc::c_int;
     // SAFETY: `info` is a valid, zeroed, exactly-sized buffer; proc_pidinfo
@@ -168,7 +168,7 @@ const P_STAT: usize = 36;
 #[cfg(target_os = "macos")]
 const E_PPID: usize = 560;
 #[cfg(target_os = "macos")]
-const SZOMB: i8 = 5;
+const SZOMB: u8 = 5;
 
 /// One `sysctl` read; never `proc_pidinfo`, which fails on pid 1, on
 /// root-owned pids and on zombies.
@@ -180,8 +180,7 @@ pub(crate) fn proc_facts(pid: Pid) -> Facts {
     };
     match size {
         0 => Facts::Gone,
-        #[expect(clippy::cast_possible_wrap, reason = "predates the lint; decided in #470")]
-        KINFO_PROC_SIZE if buf[P_STAT] as i8 == SZOMB => Facts::Gone,
+        KINFO_PROC_SIZE if buf[P_STAT] == SZOMB => Facts::Gone,
         KINFO_PROC_SIZE => {
             let tv_sec = i64::from_ne_bytes(buf[0..8].try_into().expect("8 bytes"));
             let tv_usec = i32::from_ne_bytes(buf[8..12].try_into().expect("4 bytes"));
@@ -289,7 +288,7 @@ mod tests {
             reason = "a test helper; allow-unwrap-in-tests does not cover a cfg(all(test, …)) module"
         )]
         let mut child: Child = command.arg("5").spawn().unwrap();
-        #[expect(clippy::cast_possible_wrap, reason = "predates the lint; decided in #470")]
+        #[expect(clippy::cast_possible_wrap, reason = "a pid_t that std cast to u32: casting back is exact")]
         let name = process_name(child.id() as libc::pid_t);
         #[expect(
             clippy::unwrap_used,
@@ -353,7 +352,7 @@ mod tests {
 
     #[test]
     fn own_pid_is_live_with_its_parent_and_a_start_time() {
-        #[expect(clippy::cast_possible_wrap, reason = "predates the lint; decided in #470")]
+        #[expect(clippy::cast_possible_wrap, reason = "a pid_t that std cast to u32: casting back is exact")]
         let Facts::Live { ppid, started } = proc_facts(std::process::id() as libc::pid_t) else {
             panic!("own pid is not live")
         };
@@ -371,7 +370,7 @@ mod tests {
     #[test]
     fn an_exited_child_is_gone_before_and_after_it_is_reaped() {
         let mut child = Command::new("/bin/cat").stdin(Stdio::piped()).stdout(Stdio::null()).spawn().unwrap();
-        #[expect(clippy::cast_possible_wrap, reason = "predates the lint; decided in #470")]
+        #[expect(clippy::cast_possible_wrap, reason = "a pid_t that std cast to u32: casting back is exact")]
         let pid = child.id() as libc::pid_t;
         assert!(matches!(proc_facts(pid), Facts::Live { .. }), "a running child is live");
 
@@ -393,7 +392,7 @@ mod tests {
     // Proven on our own test process, which cargo always launches with a real cwd.
     #[test]
     fn pid_cwd_resolves_own_process_cwd() {
-        #[expect(clippy::cast_possible_wrap, reason = "predates the lint; decided in #470")]
+        #[expect(clippy::cast_possible_wrap, reason = "a pid_t that std cast to u32: casting back is exact")]
         let pid = std::process::id() as libc::pid_t;
         let cwd = pid_cwd(pid).expect("cwd resolves for our own live pid");
         let expected = std::env::current_dir().unwrap().canonicalize().unwrap();

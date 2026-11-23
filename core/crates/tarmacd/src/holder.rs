@@ -165,7 +165,7 @@ mod tests {
             assert!(reads.get() <= MAX_HOPS, "a walk read the table {} times", reads.get());
             parents.iter().find(|(p, _)| *p == pid).map_or(Facts::Gone, |&(_, ppid)| Facts::Live {
                 ppid,
-                #[expect(clippy::cast_sign_loss, reason = "predates the lint; decided in #470")]
+                #[expect(clippy::cast_sign_loss, reason = "the tests' pids are positive")]
                 started: pid as u64,
             })
         }
@@ -178,7 +178,7 @@ mod tests {
     fn agent(pid: Pid) -> Option<Holder> {
         Some(Holder::Agent {
             pid,
-            #[expect(clippy::cast_sign_loss, reason = "predates the lint; decided in #470")]
+            #[expect(clippy::cast_sign_loss, reason = "the tests' pids are positive")]
             started: pid as u64,
         })
     }
@@ -243,12 +243,7 @@ mod tests {
 
     /// A chain of `members` pids, the caller first and the child last.
     fn chain_of(members: usize) -> (Pid, Vec<(Pid, Pid)>) {
-        #[expect(
-            clippy::cast_possible_truncation,
-            clippy::cast_possible_wrap,
-            reason = "predates the lint; decided in #470"
-        )]
-        let pids: Vec<Pid> = (0..members - 1).map(|i| 1000 + i as Pid).chain([CHILD]).collect();
+        let pids: Vec<Pid> = (1000..).take(members - 1).chain([CHILD]).collect();
         (pids[0], pids.windows(2).map(|w| (w[0], w[1])).collect())
     }
 
