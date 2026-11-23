@@ -114,7 +114,7 @@ arch-check:
 # fails. The script gives the tool a new empty HOME and a short list of
 # variables, so a mutant cannot reach the real home. ALL=1 runs the whole
 # workspace (hours; SHARD=k/n takes one part), FILE=<path from the repository
-# root> runs every mutant of one file, JOBS=n sets the parallel runs
+# root, no space in it> runs every mutant of one file, JOBS=n sets the parallel runs
 # (default 2), REPORT=1 words a survivor and passes. Not part of `test`: a
 # mutant costs a build and a test run. CI runs it on every PR (mutants.yml).
 # Set here so that a variable of the same name in the environment (CI sets

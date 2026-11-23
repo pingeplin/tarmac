@@ -293,15 +293,14 @@ test("S5/S30: --all starts the tool on the whole workspace, with a shard when on
 });
 
 test("S49: --file starts the tool on every mutant of one file, named from core/, and reads no base", () => {
-  const cargo = tool();
+  const cargo = tool({ files: { "caught.txt": ["a"] } });
   const dir = repo();
   mutants(dir, cargo, ["--file", SOURCE]);
   mutants(dir, cargo, ["--file", SOURCE, "--base", "no-such-ref"]);
-  mkdirSync(join(dir, "core/crates"), { recursive: true });
-  const fromInside = spawnSync(process.execPath, [SCRIPT, "--file", "x/src/a.rs"], { cwd: join(dir, "core/crates"), encoding: "utf8", env: { PATH: [cargo, process.env.PATH].join(delimiter), HOME: scratch("mutants-home-"), TMPDIR: tmpdir() } });
+  const fromInside = mutants(join(dir, "core/crates"), cargo, ["--file", "x/src/a.rs"]);
   const given = calls(cargo).map(({ args }) => args);
 
-  assert.equal(fromInside.status, 0, fromInside.stderr);
+  assert.equal(fromInside.code, 0, fromInside.err);
   assert.equal(given.length, 3);
   for (const args of given) {
     assert.equal(args[args.indexOf("--file") + 1], "crates/x/src/a.rs");
@@ -321,6 +320,19 @@ test("S50: --file with a path that is no Rust file of core/ cannot run, and the 
     assert.ok(run.err.includes(why), `${path}: ${run.err}`);
   }
   assert.deepEqual(calls(cargo), []);
+});
+
+test("S52: --file with a file in which the tool finds no mutant cannot run", () => {
+  const dir = repo({ "core/crates/x/tests/t.rs": "#[test]\nfn t() {}\n", "core/crates/x/src/a.rs.d/x.rs/keep": "" });
+  const none = mutants(dir, tool({ exit: 0 }), ["--file", "core/crates/x/tests/t.rs"]);
+  const onlyUnviable = mutants(dir, tool({ exit: 0, files: { "unviable.txt": ["a"] } }), ["--file", SOURCE]);
+  const directory = mutants(dir, tool({ exit: 0, files: { "caught.txt": ["a"] } }), ["--file", "core/crates/x/src/a.rs.d/x.rs"]);
+
+  assert.equal(none.code, 2);
+  assert.match(none.err, /^✗ mutants: --file crates\/x\/tests\/t\.rs: the tool found no mutant in it$/m);
+  assert.equal(onlyUnviable.code, 0, onlyUnviable.err);
+  assert.equal(directory.code, 2);
+  assert.match(directory.err, /not a Rust file/);
 });
 
 test("S51: --file does not go with --all or --shard, and --changed with it says true", () => {
