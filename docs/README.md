@@ -24,10 +24,14 @@ runs deterministic tripwires only — it never judges prose:
 
 1. every doc carries a status banner;
 2. every relative link resolves;
-3. **ACTIVE** docs may not cite a source path that doesn't exist (HISTORICAL docs
+3. **ACTIVE** docs and the project skills (`.claude/skills/*/SKILL.md`) may not
+   cite a source path that doesn't exist, unless git ignores it (HISTORICAL docs
    are exempt — naming dead files is their job);
 4. every `Msg` variant in `tarmac-protocol` appears in both `architecture.md` and
-   `protocol.md`.
+   `protocol.md`;
+5. every **ACTIVE** or **PROPOSED** doc under `docs/` is linked from this page by
+   its own inline link (a link to `designs/` or `archive/` covers HISTORICAL
+   records only; a reference-style link or one with a title is not read).
 
 On a PR it additionally *reports* (never fails) when an ACTIVE doc still names a
 file the PR deleted. Prose that is merely out of date is out of scope — that
@@ -121,7 +125,8 @@ M3 is tracked per GitHub issue; see [`workflow.md`](workflow.md).
    design record for a change you investigated but did **not** build also goes in
    `docs/designs/`, born **PROPOSED** — the banner is what classifies it, and it
    flips to HISTORICAL if the change later ships.
-3. Add it to the right table above.
+3. Add it to the right table above (`make docs-check` fails an ACTIVE or
+   PROPOSED doc that this page does not link to).
 4. When a doc stops describing reality, flip it to HISTORICAL — don't leave it
    ACTIVE and stale.
 5. Run `make docs-check`.
