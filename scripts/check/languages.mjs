@@ -6,6 +6,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
+import { repoRoot } from "./git.mjs";
+
 // `command` reads one file on stdin and writes the formatted text to stdout.
 // It runs in the file's directory, which is where the formatter looks for its
 // configuration.
@@ -63,9 +65,8 @@ export function namedFiles(paths, cwd = process.cwd()) {
   const byRoot = new Map();
   for (const file of paths.map((path) => resolve(cwd, path))) {
     if (!statSync(file, { throwIfNoEntry: false })?.isFile()) continue;
-    const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: dirname(file), encoding: "utf8" });
-    if (top.status !== 0) continue;
-    const root = top.stdout.trim();
+    const root = repoRoot(dirname(file));
+    if (!root) continue;
     // `--show-toplevel` gives the path with links resolved; the named one may not be.
     const path = relative(root, realpathSync(file));
     if (spawnSync("git", ["check-ignore", "-q", "--", path], { cwd: root }).status === 0) continue;

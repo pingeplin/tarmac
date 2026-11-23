@@ -508,6 +508,30 @@ test("S13: a staged file with a finding is named; an unstaged one is not", () =>
   assert.deepEqual(run.err.match(/^ {2}at .*$/gm), ["  at   app/Staged.swift:2:13 NeverForceUnwrap"]);
 });
 
+// git gives a hook GIT_DIR in a linked worktree; `--show-toplevel` then answers with the current directory (#502).
+const asAWorktreeHook = (dir) => ({ ...process.env, GIT_DIR: join(dir, ".git"), GIT_INDEX_FILE: join(dir, ".git/index") });
+const KEPT = "func f(_ x: Int?) -> Int {\n    // The caller checked it.\n    // swift-format-ignore: NeverForceUnwrap\n    let y = x!\n    return y\n}\n";
+
+test("#502: under a worktree's hook environment a staged file is judged from the repository root", () => {
+  const dir = repo();
+  write(dir, { "app/Sources/Kept.swift": KEPT, "app/Sources/Staged.swift": UNWRAP });
+  stage(dir, "app/Sources/Kept.swift", "app/Sources/Staged.swift");
+
+  const run = stagedIn(dir, asAWorktreeHook(dir));
+
+  assert.equal(run.code, 1);
+  assert.deepEqual(run.err.match(/^ {2}at .*$|^ {7}\S.*$/gm), ["  at   app/Sources/Staged.swift:2:13 NeverForceUnwrap"]);
+});
+
+test("#502: the root of a directory is the top of its work tree, whatever GIT_DIR a hook was given", () => {
+  const dir = repo({ "app/Sources/A.swift": "" });
+  const probe = `import { repoRoot } from ${JSON.stringify(join(dir, "scripts/check/git.mjs"))}; console.log(repoRoot(${JSON.stringify(join(dir, "app/Sources"))}));`;
+
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", probe], { cwd: dir, encoding: "utf8", env: asAWorktreeHook(dir) });
+
+  assert.equal(run.stdout.trim(), dir);
+});
+
 test("S13: a staged Rust file brings clippy in, with the workspace's lint table", () => {
   const dir = repo({ "core/Cargo.toml": PROBE, "core/src/main.rs": "fn main() {}\n" });
   write(dir, { "core/src/main.rs": "fn main() {\n    todo!()\n}\n" });
