@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { chmodSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
 import "./test-env.mjs";
+
+import { git, runScript, scratchIn, tracked } from "./test-support.mjs";
 
 import { notFormatted } from "./fmt.mjs";
 
@@ -18,24 +19,10 @@ const CLEAN = { code: 0, err: [""] };
 // The fixtures are outside this checkout, so each one carries the pin: a test
 // then runs the same rustfmt as a check of the real tree.
 const TOOLCHAIN = readFileSync(join(import.meta.dirname, "../../rust-toolchain.toml"), "utf8");
-const repos = [];
-after(() => repos.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
-
-function scratch() {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "fmt-test-")));
-  repos.push(dir);
-  return dir;
-}
+const scratch = scratchIn("fmt-test-");
 
 /** A git repository in which every listed file is tracked, beside one formatted `main.rs`. */
-function repo(files = {}) {
-  const dir = scratch();
-  const tracked = { "rust-toolchain.toml": TOOLCHAIN, "core/src/main.rs": FORMATTED, ...files };
-  for (const [path, text] of Object.entries(tracked)) if (text !== null) write(dir, path, text);
-  git(dir, "init", "-q");
-  git(dir, "add", "-A");
-  return dir;
-}
+const repo = (files = {}) => tracked(scratch(), { "rust-toolchain.toml": TOOLCHAIN, "core/src/main.rs": FORMATTED, ...files });
 
 /** An environment whose PATH holds git, the given stand-in programs, and nothing else. */
 function pathWithOnlyGit(standIns = {}) {
@@ -53,11 +40,9 @@ function write(dir, path, text) {
   writeFileSync(join(dir, path), text);
 }
 
-const git = (dir, ...args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
-
 function fmt(dir, args, env = process.env) {
-  const run = spawnSync(process.execPath, [SCRIPT, ...args], { cwd: dir, encoding: "utf8", env });
-  return { code: run.status, err: run.stderr.split("\n") };
+  const run = runScript(SCRIPT, args, { cwd: dir, env });
+  return { code: run.code, err: run.err.split("\n") };
 }
 
 const runCheck = (dir, env) => fmt(dir, ["--check", "rust"], env);
@@ -356,8 +341,8 @@ test("a Swift script with a #! line is left alone: swift-format 6.4 corrupts its
 // ------------------------------------------------------------ named files
 
 const named = (dir, mode, paths, cwd = dir) => {
-  const run = spawnSync(process.execPath, [SCRIPT, mode, "--paths", ...paths], { cwd, encoding: "utf8" });
-  return { code: run.status, err: run.stderr.split("\n") };
+  const run = runScript(SCRIPT, [mode, "--paths", ...paths], { cwd });
+  return { code: run.code, err: run.err.split("\n") };
 };
 
 test("named files: a new, untracked file is formatted, and no other file is touched", () => {

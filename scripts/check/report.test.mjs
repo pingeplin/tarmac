@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
 import "./test-env.mjs";
+
+import { runScript, scratchIn } from "./test-support.mjs";
 
 import { blockedFor, failure } from "./report.mjs";
 
@@ -64,22 +64,17 @@ test("blockedFor gives the could-not-run result of one rule and one next command
   });
 });
 
-const entryDirs = [];
-after(() => entryDirs.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+const scratch = scratchIn("report-test-");
 
 /** A check script in a scratch directory whose `main` is `body`, ended with the shared entry. */
 function probe(body) {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "report-test-")));
-  entryDirs.push(dir);
+  const dir = scratch();
   const report = pathToFileURL(join(import.meta.dirname, "report.mjs")).href;
   writeFileSync(join(dir, "probe.mjs"), `import { runCheck } from ${JSON.stringify(report)};\nawait runCheck(import.meta, { rule: "probe", then: "make probe" }, ${body});\n`);
   return dir;
 }
 
-const started = (dir, file = "probe.mjs") => {
-  const run = spawnSync(process.execPath, [join(dir, file)], { cwd: dir, encoding: "utf8" });
-  return { code: run.status, out: run.stdout, err: run.stderr };
-};
+const started = (dir, file = "probe.mjs") => runScript(join(dir, file), [], { cwd: dir });
 
 /** The report of a check that failed itself: the message, the place in the script if the error has one, the commands. */
 const failed = (message, place = []) => failure({ rule: "probe", summary: "the check itself failed", why: [message, ...place], fix: "make probe", then: "make probe" });

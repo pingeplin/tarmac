@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, existsSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
 import "./test-env.mjs";
+
+import { git, runScript, scratchIn, tracked, write } from "./test-support.mjs";
 
 const HERE = import.meta.dirname;
 const HOOK = join(HERE, "hook.mjs");
@@ -14,28 +15,14 @@ const SENT = JSON.parse(readFileSync(join(HERE, "fixtures/hook-inputs.json"), "u
 const SWIFT_RULES = '{"version": 1, "indentation": {"spaces": 4}, "rules": {"NeverForceUnwrap": true}}\n';
 const CARGO = '[workspace.dependencies]\nserde = "=1.0.228"\nrmp-serde = "=1.3.1"\nserde_bytes = "=0.11.19"\n';
 const UNWRAP = "func f(_ x: Int?) -> Int {\n    let y = x!\n    return y\n}\n";
-const dirs = [];
-after(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
-
-function scratch() {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "hook-test-")));
-  dirs.push(dir);
-  return dir;
-}
-
-function write(dir, files) {
-  for (const [path, text] of Object.entries(files)) {
-    mkdirSync(dirname(join(dir, path)), { recursive: true });
-    writeFileSync(join(dir, path), text);
-  }
-}
+const scratch = scratchIn("hook-test-");
 
 /** A git repository with one commit that holds this repository's check scripts and the files a check needs. */
 function repo(files = {}) {
   const dir = scratch();
   cpSync(HERE, join(dir, "scripts/check"), { recursive: true, filter: (path) => !path.endsWith(".test.mjs") });
   cpSync(join(HERE, "../../rust-toolchain.toml"), join(dir, "rust-toolchain.toml"));
-  write(dir, {
+  tracked(dir, {
     ".swift-format": SWIFT_RULES,
     "core/Cargo.toml": CARGO,
     "scripts/check/arch-exceptions.json": "[]\n",
@@ -43,17 +30,11 @@ function repo(files = {}) {
     "scripts/docs-check.mjs": 'import { existsSync } from "node:fs";\nif (existsSync("DOCS_BROKEN")) {\n  console.error("docs-check: 1 problem(s)");\n  process.exit(1);\n}\nconsole.log("docs-check: ok");\n',
     ...files,
   });
-  const git = (...args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
-  git("init", "-q");
-  git("add", "-A");
-  git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "init");
+  git(dir, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "init");
   return dir;
 }
 
-function hook(event, input, env = process.env) {
-  const run = spawnSync(process.execPath, [HOOK, event], { input: JSON.stringify(input), encoding: "utf8", env });
-  return { code: run.status, out: run.stdout, err: run.stderr };
-}
+const hook = (event, input, env = process.env) => runScript(HOOK, [event], { input: JSON.stringify(input), env });
 
 const QUIET = { code: 0, out: "", err: "" };
 const editOf = (file) => ({ ...SENT["PostToolUse.Write"], cwd: dirname(file), tool_input: { ...SENT["PostToolUse.Write"].tool_input, file_path: file } });

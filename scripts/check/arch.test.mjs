@@ -1,50 +1,29 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { after, test } from "node:test";
+import { chmodSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
 import "./test-env.mjs";
+
+import { atRows, runScript, scratchIn, tracked, write } from "./test-support.mjs";
 
 const SCRIPT = join(import.meta.dirname, "arch.mjs");
 const LIST = "scripts/check/arch-exceptions.json";
 const CARGO = "core/Cargo.toml";
 const PINNED = '[workspace.dependencies]\nserde = { version = "=1.0.228", features = ["derive"] }\nrmp-serde = "=1.3.1"\nserde_bytes = "=0.11.19"\n';
 const KIT = "app/Sources/TarmacKit";
-const dirs = [];
-after(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
-
-function scratch() {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "arch-test-")));
-  dirs.push(dir);
-  return dir;
-}
-
-function write(dir, files) {
-  for (const [path, text] of Object.entries(files)) {
-    if (text === null) continue;
-    mkdirSync(dirname(join(dir, path)), { recursive: true });
-    writeFileSync(join(dir, path), text);
-  }
-}
+const scratch = scratchIn("arch-test-");
 
 /** A git repository that breaks no rule, plus the listed files, all tracked. */
-function repo(files = {}) {
-  const dir = scratch();
-  write(dir, { [CARGO]: PINNED, [LIST]: "[]\n", ...files });
-  execFileSync("git", ["init", "-q"], { cwd: dir });
-  execFileSync("git", ["add", "-A"], { cwd: dir });
-  return dir;
-}
+const repo = (files = {}) => tracked(scratch(), { [CARGO]: PINNED, [LIST]: "[]\n", ...files });
 
 function arch(dir) {
-  const run = spawnSync(process.execPath, [SCRIPT], { cwd: dir, encoding: "utf8" });
-  return { code: run.status, out: run.stdout, err: run.stderr.split("\n") };
+  const run = runScript(SCRIPT, [], { cwd: dir });
+  return { ...run, err: run.err.split("\n") };
 }
 
 /** The `at` rows of a run, as `path:line`. */
-const places = (run) => run.err.filter((line) => /^ {2}(at| {2}) {3}/.test(line)).map((line) => line.slice(7));
+const places = (run) => atRows(run.err.join("\n"));
 const summaries = (run) => run.err.filter((line) => line.startsWith("✗ ")).map((line) => line.slice("✗ arch: ".length));
 
 const KIT_IMPORTS = "TarmacKit must not import AppKit, WebKit or a sibling target";

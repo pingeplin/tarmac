@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
-import { after, test } from "node:test";
+import { delimiter, join } from "node:path";
+import { test } from "node:test";
 
 import "./test-env.mjs";
+
+import { atRows, git, rowOf, runScript, scratchIn, write } from "./test-support.mjs";
 
 import { VERSION } from "./mutants.mjs";
 
@@ -13,24 +15,9 @@ const HERE = import.meta.dirname;
 const ROOT = join(HERE, "../..");
 const SCRIPT = join(HERE, "mutants.mjs");
 const SOURCE = "core/crates/x/src/a.rs";
-const dirs = [];
-after(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
-
-function scratch(prefix = "mutants-test-") {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
-  dirs.push(dir);
-  return dir;
-}
-
-function write(dir, files) {
-  for (const [path, text] of Object.entries(files)) {
-    mkdirSync(dirname(join(dir, path)), { recursive: true });
-    writeFileSync(join(dir, path), text);
-  }
-}
+const scratch = scratchIn("mutants-test-");
 
 const AS_SOMEONE = ["-c", "user.name=t", "-c", "user.email=t@example.com"];
-const git = (dir, ...args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
 
 /** A repository with one commit on `main` (the base of every run here) and a branch `work` checked out. */
 function repo(files = {}) {
@@ -125,16 +112,8 @@ const calls = (toolDir) =>
 function mutants(dir, toolDir, args = ["--base", "main"], env = {}) {
   const home = scratch("mutants-home-");
   const path = [toolDir, process.env.PATH].filter(Boolean).join(delimiter);
-  const run = spawnSync(process.execPath, [SCRIPT, ...args], { cwd: dir, encoding: "utf8", env: { PATH: path, HOME: home, TMPDIR: tmpdir(), ...env } });
-  return { code: run.status, out: run.stdout, err: run.stderr, home };
+  return { ...runScript(SCRIPT, args, { cwd: dir, env: { PATH: path, HOME: home, TMPDIR: tmpdir(), ...env } }), home };
 }
-
-const atRows = (err) =>
-  err
-    .split("\n")
-    .filter((line) => /^ {2}(at| {2}) {3}/.test(line))
-    .map((line) => line.slice(7));
-const rowOf = (err, label) => err.split("\n").find((line) => line.startsWith(`  ${label.padEnd(4)} `))?.slice(7);
 
 const MISSED = ["crates/x/src/a.rs:2:5: replace a -> u8 with 0", "crates/x/src/a.rs:2:5: replace a -> u8 with 1"];
 const TIMED_OUT = "crates/x/src/a.rs:9:5: replace wait -> bool with true";
