@@ -223,6 +223,19 @@ fn no_daemon_still_reports_the_cli_channel_and_socket() {
     assert_eq!(report.line("socket"), sock.display().to_string());
 }
 
+// #487: with no TARMAC_SOCKET the socket is under HOME. Only the path is read:
+// no daemon is ever at it, and a long scratch path may be past the sun_path cap.
+#[test]
+fn with_no_socket_override_the_socket_is_under_home() {
+    let home = scratch();
+    let report = Report::of(tarmac().env_remove("TARMAC_SOCKET").env("HOME", &home).arg("--version"));
+
+    assert_eq!(report.code(), Some(0));
+    let channel_dir = if channel() == "dev" { "dev/" } else { "" };
+    let want = home.join(format!("Library/Application Support/tarmac/{channel_dir}tarmacd.sock"));
+    assert_eq!(report.line("socket"), want.display().to_string());
+}
+
 // S15: an over-long socket path is a misconfiguration, not an absent daemon —
 // nothing was ever dialled, so "not running" would be a claim about a process
 // the CLI never observed. `open` errors out here; `--version` must not.

@@ -227,6 +227,15 @@ fn s24_bad_input_exits_0_without_connecting() {
     }
 }
 
+// The words name the size, so a cut input is not read as one that ends early.
+#[test]
+fn s24_an_input_one_byte_over_4_mib_is_refused_by_its_size() {
+    let out = Report::of_input(&mut run_claude(&sandbox()), stop_input_of_len((4 << 20) + 1));
+
+    assert_silent_success(&out, "over 4 MiB");
+    assert_eq!(out.one_stderr_line(), "tarmac: hooks run: the input is over 4194304 bytes\n");
+}
+
 // 2611.0011 S23
 #[test]
 fn spec_0011_s23_a_refused_session_id_says_so_and_does_not_connect() {
@@ -271,4 +280,13 @@ fn s25_bad_arguments_exit_0_with_one_stderr_line() {
         out.one_stderr_line();
         assert_no_connection(&out, &case);
     }
+}
+
+#[test]
+fn s25_an_agent_other_than_claude_is_named_as_unknown() {
+    let out =
+        Report::of_input(hooks_cmd(&sandbox()).env("TARMAC_TERM_ID", "t9").args(["run", "codex"]), stop_input("Done."));
+
+    assert_silent_success(&out, "codex");
+    assert_eq!(out.one_stderr_line(), "tarmac: hooks run: unknown agent 'codex' (claude)\n");
 }
