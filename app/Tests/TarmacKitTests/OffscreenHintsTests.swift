@@ -6,7 +6,7 @@ import XCTest
 /// The overlay-level offscreen-hint logic: the single ⏎-fly target,
 /// the pill label and the per-edge greedy stacking. The edge geometry it builds
 /// on (`BoardWayfinding.hintPlacement`) is tested in `BoardWayfindingTests`.
-final class OffscreenHintLayoutTests: XCTestCase {
+final class OffscreenHintsTests: XCTestCase {
     private typealias Layout = OffscreenHintLayout
 
     private func hint(_ cardID: String, _ center: CGPoint, _ signal: CardSignal, _ z: Int) -> Layout.Hint {

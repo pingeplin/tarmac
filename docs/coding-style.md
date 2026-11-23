@@ -183,8 +183,9 @@ back from a rendered bitmap.
   errors, or a small local enum where the caller must distinguish cases
   (`NoHandshake` in `core/crates/tarmac-cli/src/daemon.rs`). `tarmac-protocol`
   exposes precise library types — `io::Result` for framing, `rmp_serde`'s own
-  error types for the codec. There is no repo-wide error enum and no
-  `thiserror`; do not introduce one for a single call site.
+  error types for the codec. There is no repo-wide error enum, and no
+  `thiserror`: `make arch-check` refuses the dependency. Do not introduce an
+  error enum for a single call site.
 - **Never `.unwrap()` in `tarmacd` production code.** Where a failure is
   genuinely impossible, say why in a short lowercase string:
   `.expect("active board present")`, `.expect("watcher lock")`. Reserve
