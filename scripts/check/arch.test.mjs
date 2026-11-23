@@ -380,3 +380,16 @@ test("a file that cannot be read cannot run the check: it is not a broken rule",
   assert.equal(run.code, 2);
   assert.equal(run.err[0], "✗ arch: cannot run the architecture check");
 });
+
+test("a rule that throws is reported in arch's own words: the error, what to correct, and the next command", () => {
+  const dir = repo({ [`${KIT}/A.swift`]: "import Foundation\n", "app/Tests/TarmacKitTests/ATests.swift": "" });
+  chmodSync(join(dir, `${KIT}/A.swift`), 0o000);
+
+  const run = arch(dir);
+  chmodSync(join(dir, `${KIT}/A.swift`), 0o644);
+
+  assert.equal(run.code, 2);
+  assert.equal(run.out, "");
+  assert.match(run.err[1], /^ {2}why {2}\S/);
+  assert.deepEqual(run.err.slice(2), ["  fix  correct what the line above names", "  then make arch-check", ""]);
+});

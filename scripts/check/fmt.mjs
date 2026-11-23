@@ -16,9 +16,9 @@ import { writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { dirname } from "node:path";
 
-import { repoRoot, startedAs } from "./git.mjs";
+import { repoRoot } from "./git.mjs";
 import { LANGUAGES, namedFiles, namedSources, notOnPath, sources, unusable } from "./languages.mjs";
-import { cannotRunFor, failure } from "./report.mjs";
+import { blockedFor, failure, runCheck } from "./report.mjs";
 
 const RULE = "fmt";
 const CHECK = "make fmt-check";
@@ -32,7 +32,7 @@ export const notFormatted = (paths) =>
     then: CHECK,
   });
 
-const cannotRun = cannotRunFor(RULE, CHECK);
+const cannotRun = blockedFor(RULE, CHECK);
 
 /** The formatted text of one file, or the reason the formatter gave none. */
 function formatted([command, ...args], cwd, text) {
@@ -67,7 +67,7 @@ async function each(items, limit, work) {
 /** Runs one language over its files; returns the report it owes, if any, and the files it found unformatted. */
 async function run(language, files, write) {
   if (files.length === 0) return {};
-  const blocked = (parts) => ({ blocked: cannotRun(parts.summary, parts.why, parts.fix) });
+  const blocked = (parts) => ({ blocked: cannotRun(parts.summary, parts.why, parts.fix).text });
   const reason = unusable(language);
   if (reason) return blocked(reason);
   const results = await each(files, availableParallelism(), async (source) => ({
@@ -78,7 +78,7 @@ async function run(language, files, write) {
   const refused = results.filter((r) => r.refused);
   if (refused.length > 0) {
     const why = refused.map((r) => `${r.path}: ${r.refused}`);
-    return { blocked: cannotRun(`cannot run ${language.tool}`, why, `see the whole error with: ${language.explain(refused[0].path)}`) };
+    return { blocked: cannotRun(`cannot run ${language.tool}`, why, `see the whole error with: ${language.explain(refused[0].path)}`).text };
   }
   const changed = results.filter((r) => r.formatted !== r.text);
   if (write) changed.forEach((r) => writeFileSync(r.file, r.formatted));
@@ -96,12 +96,12 @@ function work(only, paths) {
 async function main([mode, ...rest]) {
   const names = Object.keys(LANGUAGES);
   const usage = (summary) => cannotRun(summary, [`it knows: ${names.join(", ")}`], `make fmt-check ONLY=${names[0]}`);
-  if (mode !== "--check" && mode !== "--write") return { code: 2, text: usage("the mode must be --check or --write") };
+  if (mode !== "--check" && mode !== "--write") return usage("the mode must be --check or --write");
   const flag = rest.indexOf("--paths");
   const [only] = flag === -1 ? rest : rest.slice(0, flag);
-  if (only && !names.includes(only)) return { code: 2, text: usage(`${only} is not a language this check knows`) };
+  if (only && !names.includes(only)) return usage(`${only} is not a language this check knows`);
   const todo = work(only, flag === -1 ? null : rest.slice(flag + 1));
-  if (!todo) return { code: 2, text: cannotRun("not in a git repository", [], "run it from inside the repository") };
+  if (!todo) return cannotRun("not in a git repository", [], "run it from inside the repository");
 
   const done = await Promise.all(todo.map(({ language, files }) => run(language, files, mode === "--write")));
   const blocked = done.filter((d) => d.blocked).map((d) => d.blocked);
@@ -115,8 +115,4 @@ function exitCode(blocked, unformatted) {
   return unformatted.length > 0 ? 1 : 0;
 }
 
-if (startedAs(import.meta)) {
-  const { code, text } = await main(process.argv.slice(2));
-  process.stderr.write(text);
-  process.exitCode = code;
-}
+await runCheck(import.meta, { rule: RULE, then: CHECK }, () => main(process.argv.slice(2)));

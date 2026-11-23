@@ -9,8 +9,9 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
-import { repoRoot, startedAs } from "./git.mjs";
+import { repoRoot } from "./git.mjs";
 import { languageOf } from "./languages.mjs";
+import { runCheck } from "./report.mjs";
 
 function main() {
   const root = repoRoot();
@@ -27,8 +28,5 @@ function main() {
   return { code: Math.max(...runs.map((run) => run.status ?? 2)), text: runs.map((run) => run.stderr).join("") };
 }
 
-if (startedAs(import.meta)) {
-  const { code, text } = main();
-  process.stderr.write(text);
-  process.exitCode = code;
-}
+// The pre-commit hook runs it, so `git commit` runs it again.
+await runCheck(import.meta, { rule: "staged", then: "git commit" }, main);

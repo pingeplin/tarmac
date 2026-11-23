@@ -11,8 +11,8 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realp
 import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 
-import { repoRoot, startedAs } from "./git.mjs";
-import { cannotRunFor, failure } from "./report.mjs";
+import { repoRoot } from "./git.mjs";
+import { blockedFor, failure, runCheck } from "./report.mjs";
 
 /** The cargo-mutants this check was built on. `.github/workflows/mutants.yml` installs the same one. */
 export const VERSION = "27.1.0";
@@ -21,7 +21,7 @@ const RULE = "mutants";
 const THEN = "make mutants";
 const INSTALL = `cargo install cargo-mutants --version ${VERSION} --locked`;
 const USAGE = "usage: mutants.mjs [--base <ref>] [--all [--shard <k>/<n>] | --file <path>] [--jobs <n>] [--report] [--changed]\n";
-const cannotRun = cannotRunFor(RULE, THEN);
+const cannotRun = blockedFor(RULE, THEN);
 
 // What the caller may hand to the tool. Every other variable is dropped: one
 // that moves a path (`TARMAC_SOCKET`, `CLAUDE_CONFIG_DIR`, `ZDOTDIR`) must not
@@ -33,11 +33,11 @@ const PASSED = ["PATH", "TMPDIR", "LANG", "LC_ALL", "TERM", "USER", "LOGNAME", "
 // `--text`: a file that an attribute or a NUL byte makes binary would give no lines at all.
 const DIFF = ["-c", "core.quotePath=false", "diff", "--src-prefix=a/", "--dst-prefix=b/", "--no-ext-diff", "--no-textconv", "--no-color", "--text"];
 
-/** A reason this check cannot run. Thrown where it is found, and worded as exit 2 in one place. */
+/** A reason this check cannot run. Thrown where it is found, and returned as its exit-2 result in one place. */
 class Blocked extends Error {
   constructor(summary, why, fix) {
     super(summary);
-    this.text = cannotRun(summary, why, fix);
+    this.result = cannotRun(summary, why, fix);
   }
 }
 
@@ -208,14 +208,10 @@ function main(args, cwd, caller) {
   try {
     return run(options, cwd, caller);
   } catch (error) {
-    // Any other exception would end node with exit 1, which says "a mutant survived".
-    return { code: 2, text: error instanceof Blocked ? error.text : cannotRun("the check itself failed", [String(error?.message ?? error)], THEN) };
+    // Any other exception is the shared entry's "the check itself failed".
+    if (error instanceof Blocked) return error.result;
+    throw error;
   }
 }
 
-if (startedAs(import.meta)) {
-  const { code, text, out = "" } = main(process.argv.slice(2), process.cwd(), process.env);
-  process.stdout.write(out);
-  process.stderr.write(text);
-  process.exitCode = code;
-}
+await runCheck(import.meta, { rule: RULE, then: THEN }, () => main(process.argv.slice(2), process.cwd(), process.env));

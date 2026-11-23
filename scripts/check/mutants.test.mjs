@@ -806,3 +806,13 @@ test("S21: a variable of the same name in the environment does not change what m
 
   assert.equal(said, "--base origin/main");
 });
+
+test("S47: a failure of the check itself names the error, and make mutants as the next command", () => {
+  const dir = changed();
+  const run = mutants(dir, tool({ exit: 2, files: { "missed.txt": MISSED } }), ["--base", "main", "--report"], { GITHUB_STEP_SUMMARY: join(dir, "no-such-directory/summary.md") });
+
+  assert.equal(run.code, 2);
+  assert.equal(run.out, "");
+  assert.match(rowOf(run.err, "why"), /\S/);
+  assert.deepEqual([rowOf(run.err, "fix"), rowOf(run.err, "then")], ["make mutants", "make mutants"]);
+});

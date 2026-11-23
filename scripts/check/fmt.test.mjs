@@ -424,3 +424,16 @@ test("named files: a file that does not parse cannot be formatted, and is named"
   assert.equal(run.code, 2);
   assert.deepEqual(run.err.slice(0, 2), ["✗ fmt: cannot run rustfmt", "  why  core/src/bad.rs: error: this file contains an unclosed delimiter"]);
 });
+
+test("a check that throws could not run: exit 2 and the reporter's form, never unformatted", () => {
+  const dir = repo({ "core/src/locked.rs": FORMATTED });
+  chmodSync(join(dir, "core/src/locked.rs"), 0o000);
+
+  const run = runCheck(dir);
+  chmodSync(join(dir, "core/src/locked.rs"), 0o644);
+
+  assert.equal(run.code, 2);
+  assert.equal(run.err[0], "✗ fmt: the check itself failed");
+  assert.match(run.err[1], /^ {2}why {2}\S/);
+  assert.deepEqual(run.err.slice(-3), ["  fix  make fmt-check", "  then make fmt-check", ""]);
+});
