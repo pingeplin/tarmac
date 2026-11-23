@@ -258,7 +258,7 @@ public final class TerminalEngine {
 
     // MARK: typed reads
 
-    func read<Value>(_ data: GhosttyTerminalData, _ fallback: Value) -> Value {
+    func read<Value: BitwiseCopyable>(_ data: GhosttyTerminalData, _ fallback: Value) -> Value {
         var value = fallback
         guard ghostty_terminal_get(terminal, data, &value) == GHOSTTY_SUCCESS else { return fallback }
         return value

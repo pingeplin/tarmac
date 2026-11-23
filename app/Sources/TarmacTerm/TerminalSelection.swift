@@ -158,7 +158,7 @@ final class TerminalSelection {
         }
     }
 
-    private func set<Value>(
+    private func set<Value: BitwiseCopyable>(
         _ event: GhosttySelectionGestureEvent, _ option: GhosttySelectionGestureEventOption, _ value: inout Value
     ) {
         ghostty_selection_gesture_event_set(event, option, &value)
