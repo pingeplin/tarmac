@@ -32,7 +32,7 @@ final class Demo: NSObject, NSApplicationDelegate {
             styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false
         )
         window.title = "tarmac-term-demo"
-        // throws only when a libghostty-vt object cannot be made; the app stops then too (makeTerminalView)
+        // throws only when a libghostty-vt call fails; the app stops then too (makeTerminalView)
         // swift-format-ignore: NeverUseForceTry
         terminal = try! TerminalView(frame: NSRect(origin: .zero, size: window.contentLayoutRect.size))
         terminal.autoresizingMask = [.width, .height]
