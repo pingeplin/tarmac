@@ -332,6 +332,14 @@ mod tests {
         assert_eq!(keys.keys().cloned().collect::<Vec<_>>(), ["combo", "t"]);
     }
 
+    /// `snapshot` carries its `--timeout` as its budget.
+    #[test]
+    fn snapshot_budget_is_its_timeout() {
+        let snapshot = |timeout_ms| DevRequest::Snapshot { until: None, timeout_ms };
+        assert_eq!(snapshot(Some(1500)).timeout_ms(), Some(1500));
+        assert_eq!(snapshot(None).timeout_ms(), None);
+    }
+
     /// `press` carries its `--busy` as its budget, so both ends of the socket
     /// wait out the freeze.
     #[test]

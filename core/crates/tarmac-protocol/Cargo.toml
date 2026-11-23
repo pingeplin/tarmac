@@ -14,6 +14,10 @@ tokio = { workspace = true, features = ["io-util"], optional = true }
 
 [dev-dependencies]
 serde_json.workspace = true
+# The crate's own tests see the `async` frame functions: without the feature a
+# test run of this package alone compiles them out, and cargo-mutants runs just
+# that (the mutants of its async functions then pass with no test at all).
+tarmac-protocol = { path = ".", features = ["async"] }
 
 [lints]
 workspace = true
