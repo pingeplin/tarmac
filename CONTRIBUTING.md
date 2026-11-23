@@ -106,15 +106,24 @@ editor/IDE may show stale SourceKit diagnostics — `make` is the source of trut
 
 ## Submitting changes
 
-1. Fork the repository and create a topic branch from `main`. Run `make setup`
+1. Open an issue first, then fork the repository and create a branch from
+   `main` named `type/N-slug`: a Conventional Commits type, the issue number,
+   a short kebab slug (`fix/34-doc-card-close`; see
+   [`docs/workflow.md`](docs/workflow.md)). CI refuses a pull request from
+   another branch name, and a branch cannot be renamed once its pull request is
+   open (a fork's `patch-1` is refused). Run `make setup`
    once in a new clone (it needs [lefthook](https://lefthook.dev):
    `brew install lefthook`). It installs git hooks that refuse a commit on a
    format, lint, `arch-check` or `docs-check` finding in what is staged, or on
-   a message that is not `type(scope): summary` with your sign-off, and refuse
-   a push when `make test` fails. `git commit --no-verify` skips them. CI runs
-   the same checks (all but the subject's form, which a maintainer sets at the
-   squash merge), so the hooks only tell you sooner; a failed format, lint
-   or tree check names the rule, the place and the command to run next. One CI job that no hook runs
+   a message that is not `type(scope): summary` with your sign-off, or on a
+   commit on `main`, and refuse a push when `make test` fails.
+   `git commit --no-verify` skips them. CI runs the same checks, so the hooks
+   only tell you sooner; a failed format, lint or tree check names the rule,
+   the place and the command to run next. CI does not read the subjects of
+   your commits. It holds the pull request's title to the subject form, since
+   the squash merge makes the title the subject on `main`. A pull request of
+   one commit is the exception: while the repository's squash title setting
+   is `COMMIT_OR_PR_TITLE`, it lands with that commit's subject. One CI job that no hook runs
    is `mutants (rust, in diff)`: it changes the Rust lines of your pull
    request, one expression at a time, and fails when the tests still pass. Run
    it yourself with `make mutants` (it needs `cargo-mutants` 27.1.0).
@@ -132,7 +141,8 @@ editor/IDE may show stale SourceKit diagnostics — `make` is the source of trut
 4. Commit with a clear message, a DCO sign-off (`git commit -s`), and the
    `Co-Authored-By:` trailer if someone or something co-wrote the change. Verify
    with `make dco-check`.
-5. Open a pull request describing the change and the motivation. If your change
+5. Open a pull request from the branch of step 1, describing the change and
+   the motivation, with `Closes #N` (or `Refs #N`) in the body. If your change
    took one of the TDD exceptions, discharge what
    [`docs/coding-style.md`](docs/coding-style.md) §1.3 asks of it.
 
