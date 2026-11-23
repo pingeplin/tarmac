@@ -26,6 +26,9 @@ public enum InputSource: Sendable, Equatable { case user, terminal }
 /// board's zoom) never changes cols×rows; only a real resize does.
 @MainActor
 public final class TerminalView: NSView {
+    /// Where Copy writes and Paste reads. A test gives the view a pasteboard of
+    /// its own, so it never replaces what the developer copied (#490).
+    public var pasteboard: NSPasteboard = .general
     public var onInput: (([UInt8], InputSource) -> Void)?
     public var onResize: ((_ cols: Int, _ rows: Int) -> Void)?
     public var onTitleChanged: ((String?) -> Void)?
@@ -592,12 +595,12 @@ public final class TerminalView: NSView {
 
     @objc public func copy(_ sender: Any?) {
         guard let text = selection.text else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
     }
 
     @objc public func paste(_ sender: Any?) {
-        guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else { return }
+        guard let text = pasteboard.string(forType: .string), !text.isEmpty else { return }
         onActivity?()
         sendTyped(engine.encodePaste(text))
     }
@@ -882,7 +885,7 @@ extension TerminalView: NSUserInterfaceValidations {
     public func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
         switch item.action {
         case #selector(copy(_:)): hasSelection
-        case #selector(paste(_:)): NSPasteboard.general.string(forType: .string) != nil
+        case #selector(paste(_:)): pasteboard.string(forType: .string) != nil
         default: true
         }
     }

@@ -52,6 +52,7 @@ const TERM_IMPORTS = "TarmacTerm must not import TarmacKit or TarmacApp";
 const BUNDLE = "Bundle.module is used outside BundledResource";
 const SIGNAL = "a signal is sent outside TermHandle::kill";
 const SWIFT_SIGNAL = "kill(2) is called in Swift outside the app's wiring and the tests' fence";
+const CLIPBOARD = "a test uses the system clipboard";
 const PROFILE = "a profile sets debug-assertions";
 const SERDE = "the serde stack is not pinned with =";
 const KIT_TESTS = "a TarmacKit module has no paired test file, or an exception is no longer needed";
@@ -192,6 +193,22 @@ test("2611.0033 S6: kill(2) in Swift is called in the app's wiring and the tests
     "app/Tests/TarmacKitTests/DaemonClientTests.swift:2",
     "app/Tests/TarmacTermTests/XTests.swift:2",
   ]);
+});
+
+test("#490: the system clipboard is named in no test", () => {
+  const use = "func f() {\n    NSPasteboard.general.clearContents()\n    // NSPasteboard.general\n    let p = NSPasteboard .general\n    let own = NSPasteboard.withUniqueName()\n    let other = NSPasteboard.generalPurpose\n    let named = NSPasteboard(name: .general)\n    let typed: NSPasteboard = .general\n    let name = NSPasteboard.Name.general\n}\n";
+  const run = arch(
+    repo({
+      "app/Tests/TarmacTermTests/TerminalViewTests.swift": use,
+      "app/Tests/TarmacKitTests/ATests.swift": use,
+      "app/Sources/TarmacKit/A.swift": "",
+      "app/Sources/TarmacTerm/TerminalView.swift": use,
+      "scripts/qa/x.swift": use,
+    }),
+  );
+
+  assert.deepEqual(summaries(run), [CLIPBOARD]);
+  assert.deepEqual(places(run), [2, 4, 7, 8, 9].map((line) => `app/Tests/TarmacKitTests/ATests.swift:${line}`).concat([2, 4, 7, 8, 9].map((line) => `app/Tests/TarmacTermTests/TerminalViewTests.swift:${line}`)));
 });
 
 test("S6/S16: debug-assertions in any profile table is reported at its line, and nowhere else", () => {
