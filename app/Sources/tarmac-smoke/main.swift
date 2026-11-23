@@ -64,7 +64,7 @@ final class Smoke {
     }
 
     func run() -> Int32 {
-        let client = DaemonClient(deliveryQueue: DispatchQueue(label: "tarmac.smoke.delivery"))
+        let client = DaemonClient(deliveryQueue: DispatchQueue(label: "tarmac.smoke.delivery"), signal: { _, _ in })
         let inbox = self.inbox
         client.onMessage = { inbox.push($0) }
         client.onStatus = { status in

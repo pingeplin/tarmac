@@ -204,7 +204,7 @@ private final class FakeDaemon: @unchecked Sendable {
 }
 
 /// Everything a client reported, in order, with a bounded wait for the next.
-private final class Log<Entry: Sendable>: @unchecked Sendable {
+final class Log<Entry: Sendable>: @unchecked Sendable {
     private let state = NSCondition()
     private var entries: [Entry] = []
 
@@ -285,7 +285,7 @@ private struct ScriptedDaemon {
         let script = """
             #!/bin/sh
             dir=$(dirname "$0")
-            echo spawned >> "$dir/launches"
+            echo $$ >> "$dir/launches"
             printenv PATH > "$dir/path"
             \(body)
 
@@ -295,8 +295,11 @@ private struct ScriptedDaemon {
         return path
     }
 
-    var launches: Int {
-        text("launches").split(separator: "\n").count
+    var launches: Int { launchedPids.count }
+
+    /// The pid of each launch, in order: the script's own, which `exec` keeps.
+    var launchedPids: [pid_t] {
+        text("launches").split(separator: "\n").compactMap { pid_t($0) }
     }
 
     func text(_ name: String) -> String {
@@ -358,21 +361,23 @@ final class DaemonClientTests: XCTestCase {
     private var clients: [DaemonClient] = []
     private var daemons: [FakeDaemon] = []
     private var victims: [pid_t] = []
+    /// What every client of the test sends its signals through (spec 2611.0033).
+    private let fence = FencedSignal()
 
     override func tearDown() {
         for client in clients {
             client.close()
-            client.spawnedDaemonPid.map { _ = kill(pid_t($0), SIGKILL) }
+            if let pid = client.spawnedDaemonPid { OwnChild.signal(pid_t(pid), SIGKILL) }
         }
         clients = []
         for daemon in daemons { daemon.shutDown() }
         daemons = []
-        for pid in victims {
-            kill(pid, SIGKILL)
-            var status: Int32 = 0
-            waitpid(pid, &status, 0)
+        for pid in victims where OwnChild.isOne(pid) {
+            OwnChild.signal(pid, SIGKILL)
+            _ = reap(pid)
         }
         victims = []
+        XCTAssertEqual(fence.refused, [], "a client asked to signal a process the test does not own")
     }
 
     private func makeClient(
@@ -385,7 +390,8 @@ final class DaemonClientTests: XCTestCase {
     ) -> (client: DaemonClient, statuses: Log<ConnectionStatus>, messages: Log<Message>) {
         let client = DaemonClient(
             socketPath: socketPath, channel: channel, appVersion: appVersion, environment: environment,
-            executableDir: executableDir, timing: timing, deliveryQueue: delivery
+            executableDir: executableDir, timing: timing, deliveryQueue: delivery,
+            signal: { [fence] pid, signal in fence.send(pid, signal) }
         )
         let statuses = Log<ConnectionStatus>()
         let messages = Log<Message>()
@@ -476,6 +482,7 @@ final class DaemonClientTests: XCTestCase {
         ]
         for message in sent { try daemon.push(message) }
         XCTAssertEqual(inbox.first(sent.count), sent)
+        XCTAssertEqual(fence.requests, [], "a daemon of the app's own version is sent no signal")
     }
 
     // MARK: - Sending
@@ -809,16 +816,16 @@ final class DaemonClientTests: XCTestCase {
     func testTheSocketPathFollowsTheChannelUnlessOverridden() {
         let home = ["HOME": "/h"]
         XCTAssertEqual(
-            DaemonClient(channel: .dev, environment: home).socketPath,
+            makeClient(channel: .dev, environment: home).client.socketPath,
             "/h/Library/Application Support/tarmac/dev/tarmacd.sock"
         )
         XCTAssertEqual(
-            DaemonClient(channel: .release, environment: home).socketPath,
+            makeClient(channel: .release, environment: home).client.socketPath,
             "/h/Library/Application Support/tarmac/tarmacd.sock"
         )
         let pinned = ["HOME": "/h", "TARMAC_SOCKET": "/repo/.dev/tarmacd.sock"]
-        XCTAssertEqual(DaemonClient(channel: .dev, environment: pinned).socketPath, "/repo/.dev/tarmacd.sock")
-        XCTAssertEqual(DaemonClient(socketPath: "/x.sock", channel: .dev, environment: pinned).socketPath, "/x.sock")
+        XCTAssertEqual(makeClient(channel: .dev, environment: pinned).client.socketPath, "/repo/.dev/tarmacd.sock")
+        XCTAssertEqual(makeClient("/x.sock", channel: .dev, environment: pinned).client.socketPath, "/x.sock")
     }
 
     // MARK: - Spawning the daemon
@@ -938,6 +945,7 @@ final class DaemonClientTests: XCTestCase {
         usleep(200_000)
         XCTAssertNil(signalThatKilled(bystander, timeout: 0), "a second mismatch proceeds")
         XCTAssertEqual(inbox.all.count, 1, "the stale daemon's hello_ok never reaches the app")
+        XCTAssertEqual(fence.requests, [.init(pid: stale, signal: SIGTERM)])
     }
 
     /// The reconnect waits for the dying daemon to remove its socket, so the
@@ -979,6 +987,7 @@ final class DaemonClientTests: XCTestCase {
 
         XCTAssertEqual(statuses.first(3), [.connected, .restarting, .connected])
         XCTAssertEqual(fake.launches, 2)
+        XCTAssertEqual(fence.requests, [.init(pid: try XCTUnwrap(fake.launchedPids.first), signal: SIGTERM)])
         XCTAssertEqual(inbox.first(1), [.helloOK(v: 1)])
         XCTAssertEqual(client.daemonReplaced, DaemonLaunch.Replaced(from: nil, to: nil))
     }
@@ -996,6 +1005,7 @@ final class DaemonClientTests: XCTestCase {
         XCTAssertEqual(statuses.all, [.connected])
         XCTAssertNil(client.daemonReplaced)
         XCTAssertNil(signalThatKilled(running, timeout: 0.2))
+        XCTAssertEqual(fence.requests, [])
     }
 
     /// An app that names no version cannot call a daemon stale.
@@ -1010,5 +1020,6 @@ final class DaemonClientTests: XCTestCase {
         XCTAssertEqual(inbox.first(1), [helloOK])
         XCTAssertEqual(statuses.all, [.connected])
         XCTAssertNil(signalThatKilled(running, timeout: 0.2))
+        XCTAssertEqual(fence.requests, [])
     }
 }
