@@ -6,11 +6,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 import { LANGUAGES, sources, toolVersion, unusable } from "./languages.mjs";
-import { CLEAN, RULE, blockedFor, findings } from "./lint-common.mjs";
-import { failure } from "./report.mjs";
+import { CLEAN, RULE, findings } from "./lint-common.mjs";
+import { blockedFor, failure } from "./report.mjs";
 
 const THEN = "make lint";
-const cannotRun = blockedFor(THEN);
+const cannotRun = blockedFor(RULE, THEN);
 
 const SWIFT_FIX =
   "correct each one above; `make fmt` clears a layout finding; to keep one, put the reason in a comment and `// swift-format-ignore: <Rule>` on the next line";

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -650,4 +650,17 @@ test("named files: a Rust file is not linted one by one, and a file of no langua
   const dir = swiftRepo({ "core/Cargo.toml": MANIFEST, "core/src/main.rs": "fn main() {\n    todo!()\n}\n", "notes.md": "x\n" });
 
   assert.deepEqual(lintNamed(dir, ["core/src/main.rs", "notes.md"]), { code: 0, out: "", err: [""] });
+});
+
+test("a lint that throws could not run: exit 2 and the reporter's form, never a finding", () => {
+  const dir = swiftRepo({ "app/Locked.swift": "let x = 1\n" });
+  chmodSync(join(dir, "app/Locked.swift"), 0o000);
+
+  const run = lintNamed(dir, ["app/Locked.swift"]);
+  chmodSync(join(dir, "app/Locked.swift"), 0o644);
+
+  assert.equal(run.code, 2);
+  assert.equal(run.err[0], "✗ lint: the check itself failed");
+  assert.match(run.err[1], /^ {2}why {2}\S/);
+  assert.deepEqual(run.err.slice(-3), ["  fix  make lint", "  then make lint", ""]);
 });

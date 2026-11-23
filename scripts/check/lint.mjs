@@ -7,15 +7,17 @@
 // Each lint prints its tool's own text unchanged, then one block that names
 // each place. With no name, every lint runs and writes its own block.
 
-import { repoRoot, startedAs } from "./git.mjs";
+import { repoRoot } from "./git.mjs";
 import { LANGUAGES, namedFiles, namedSources } from "./languages.mjs";
-import { blockedFor } from "./lint-common.mjs";
+import { RULE } from "./lint-common.mjs";
 import { lintRust } from "./lint-rust.mjs";
 import { lintSwift } from "./lint-swift.mjs";
 import { lintSwiftc } from "./lint-swiftc.mjs";
+import { blockedFor, runCheck } from "./report.mjs";
 
 const LINTS = { rust: lintRust, swift: lintSwift, swiftc: lintSwiftc };
-const cannotRun = blockedFor("make lint");
+const THEN = "make lint";
+const cannotRun = blockedFor(RULE, THEN);
 
 /** Named files are linted one by one where a lint can do that: Swift's can; clippy and the compiler need the whole build. */
 const lintNamed = (paths) => namedFiles(paths).map(({ root, paths }) => lintSwift(root, namedSources(LANGUAGES.swift, root, paths)));
@@ -33,8 +35,4 @@ function main([only, ...rest]) {
 
 const combined = (done) => ({ code: Math.max(0, ...done.map(({ code }) => code)), text: done.map(({ text }) => text).join("") });
 
-if (startedAs(import.meta)) {
-  const { code, text } = main(process.argv.slice(2));
-  process.stderr.write(text);
-  process.exitCode = code;
-}
+await runCheck(import.meta, { rule: RULE, then: THEN }, () => main(process.argv.slice(2)));

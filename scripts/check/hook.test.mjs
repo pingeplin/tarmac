@@ -606,3 +606,17 @@ test("the agent hooks call the adapter with an event it knows, and name no rule 
     ["PreToolUse", "Bash", 'node "$CLAUDE_PROJECT_DIR/scripts/check/hook.mjs" bash'],
   ]);
 });
+
+test("staged: a check that throws could not run: exit 2 and the reporter's form, never a finding", () => {
+  // A git that names a root which is not there: the next git started in it cannot start, and has no output to read.
+  const bin = scratch();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\necho ${JSON.stringify(join(bin, "gone"))}\n`, { mode: 0o755 });
+
+  const run = spawnSync(process.execPath, [join(HERE, "staged.mjs")], { cwd: bin, encoding: "utf8", env: { ...process.env, PATH: bin } });
+  const err = run.stderr.split("\n");
+
+  assert.equal(run.status, 2);
+  assert.equal(err[0], "✗ staged: the check itself failed");
+  assert.match(err[1], /^ {2}why {2}\S/);
+  assert.deepEqual(err.slice(-3), ["  fix  git commit", "  then git commit", ""]);
+});

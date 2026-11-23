@@ -10,14 +10,14 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
 import { LANGUAGES } from "./languages.mjs";
-import { CLEAN, RULE, blockedFor, findings } from "./lint-common.mjs";
+import { CLEAN, RULE, findings } from "./lint-common.mjs";
 import { parseList } from "./list.mjs";
-import { failure } from "./report.mjs";
+import { blockedFor, failure } from "./report.mjs";
 
 const KNOWN = "scripts/check/swiftc-known-warnings.json";
 const THEN = "make lint ONLY=swiftc";
 const PACKAGE = "app";
-const cannotRun = blockedFor(THEN);
+const cannotRun = blockedFor(RULE, THEN);
 
 /** The known-warnings list, or the reason it cannot be used. */
 const knownWarnings = (root) =>
