@@ -46,6 +46,9 @@ merge only once the ruleset lists them. `.github/workflows/mutants.yml` runs
 whole workspace, as a report); it too blocks a merge only once the ruleset
 lists it. `.github/workflows/dco.yml` runs `scripts/dco-check.mjs` over the commits a pull
 request adds, requiring the DCO sign-off `CONTRIBUTING.md` asks for.
+`.github/workflows/pr.yml` (job `pr-check`) runs `scripts/check/pr.mjs` on a
+pull request's title, body and branch name (`workflow.md`, *PRs*); it blocks a
+merge only once the ruleset lists it.
 
 `docs-check`, `test` and `dco` are **gates**, not just reports: the `Protect main` ruleset requires
 `docs-check`, `dco-check`, `core (cargo test)` and `app (swift test)` to pass, and requires the

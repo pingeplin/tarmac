@@ -6,7 +6,7 @@ import { test } from "node:test";
 
 import "./test-env.mjs";
 
-import { scratchIn } from "./test-support.mjs";
+import { rowOf, scratchIn } from "./test-support.mjs";
 
 import { TYPES, judge } from "./commit-msg.mjs";
 
@@ -99,4 +99,91 @@ test("S20: the types in CLAUDE.md are the types the script accepts", () => {
   const named = [...line.matchAll(/`([a-z]+):?`/g)].map(([, type]) => type).filter((type) => type !== "type");
 
   assert.deepEqual([...new Set(named)].sort(), [...TYPES].sort());
+});
+
+test("on main only a merge is made; a branch, a detached HEAD and a first commit take any", () => {
+  const dir = scratch();
+  const env = { ...process.env, GIT_AUTHOR_NAME: "Me", GIT_AUTHOR_EMAIL: ME, GIT_COMMITTER_NAME: "Me", GIT_COMMITTER_EMAIL: ME };
+  const sh = (...args) => execFileSync("git", ["-c", "core.hooksPath=/dev/null", ...args], { cwd: dir, env, stdio: "pipe" });
+  const run = (message) => {
+    writeFileSync(join(dir, "MSG"), message);
+    return spawnSync(process.execPath, [join(import.meta.dirname, "commit-msg.mjs"), join(dir, "MSG")], { cwd: dir, encoding: "utf8", env });
+  };
+  const commit = (file, text, subject) => {
+    writeFileSync(join(dir, file), text);
+    sh("add", file);
+    sh("commit", "-q", "-m", subject);
+  };
+  sh("init", "-q", "-b", "main");
+
+  const first = run(signed("fix: y"));
+  commit("a", "base\n", "chore: base");
+  const onMain = run(signed("fix: y"));
+  const release = run(signed("release: 0.24.0 — inbox preview pane"));
+  sh("switch", "-q", "-c", "fix/1-y");
+  const onBranch = run(signed("fix: y"));
+  commit("a", "branch\n", "fix: branch");
+  sh("switch", "-q", "main");
+  commit("a", "main\n", "fix: main");
+  assert.throws(() => sh("merge", "fix/1-y"));
+  const merge = run("Merge branch 'fix/1-y'\n");
+  sh("merge", "--abort");
+  assert.throws(() => sh("rebase", "fix/1-y"));
+  const rebasing = run(signed("fix: main"));
+
+  assert.deepEqual([first.status, first.stderr], [0, ""]);
+  assert.equal(onMain.status, 1);
+  assert.equal(onMain.stderr.split("\n")[0], "✗ commit-msg: a commit on main");
+  assert.equal(rowOf(onMain.stderr, "fix"), "git switch -c type/N-slug (the staged changes go with you; no commit was made)");
+  assert.equal(rowOf(onMain.stderr, "then"), "git commit");
+  assert.equal(release.status, 1);
+  assert.deepEqual([onBranch.status, onBranch.stderr], [0, ""]);
+  assert.deepEqual([merge.status, merge.stderr], [0, ""]);
+  assert.deepEqual([rebasing.status, rebasing.stderr], [0, ""]);
+});
+
+test("the subject rule of a commit on main runs before the main rule, and the sign-off after it", () => {
+  assert.equal(firstLine(judge(signed("fix the thing"), [ME], false, "refs/heads/main")), "✗ commit-msg: the subject is not `type(scope): summary`");
+  assert.equal(firstLine(judge("fix: y\n", [ME], false, "refs/heads/main")), "✗ commit-msg: a commit on main");
+  assert.equal(firstLine(judge(signed("release: 1.0.0"), [ME], false, "refs/heads/main")), "✗ commit-msg: a commit on main");
+  assert.equal(firstLine(judge("fix: y\n", [ME], false, "refs/heads/fix/1-y")), "✗ commit-msg: the message has no Signed-off-by line");
+  assert.equal(judge(signed("fix: y"), [ME], false, "refs/heads/fix/1-y"), "");
+});
+
+test("as the installed hook: a tag named main does not hide the branch; a cherry-pick or a revert that git finishes on main passes", () => {
+  const dir = scratch();
+  const env = { ...process.env, GIT_AUTHOR_NAME: "Me", GIT_AUTHOR_EMAIL: ME, GIT_COMMITTER_NAME: "Me", GIT_COMMITTER_EMAIL: ME, GIT_EDITOR: "true", GIT_CONFIG_GLOBAL: "/dev/null" };
+  const sh = (...args) => spawnSync("git", args, { cwd: dir, env, encoding: "utf8" });
+  const commit = (text, subject) => {
+    writeFileSync(join(dir, "a"), text);
+    sh("add", "a");
+    return sh("commit", "-q", "-s", "-m", subject);
+  };
+  sh("init", "-q", "-b", "main");
+  writeFileSync(join(dir, ".git/hooks/commit-msg"), `#!/bin/sh\nexec "${process.execPath}" "${join(import.meta.dirname, "commit-msg.mjs")}" "$1"\n`, { mode: 0o755 });
+  commit("base\n", "chore: base");
+  sh("tag", "main", "HEAD");
+  const behindTag = commit("tagged\n", "fix: y");
+  sh("tag", "-d", "main");
+  sh("switch", "-q", "-c", "fix/1-y");
+  commit("branch\n", "fix: branch");
+  sh("switch", "-q", "main");
+  writeFileSync(join(dir, "a"), "main\n");
+  sh("commit", "-q", "--no-verify", "-s", "-am", "fix: main");
+
+  const pickConflict = sh("cherry-pick", "-s", "fix/1-y");
+  writeFileSync(join(dir, "a"), "picked\n");
+  sh("add", "a");
+  const picked = sh("cherry-pick", "--continue");
+  const revertConflict = sh("revert", "-s", "HEAD~1");
+  writeFileSync(join(dir, "a"), "reverted\n");
+  sh("add", "a");
+  const reverted = sh("revert", "--continue");
+
+  assert.equal(behindTag.status, 1);
+  assert.ok(behindTag.stderr.includes("✗ commit-msg: a commit on main"));
+  assert.notEqual(pickConflict.status, 0, "the cherry-pick stops on a conflict");
+  assert.deepEqual([picked.status, picked.stderr], [0, ""]);
+  assert.notEqual(revertConflict.status, 0, "the revert stops on a conflict");
+  assert.deepEqual([reverted.status, reverted.stderr], [0, ""]);
 });
