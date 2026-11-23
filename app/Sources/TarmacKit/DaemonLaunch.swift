@@ -48,7 +48,7 @@ public enum DaemonLaunch {
     /// this app tracks is not the process the handshake came from. The tracked
     /// child is the fallback for a daemon too old to report a pid.
     ///
-    /// The result goes to kill(2), where 0 and negatives address process groups
+    /// In the app the result goes to kill(2), where 0 and negatives address process groups
     /// (-1: everything the user owns) and 1 is launchd, so only a pid that names
     /// one ordinary process is ever returned.
     public static func restartTarget(reportedPid: Int?, spawnedChildPid: Int?) -> Int? {

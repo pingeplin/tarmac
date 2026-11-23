@@ -12,7 +12,8 @@ extension AppController {
             appVersion: AppVersion.resolve(
                 bundleShortVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
                 env: ProcessInfo.processInfo.environment
-            ))
+            ),
+            signal: { pid, signal in kill(pid, signal) })
     }
 
     /// Handlers first, then the connection: the daemon's `board_list` and

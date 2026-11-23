@@ -21,6 +21,7 @@ const LIST = "scripts/check/arch-exceptions.json";
 const CARGO = "core/Cargo.toml";
 const KIT = "app/Sources/TarmacKit/";
 const KIT_TESTS = "app/Tests/TarmacKitTests/";
+const SWIFT_SIGNAL_SITES = ["app/Sources/TarmacApp/AppController+Connection.swift", `${KIT_TESTS}OwnChild.swift`];
 
 // ------------------------------------------------------------- the tree
 
@@ -150,6 +151,16 @@ const RULES = [
     find: (tree) => {
       const sources = tree.paths.filter((path) => /^core\/crates\/[^/]+\/src\/.*\.rs$/.test(path) && path !== "core/crates/tarmacd/src/term.rs");
       return linesWhere(tree, sources, "//", (code) => /libc::kill(?:pg)?\b/.test(code));
+    },
+  },
+  {
+    summary: "kill(2) is called in Swift outside the app's wiring and the tests' fence",
+    why: "a signal reaches whatever pid it is given, and -1 is every process of the user; TarmacKit is handed its sender, so a unit test decides which pid a signal may reach",
+    fix: "in a source file take the sender as a parameter (DaemonClient.Signal); in a test call OwnChild.signal, which sends only to a child of the test",
+    find: (tree) => {
+      const sources = swiftFiles(tree).filter((path) => path.startsWith("app/") && !SWIFT_SIGNAL_SITES.includes(path));
+      // Any call named kill: a module prefix (Darwin.kill) is one too, and no type under app/ has a method of that name.
+      return linesWhere(tree, sources, "//", (code) => /(?<!\w)`?kill(?:pg)?`?\s*\(/.test(code));
     },
   },
   {

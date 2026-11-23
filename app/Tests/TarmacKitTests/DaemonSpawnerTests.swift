@@ -1,20 +1,8 @@
 import TarmacKit
 import XCTest
 
-/// Blocks until `pid` exits and returns its raw wait status.
-private func reap(_ pid: pid_t) -> Int32 {
-    var status: Int32 = 0
-    while waitpid(pid, &status, 0) < 0, errno == EINTR {}
-    return status
-}
-
 private func exitCode(_ status: Int32) -> Int32? {
     status & 0x7f == 0 ? (status >> 8) & 0xff : nil
-}
-
-private func terminatingSignal(_ status: Int32) -> Int32? {
-    let signal = status & 0x7f
-    return signal != 0 && signal != 0x7f ? signal : nil
 }
 
 /// How the daemon is launched, observed from real children. The first five port
@@ -55,13 +43,13 @@ final class DaemonSpawnerTests: XCTestCase {
 
     /// Sends `pid` SIGTERM and reaps it; a child that outlives that is killed.
     private func assertSIGTERMKills(_ pid: pid_t, file: StaticString = #filePath, line: UInt = #line) {
-        kill(pid, SIGTERM)
+        OwnChild.signal(pid, SIGTERM)
         let died = expectation(description: "the child died of SIGTERM")
         DispatchQueue.global().async {
             if terminatingSignal(reap(pid)) == SIGTERM { died.fulfill() }
         }
         if XCTWaiter().wait(for: [died], timeout: 2) != .completed {
-            kill(pid, SIGKILL)
+            OwnChild.signal(pid, SIGKILL)
             XCTFail("the child never saw SIGTERM", file: file, line: line)
         }
     }
@@ -74,7 +62,7 @@ final class DaemonSpawnerTests: XCTestCase {
                 program: "/bin/sleep", arguments: ["30"], environment: [:], logPath: log
             ))
         defer {
-            kill(pid, SIGKILL)
+            OwnChild.signal(pid, SIGKILL)
             _ = reap(pid)
         }
         XCTAssertEqual(getsid(pid), pid, "daemon must be a session leader")
@@ -205,7 +193,7 @@ final class DaemonSpawnerTests: XCTestCase {
             ))
         XCTAssertFalse(DaemonLaunch.priorChildExited(waitResult: DaemonSpawner.waitResult(of: live)))
 
-        kill(live, SIGKILL)
+        OwnChild.signal(live, SIGKILL)
         let deadline = Date().addingTimeInterval(2)
         var result = DaemonSpawner.waitResult(of: live)
         while result == 0, Date() < deadline {

@@ -51,6 +51,7 @@ const KIT_IMPORTS = "TarmacKit must not import AppKit, WebKit or a sibling targe
 const TERM_IMPORTS = "TarmacTerm must not import TarmacKit or TarmacApp";
 const BUNDLE = "Bundle.module is used outside BundledResource";
 const SIGNAL = "a signal is sent outside TermHandle::kill";
+const SWIFT_SIGNAL = "kill(2) is called in Swift outside the app's wiring and the tests' fence";
 const PROFILE = "a profile sets debug-assertions";
 const SERDE = "the serde stack is not pinned with =";
 const KIT_TESTS = "a TarmacKit module has no paired test file, or an exception is no longer needed";
@@ -157,6 +158,39 @@ test("S5/S15: a signal is sent in term.rs only, among the files under a crate's 
     "core/crates/tarmacd/src/conn.rs:2",
     "core/crates/tarmacd/src/conn.rs:5",
     "core/crates/tarmacd/src/state/deep.rs:2",
+  ]);
+});
+
+test("2611.0033 S6: kill(2) in Swift is called in the app's wiring and the tests' fence only", () => {
+  const send = "func f() {\n    kill(pid, SIGTERM)\n}\n";
+  const forms = ["Darwin.kill(1, 0)", "killpg(1, 0)", "_ = kill (1, 0)", "Foundation.kill(1, 0)", "`kill`(1, 0)", "// kill(1, 0)", "skill(1)", "let kill = 1", "kill_all()"].join("\n");
+  const run = arch(
+    repo({
+      "app/Sources/TarmacApp/AppController+Connection.swift": send,
+      "app/Tests/TarmacKitTests/OwnChild.swift": send,
+      "app/Sources/TarmacKit/DaemonClient.swift": send,
+      "app/Sources/TarmacKit/Forms.swift": forms,
+      "app/Sources/TarmacApp/Other.swift": send,
+      "app/Sources/tarmac-smoke/main.swift": send,
+      "app/Tests/TarmacKitTests/DaemonClientTests.swift": send,
+      "app/Tests/TarmacTermTests/XTests.swift": send,
+      "scripts/qa/x.swift": send,
+      "app/Tests/TarmacKitTests/FormsTests.swift": "",
+    }),
+  );
+
+  assert.deepEqual(summaries(run), [SWIFT_SIGNAL]);
+  assert.deepEqual(places(run), [
+    "app/Sources/TarmacApp/Other.swift:2",
+    "app/Sources/TarmacKit/DaemonClient.swift:2",
+    "app/Sources/TarmacKit/Forms.swift:1",
+    "app/Sources/TarmacKit/Forms.swift:2",
+    "app/Sources/TarmacKit/Forms.swift:3",
+    "app/Sources/TarmacKit/Forms.swift:4",
+    "app/Sources/TarmacKit/Forms.swift:5",
+    "app/Sources/tarmac-smoke/main.swift:2",
+    "app/Tests/TarmacKitTests/DaemonClientTests.swift:2",
+    "app/Tests/TarmacTermTests/XTests.swift:2",
   ]);
 });
 
