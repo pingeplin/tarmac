@@ -117,9 +117,10 @@ impl TestDaemon {
 
     fn launch(dir: PathBuf, configure: impl FnOnce(&mut Command)) -> Self {
         let sock = dir.join("tarmacd.sock");
-        let child = spawn_daemon_with(&sock, configure);
-        wait_for_socket(&sock);
-        TestDaemon { child, dir, sock }
+        // Owned before the wait: a wait that panics then stops the daemon.
+        let daemon = TestDaemon { child: spawn_daemon_with(&sock, configure), dir, sock };
+        wait_for_socket(&daemon.sock);
+        daemon
     }
 
     /// A new daemon on the same socket and state, once the last one has exited.

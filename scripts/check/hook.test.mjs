@@ -6,7 +6,7 @@ import { test } from "node:test";
 
 import "./test-env.mjs";
 
-import { git, runScript, scratchIn, tracked, write } from "./test-support.mjs";
+import { WIRE_CODECS, git, runScript, scratchIn, tracked, write } from "./test-support.mjs";
 
 const HERE = import.meta.dirname;
 const HOOK = join(HERE, "hook.mjs");
@@ -26,6 +26,7 @@ function repo(files = {}) {
     ".swift-format": SWIFT_RULES,
     "core/Cargo.toml": CARGO,
     "scripts/check/arch-exceptions.json": "[]\n",
+    ...WIRE_CODECS,
     // A stand-in for docs-check, which needs this repository's whole doc set: it fails while DOCS_BROKEN exists.
     "scripts/docs-check.mjs": 'import { existsSync } from "node:fs";\nif (existsSync("DOCS_BROKEN")) {\n  console.error("docs-check: 1 problem(s)");\n  process.exit(1);\n}\nconsole.log("docs-check: ok");\n',
     ...files,

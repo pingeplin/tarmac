@@ -13,7 +13,7 @@ use std::time::Duration;
 use proto::dev::{AGE_MS_MAX, BUSY_MS_MAX, DevRequest, HOLD_MS_MAX, REPEATS_MAX, decode_reply, encode_request};
 use tarmac_protocol::{self as proto, frame};
 
-use crate::{current_channel, env_override, home_or_root};
+use crate::{Env, current_channel, home_or_root, process_env};
 
 /// The app's own budget, plus 3 s of slack. The three deadlines nest — the
 /// frontend's `--until` poll (or `press --busy`'s freeze) ends at `timeout_ms`,
@@ -201,7 +201,11 @@ fn parse_size(size: &str) -> Result<(f64, f64), String> {
 }
 
 pub(crate) fn dev_socket_path() -> PathBuf {
-    proto::dev::resolve_dev_socket_path(env_override("TARMAC_DEV_SOCKET"), &home_or_root(), current_channel())
+    dev_socket_path_from(&process_env, current_channel())
+}
+
+fn dev_socket_path_from(env: Env, channel: proto::Channel) -> PathBuf {
+    proto::dev::resolve_dev_socket_path(env("TARMAC_DEV_SOCKET").filter(|v| !v.is_empty()), &home_or_root(env), channel)
 }
 
 /// Send one request, print the reply, and return the process exit code.
@@ -253,7 +257,7 @@ fn exchange(req: &DevRequest) -> Result<proto::dev::DevReply, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fixtures::args;
+    use crate::fixtures::{args, socket_rows};
     use proto::dev::DevRequest;
 
     fn parse(a: &[&str]) -> Result<DevRequest, String> {
@@ -566,5 +570,19 @@ mod tests {
     #[test]
     fn the_dev_family_resolves_the_dev_channel() {
         assert_eq!(current_channel(), proto::Channel::Dev);
+    }
+
+    /// The `dev_socket` rows, which the Swift `ChannelPaths.devSocketPath` runs too.
+    #[test]
+    fn each_row_of_the_shared_dev_socket_table() {
+        let rows = socket_rows("dev_socket");
+        assert_eq!(rows.len(), 8);
+        for row in rows {
+            assert_eq!(
+                dev_socket_path_from(&|name| row.var(name), row.channel).to_str(),
+                Some(row.path.as_str()),
+                "{row:?}"
+            );
+        }
     }
 }

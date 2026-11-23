@@ -103,6 +103,11 @@ public enum ChannelPaths {
         resolve(override, home: home, channel: channel, file: "tarmac-dev.sock")
     }
 
+    /// `devSocketPath` from an environment, read the way `tarmac dev` reads it.
+    public static func devSocketPath(env: [String: String], channel: Channel) -> String {
+        devSocketPath(override: env["TARMAC_DEV_SOCKET"], home: home(env: env), channel: channel)
+    }
+
     private static func resolve(_ override: String?, home: String, channel: Channel, file: String) -> String {
         if let override = pinned(override) { return override }
         return channelDir(home: home, channel: channel) + "/" + file

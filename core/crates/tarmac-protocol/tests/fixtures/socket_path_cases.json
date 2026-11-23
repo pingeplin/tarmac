@@ -1,0 +1,30 @@
+{
+ "_comment": "The socket paths each copy of the resolver derives from its environment and its build channel. `socket` is the daemon socket: tarmacd's socket_path, tarmac-cli's socket_path and the Swift DaemonClient.resolveSocketPath each run every row. `dev_socket` is the QA driver's socket: tarmac-cli's dev_socket_path and the Swift ChannelPaths.devSocketPath. A variable missing from `env` is unset; `path` is compared byte for byte.",
+ "socket": [
+  { "channel": "release", "env": { "HOME": "/Users/someone" }, "path": "/Users/someone/Library/Application Support/tarmac/tarmacd.sock" },
+  { "channel": "dev", "env": { "HOME": "/Users/someone" }, "path": "/Users/someone/Library/Application Support/tarmac/dev/tarmacd.sock" },
+  { "channel": "release", "env": { "HOME": "/Users/someone", "TARMAC_SOCKET": "/tmp/x.sock" }, "path": "/tmp/x.sock" },
+  { "channel": "dev", "env": { "HOME": "/Users/someone", "TARMAC_SOCKET": "/tmp/x.sock" }, "path": "/tmp/x.sock" },
+  { "channel": "release", "env": { "HOME": "/Users/someone", "TARMAC_SOCKET": "" }, "path": "/Users/someone/Library/Application Support/tarmac/tarmacd.sock" },
+  { "channel": "dev", "env": { "HOME": "/Users/someone", "TARMAC_SOCKET": "" }, "path": "/Users/someone/Library/Application Support/tarmac/dev/tarmacd.sock" },
+  { "channel": "dev", "env": { "HOME": "/Users/someone", "TARMAC_SOCKET": " " }, "path": " " },
+  { "channel": "release", "env": { "TARMAC_SOCKET": "rel.sock" }, "path": "rel.sock" },
+  { "channel": "release", "env": {}, "path": "/Library/Application Support/tarmac/tarmacd.sock" },
+  { "channel": "dev", "env": {}, "path": "/Library/Application Support/tarmac/dev/tarmacd.sock" },
+  { "channel": "release", "env": { "HOME": "" }, "path": "Library/Application Support/tarmac/tarmacd.sock" },
+  { "channel": "dev", "env": { "HOME": "" }, "path": "Library/Application Support/tarmac/dev/tarmacd.sock" },
+  { "channel": "dev", "env": { "HOME": "/Users/someone/" }, "path": "/Users/someone/Library/Application Support/tarmac/dev/tarmacd.sock" },
+  { "channel": "release", "env": { "HOME": "//" }, "path": "//Library/Application Support/tarmac/tarmacd.sock" },
+  { "channel": "dev", "env": { "HOME": "/home/u", "TARMAC_DEV_SOCKET": "/tmp/d.sock", "TARMAC_STATE": "/tmp/s.json" }, "path": "/home/u/Library/Application Support/tarmac/dev/tarmacd.sock" }
+ ],
+ "dev_socket": [
+  { "channel": "dev", "env": { "HOME": "/Users/someone" }, "path": "/Users/someone/Library/Application Support/tarmac/dev/tarmac-dev.sock" },
+  { "channel": "release", "env": { "HOME": "/Users/someone" }, "path": "/Users/someone/Library/Application Support/tarmac/tarmac-dev.sock" },
+  { "channel": "dev", "env": { "HOME": "/Users/someone", "TARMAC_DEV_SOCKET": "/tmp/d.sock" }, "path": "/tmp/d.sock" },
+  { "channel": "release", "env": { "HOME": "/Users/someone", "TARMAC_DEV_SOCKET": "/tmp/d.sock" }, "path": "/tmp/d.sock" },
+  { "channel": "dev", "env": { "HOME": "/Users/someone", "TARMAC_DEV_SOCKET": "" }, "path": "/Users/someone/Library/Application Support/tarmac/dev/tarmac-dev.sock" },
+  { "channel": "dev", "env": {}, "path": "/Library/Application Support/tarmac/dev/tarmac-dev.sock" },
+  { "channel": "dev", "env": { "HOME": "" }, "path": "Library/Application Support/tarmac/dev/tarmac-dev.sock" },
+  { "channel": "dev", "env": { "HOME": "/home/u", "TARMAC_SOCKET": "/tmp/x.sock" }, "path": "/home/u/Library/Application Support/tarmac/dev/tarmac-dev.sock" }
+ ]
+}

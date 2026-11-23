@@ -1,6 +1,10 @@
 // Shared integration harness: a real daemon process on a temp socket + state
 // file, with app/cli clients speaking the wire protocol over std sockets.
-#![allow(dead_code)] // each test binary uses a different slice of the harness
+#![allow(dead_code, reason = "each test binary uses a different slice of the harness")]
+#![expect(
+    clippy::allow_attributes,
+    reason = "an expect on a re-export is unfulfilled in each test binary that uses the module"
+)]
 
 mod conn;
 mod daemon;
@@ -8,15 +12,15 @@ mod frames;
 mod fs;
 mod state;
 
-#[allow(unused_imports)]
+#[allow(unused_imports, reason = "each test binary uses a different slice of the harness")]
 pub(crate) use conn::*;
-#[allow(unused_imports)]
+#[allow(unused_imports, reason = "each test binary uses a different slice of the harness")]
 pub(crate) use daemon::*;
-#[allow(unused_imports)]
+#[allow(unused_imports, reason = "each test binary uses a different slice of the harness")]
 pub(crate) use frames::*;
-#[allow(unused_imports)]
+#[allow(unused_imports, reason = "each test binary uses a different slice of the harness")]
 pub(crate) use fs::*;
-#[allow(unused_imports)]
+#[allow(unused_imports, reason = "each test binary uses a different slice of the harness")]
 pub(crate) use state::*;
 
 use std::time::Duration;
