@@ -249,7 +249,7 @@ pub(crate) fn signal_and_wait(child: &mut Child, sig: libc::c_int) -> std::proce
 }
 
 pub(crate) fn signal(child: &Child, sig: libc::c_int) {
-    #[expect(clippy::cast_possible_wrap, reason = "predates the lint; decided in #470")]
+    #[expect(clippy::cast_possible_wrap, reason = "a pid_t that std cast to u32: casting back is exact")]
     // SAFETY: kill(2) on the test's own daemon child; a failure only means
     // it is gone.
     unsafe {

@@ -41,9 +41,8 @@ fn hello_cli() -> Msg {
     Msg::Hello { role: "cli".into(), v: proto::PROTOCOL_VERSION, app_version: None }
 }
 
-#[expect(clippy::cast_possible_truncation, reason = "predates the lint; decided in #470")]
 fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
+    u64::try_from(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()).unwrap()
 }
 
 #[track_caller]

@@ -106,7 +106,7 @@ final class AppController {
     // read/write always targets the board on screen.
     var boards: [String: Board] = [:]
     var activeBoardID = Board.defaultID
-    // The doc comment below states the invariant.
+    // init mints board-0, a switch mints its target first, removeBoard spares the active one
     // swift-format-ignore: NeverForceUnwrap
     /// The active board. Force-unwrapped: `boards` always contains
     /// `activeBoardID` (the invariant the boot path + the switch path maintain).
