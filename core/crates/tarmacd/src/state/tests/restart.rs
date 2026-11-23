@@ -242,7 +242,8 @@ async fn a_background_doc_that_was_not_read_is_read_when_it_answers() {
     std::fs::write(tmp.join("state.json"), state_on_a_background_board(&[&doc])).unwrap();
     let (fs, release) = stuck_fs();
     fs.hold(Call::Stamp, &gone);
-    let daemon = gated(&tmp, fs).await;
+    let at = tmp.clone();
+    let daemon = answers(async move { gated(&at, fs).await }).await;
 
     drop(release);
     eventually("the return of the read", || !daemon.gate().is_out_dir(&gone)).await;

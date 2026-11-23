@@ -3,13 +3,14 @@
 
 mod common;
 
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use common::{
     Conn, LONG, Spawn, TestDaemon, append_to, contains, settle, signal_and_wait, spawn_daemon, temp_dir,
     wait_for_socket,
 };
-use tarmac_protocol::Msg;
+use tarmac_protocol::{Channel, Msg, channel_dir};
 
 #[test]
 fn m0_end_to_end() {
@@ -295,13 +296,32 @@ fn cli_hello_ok_reports_daemon_version_and_pid_alongside_the_app() {
     assert_eq!(app_version.as_deref(), Some("9.9.9"));
 }
 
-#[test]
-fn a_daemon_started_at_256_files_gives_its_shells_open_max_and_keeps_the_hard_limit() {
-    use std::os::unix::process::CommandExt;
+/// The hard `RLIMIT_NOFILE` of the test process, which a daemon it starts inherits.
+fn hard_file_limit() -> libc::rlim_t {
     let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
     // SAFETY: `limit` is a valid rlimit for getrlimit to fill.
     assert_eq!(unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) }, 0);
-    let hard = limit.rlim_max;
+    limit.rlim_max
+}
+
+/// The daemon starts at launchd's soft limit of 256 files, under `hard`.
+fn starts_at_256_files(cmd: &mut std::process::Command, hard: libc::rlim_t) {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: setrlimit is async-signal-safe, and nothing else runs here.
+    unsafe {
+        cmd.pre_exec(move || {
+            let launchd = libc::rlimit { rlim_cur: 256, rlim_max: hard };
+            match libc::setrlimit(libc::RLIMIT_NOFILE, &launchd) {
+                0 => Ok(()),
+                _ => Err(std::io::Error::last_os_error()),
+            }
+        });
+    }
+}
+
+#[test]
+fn a_daemon_started_at_256_files_gives_its_shells_open_max_and_keeps_the_hard_limit() {
+    let hard = hard_file_limit();
     let mut per_proc: libc::c_int = 0;
     let mut size = size_of::<libc::c_int>();
     // SAFETY: the name is NUL-terminated and `per_proc` is `size` bytes.
@@ -315,18 +335,7 @@ fn a_daemon_started_at_256_files_gives_its_shells_open_max_and_keeps_the_hard_li
         )
     };
     assert_eq!(rc, 0);
-    let daemon = TestDaemon::start_with(|cmd| {
-        // SAFETY: setrlimit is async-signal-safe, and nothing else runs here.
-        unsafe {
-            cmd.pre_exec(move || {
-                let launchd = libc::rlimit { rlim_cur: 256, rlim_max: hard };
-                match libc::setrlimit(libc::RLIMIT_NOFILE, &launchd) {
-                    0 => Ok(()),
-                    _ => Err(std::io::Error::last_os_error()),
-                }
-            });
-        }
-    });
+    let daemon = TestDaemon::start_with(|cmd| starts_at_256_files(cmd, hard));
     let mut app = daemon.connect_app();
     app.recv_restore();
 
@@ -335,4 +344,74 @@ fn a_daemon_started_at_256_files_gives_its_shells_open_max_and_keeps_the_hard_li
     let soft = 10240.min(hard).min(u64::try_from(per_proc).unwrap());
     let hard = if hard == libc::RLIM_INFINITY { "unlimited".to_string() } else { hard.to_string() };
     app.recv_output_containing("t1", &format!("nofile={soft}/{hard}."));
+}
+
+// At the daemon's default filter, `info`.
+#[test]
+fn a_daemon_started_at_256_files_logs_that_it_raised_the_limit() {
+    let hard = hard_file_limit();
+    let mut daemon = TestDaemon::start_with(|cmd| {
+        starts_at_256_files(cmd, hard);
+        cmd.env("RUST_LOG", "info").stderr(Stdio::piped());
+    });
+
+    let log = daemon.kill_and_read_stderr();
+
+    assert!(log.contains("open file limit raised from 256 to"), "{log}");
+}
+
+// With no `TARMAC_STATE`, the state file is in the channel's directory under
+// `HOME` (docs/protocol.md), whatever the daemon's working directory is.
+#[test]
+fn with_no_state_path_given_the_state_is_saved_under_home() {
+    let mut home = None;
+    let mut daemon = TestDaemon::start_with_dir(|cmd, dir| {
+        let (at, cwd) = (dir.join("home"), dir.join("cwd"));
+        std::fs::create_dir_all(&at).unwrap();
+        std::fs::create_dir_all(&cwd).unwrap();
+        cmd.env_remove("TARMAC_STATE").env("HOME", &at).current_dir(cwd);
+        home = Some(at);
+    });
+    let home = home.unwrap();
+
+    let status = signal_and_wait(&mut daemon.child, libc::SIGTERM);
+
+    assert_eq!(status.code(), Some(0));
+    let saved = [Channel::Dev, Channel::Release].map(|c| channel_dir(&home, c).join("state.json"));
+    assert!(saved.iter().any(|path| path.is_file()), "no state file in {saved:?}");
+}
+
+#[test]
+fn a_resize_reaches_the_terminal() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    app.spawn_term_with(
+        "t1",
+        &["/bin/sh", "-c", "read line; stty size"],
+        Spawn { cols: 80, rows: 24, cwd: Some(daemon.dir.to_string_lossy().into_owned()), ..Default::default() },
+    );
+
+    app.send(&Msg::Resize { term_id: "t1".into(), cols: 100, rows: 30 });
+    app.input("t1", b"\n");
+
+    let mut output = Vec::new();
+    loop {
+        match app.recv(Instant::now() + LONG, "the size and the exit") {
+            Msg::Output { term_id, bytes } if term_id == "t1" => output.extend_from_slice(&bytes),
+            Msg::Exit { term_id, .. } if term_id == "t1" => break,
+            _ => {}
+        }
+    }
+    assert!(contains(&output, b"30 100"), "{}", String::from_utf8_lossy(&output));
+}
+
+#[test]
+fn a_spawn_with_an_empty_cmd_is_refused() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+
+    app.spawn_term("t1", &[]);
+
+    let reply = app.recv_until("err", |m| matches!(m, Msg::Err { .. }));
+    assert!(matches!(&reply, Msg::Err { msg } if msg == "cmd must be a non-empty argv"), "{reply:?}");
 }

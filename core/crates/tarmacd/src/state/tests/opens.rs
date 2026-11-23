@@ -67,7 +67,7 @@ async fn an_open_answers_while_another_open_waits_for_its_path() {
     eventually("the held resolve", || fs.held(Call::Resolve) == 1).await;
     assert_eq!(try_open(&daemon, &doc).await, Ok(()));
     assert_eq!(docs_opened(&mut app), vec![doc]);
-    assert_eq!(stuck_open.await.unwrap(), did_not_answer(&daemon, &stuck));
+    assert_eq!(within(stuck_open).await, did_not_answer(&daemon, &stuck));
 
     let _ = std::fs::remove_dir_all(&tmp);
 }
@@ -273,7 +273,7 @@ async fn two_opens_of_a_path_that_does_not_answer_make_one_call() {
     let before = std::time::Instant::now();
     let opens = [spawn_open(&daemon, &doc), spawn_open(&daemon, &doc)];
     for open in opens {
-        assert_eq!(open.await.unwrap(), did_not_answer(&daemon, &doc));
+        assert_eq!(within(open).await, did_not_answer(&daemon, &doc));
     }
     assert!(before.elapsed() < 3 * LIMIT, "it waited {:?}", before.elapsed());
     assert_eq!(fs.calls(Call::Resolve), 1);
@@ -299,7 +299,7 @@ async fn an_open_during_a_look_at_its_path_makes_no_call_of_its_own() {
     let before = std::time::Instant::now();
     assert_eq!(try_open(&daemon, &doc).await, did_not_answer(&daemon, &doc));
     assert!(before.elapsed() < 3 * LIMIT, "it waited {:?}", before.elapsed());
-    assert_eq!(look.await.unwrap(), HashMap::new());
+    assert_eq!(within(look).await, HashMap::new());
     assert_eq!(fs.held(Call::Resolve) + fs.held(Call::Stamp), 1);
 
     let _ = std::fs::remove_dir_all(&tmp);
@@ -357,8 +357,8 @@ async fn a_call_left_before_a_full_limit_does_not_fail_the_next_caller_at_once()
     tokio::time::sleep(limit * 7 / 10).await;
     release.send(()).unwrap();
     eventually("the waiter's own call", || stuck.held(Call::Stamp) == 2).await;
-    assert!(first.await.unwrap().is_ok());
-    assert!(waiter.await.unwrap().is_err());
+    assert!(within(first).await.is_ok());
+    assert!(within(waiter).await.is_err());
 
     let after = run();
     // Time for it to reach the waiter's call, well before that call has

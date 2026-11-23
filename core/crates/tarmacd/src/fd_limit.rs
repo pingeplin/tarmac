@@ -65,4 +65,24 @@ mod tests {
         assert_eq!(target(10240, u64::MAX, Some(61440)), None);
         assert_eq!(target(256, 128, Some(61440)), None);
     }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_per_process_cap_is_kern_maxfilesperproc() {
+        let mut by_name: libc::c_int = 0;
+        let mut size = size_of::<libc::c_int>();
+        // SAFETY: the name is NUL-terminated and `by_name` is `size` bytes.
+        let rc = unsafe {
+            libc::sysctlbyname(
+                c"kern.maxfilesperproc".as_ptr(),
+                (&raw mut by_name).cast(),
+                &mut size,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        assert_eq!(rc, 0);
+
+        assert_eq!(max_files_per_proc(), Some(u64::try_from(by_name).unwrap()));
+    }
 }
