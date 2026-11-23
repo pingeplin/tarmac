@@ -12,9 +12,8 @@ use common::{
     untouched,
 };
 
-#[expect(clippy::cast_possible_truncation, reason = "predates the lint; decided in #470")]
 fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
+    u64::try_from(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()).unwrap()
 }
 
 /// The line with its `received_ms` taken out, and that value. `received_ms`

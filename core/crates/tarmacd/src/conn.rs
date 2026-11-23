@@ -230,14 +230,15 @@ async fn change_and_send_active_board(
         }
     }
     // On every restore, not only a board's first: the app drops a frame for a
-    // card it has not built, so a background board shows its reports when shown.
+    // card it has not built, so a background board shows its reports when
+    // shown. Sent with `reports` held: a later change is pushed after them.
     {
         let reports = daemon.reports.lock().await;
         for msg in reports.restore_frames(&live_terms, !conn.told_elsewhere) {
             let _ = conn.tx.send(msg).await;
         }
-        conn.told_elsewhere = true;
     }
+    conn.told_elsewhere = true;
     for (tid, data) in replay {
         for chunk in data.chunks(term::OUTPUT_CHUNK) {
             let _ = conn.tx.send(Msg::Output { term_id: tid.clone(), bytes: chunk.to_vec() }).await;
