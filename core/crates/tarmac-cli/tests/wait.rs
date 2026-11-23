@@ -326,7 +326,7 @@ fn s13_a_missing_file_that_is_made_ends_the_wait() {
 
 // S27
 #[test]
-fn s27_a_change_after_2_s_is_seen_within_one_slow_poll() {
+fn s27_a_change_in_the_slow_stage_ends_the_wait() {
     let dir = scratch();
     let file = old_file(&dir, "slow.txt");
 
@@ -337,9 +337,9 @@ fn s27_a_change_after_2_s_is_seen_within_one_slow_poll() {
     });
 
     assert_eq!(out.status.code(), Some(0));
-    // One slow poll is 250 ms; `poll_interval`'s unit test holds that number. The
-    // second is for the helper, the pipe and the exit on a loaded machine: CI was
-    // 500 ms late with a limit of 450 (#469).
+    // The cadence itself has a unit test with no clock (`report_samples`). This
+    // limit only says that the wait does not hang: the first one, 450 ms from
+    // the start of the run, was too tight for a loaded CI machine (#469).
     assert!(late < Duration::from_millis(1250), "the exit came {late:?} after the rename");
 }
 
