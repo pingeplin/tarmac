@@ -21,7 +21,7 @@ final class JavaScriptNumberTests: XCTestCase {
     func testAWholeNumberBelow10To21IsWrittenOutInFull() {
         assertWritten([
             (1, "1"), (10, "10"), (1e20, "100000000000000000000"),
-            (999_999_999_999_999_900_000, "999999999999999900000"),
+            (9.999999999999999e20, "999999999999999900000"),
         ])
     }
 
