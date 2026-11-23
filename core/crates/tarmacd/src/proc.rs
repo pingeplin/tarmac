@@ -180,14 +180,19 @@ pub fn proc_facts(pid: Pid) -> Facts {
             let tv_sec = i64::from_ne_bytes(buf[0..8].try_into().expect("8 bytes"));
             let tv_usec = i32::from_ne_bytes(buf[8..12].try_into().expect("4 bytes"));
             let ppid = i32::from_ne_bytes(buf[E_PPID..E_PPID + 4].try_into().expect("4 bytes"));
-            Facts::Live {
-                ppid,
-                #[expect(clippy::cast_sign_loss, reason = "predates the lint; decided in #470")]
-                started: (tv_sec as u64) * 1_000_000 + tv_usec as u64,
-            }
+            start_micros(tv_sec, tv_usec).map_or(Facts::Unread, |started| Facts::Live { ppid, started })
         }
         _ => Facts::Unread,
     }
+}
+
+/// A `timeval` as microseconds since the epoch, or `None` for one that is
+/// negative or does not fit. The value is half of a process's identity, so a
+/// time that cannot be right is "unread", never a wrapped number (#485).
+fn start_micros(tv_sec: i64, tv_usec: i32) -> Option<u64> {
+    let seconds = u64::try_from(tv_sec).ok()?;
+    let micros = u64::try_from(tv_usec).ok()?;
+    seconds.checked_mul(1_000_000)?.checked_add(micros)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -267,7 +272,7 @@ mod parse_tests {
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
-    use super::{Facts, pid_cwd, proc_facts, process_name};
+    use super::{Facts, pid_cwd, proc_facts, process_name, start_micros};
     use std::os::unix::process::CommandExt;
     use std::process::{Child, Command, Stdio};
     use std::time::{Duration, Instant};
@@ -316,6 +321,20 @@ mod tests {
     #[test]
     fn a_plain_process_keeps_its_name() {
         assert_eq!(name_of(&mut Command::new("/bin/sleep")).as_deref(), Some("sleep"));
+    }
+
+    #[test]
+    fn a_start_time_is_microseconds_or_nothing() {
+        assert_eq!(start_micros(1_700_000_000, 5), Some(1_700_000_000_000_005));
+        assert_eq!(start_micros(0, 0), Some(0));
+        assert_eq!(start_micros(0, 999_999), Some(999_999));
+        assert_eq!(start_micros(-1, 0), None, "a negative second is not a wrapped number");
+        assert_eq!(start_micros(1, -1), None, "a negative microsecond is not a wrapped number");
+        // u64::MAX / 1_000_000: the last second whose microseconds fit.
+        let most = 18_446_744_073_709;
+        assert_eq!(start_micros(most, 0), Some(18_446_744_073_709_000_000));
+        assert_eq!(start_micros(most, i32::MAX), None, "the sum does not fit");
+        assert_eq!(start_micros(most + 1, 0), None, "the product does not fit");
     }
 
     #[test]
