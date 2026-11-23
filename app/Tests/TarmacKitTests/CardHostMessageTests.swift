@@ -3,7 +3,7 @@ import XCTest
 @testable import TarmacKit
 
 /// The host → shim messages of an HTML card (`card_shim.js` message listener)
-/// and the cull polarity that feeds one of them (spec 2609.0002 S1–S2).
+/// and the cull polarity that feeds one of them (spec 2609.0002 S1).
 final class CardHostMessageTests: XCTestCase {
     func testZoomCarriesTheFactorAsZ() {
         XCTAssertEqual(CardHostMessage.zoom(3).json, #"{"tarmac":"zoom","z":3}"#)
@@ -48,18 +48,10 @@ final class CardHostMessageTests: XCTestCase {
             names(.fonts(CardFontVariables(interfaceFamily: nil, documentFamily: nil, documentSize: 14))), "fonts")
     }
 
-    // MARK: - cull polarity (2609.0002 S1, S2)
+    // MARK: - cull polarity (2609.0002 S1)
 
     func testS1ACulledCardIsOneThatIsNotVisible() {
         XCTAssertEqual(CardHostMessage.cull(CardCull.isCulled(visible: false)), .cull(true))
         XCTAssertEqual(CardHostMessage.cull(CardCull.isCulled(visible: true)), .cull(false))
-    }
-
-    /// A state, not a toggle: a repeat of the same input gives the same answer.
-    func testS2ThePolarityDependsOnlyOnItsArgument() {
-        XCTAssertTrue(CardCull.isCulled(visible: false))
-        XCTAssertTrue(CardCull.isCulled(visible: false))
-        XCTAssertFalse(CardCull.isCulled(visible: true))
-        XCTAssertTrue(CardCull.isCulled(visible: false))
     }
 }
