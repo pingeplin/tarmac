@@ -83,4 +83,47 @@ mod tests {
         let err = read_sync(&mut cursor).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
+
+    #[test]
+    fn a_frame_of_exactly_the_limit_is_taken_and_one_byte_more_is_refused() {
+        let limit = MAX_FRAME_LEN as usize;
+        assert_eq!(payload_len(MAX_FRAME_LEN.to_be_bytes()).unwrap(), limit);
+        assert_eq!(payload_len((MAX_FRAME_LEN + 1).to_be_bytes()).unwrap_err().kind(), io::ErrorKind::InvalidData);
+
+        let mut payload = vec![0u8; limit];
+        assert_eq!(header(&payload).unwrap(), MAX_FRAME_LEN.to_be_bytes());
+        assert_eq!(header(&payload[..limit - 1]).unwrap(), (MAX_FRAME_LEN - 1).to_be_bytes());
+        payload.push(0);
+        assert_eq!(header(&payload).unwrap_err().kind(), io::ErrorKind::InvalidData);
+    }
+
+    /// Runs a future whose reader and writer are in memory, so it never waits.
+    #[cfg(feature = "async")]
+    fn now<T>(future: impl Future<Output = T>) -> T {
+        let mut future = std::pin::pin!(future);
+        match future.as_mut().poll(&mut std::task::Context::from_waker(std::task::Waker::noop())) {
+            std::task::Poll::Ready(value) => value,
+            std::task::Poll::Pending => panic!("a read or a write in memory waited"),
+        }
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn the_async_frame_is_the_sync_frame() {
+        let payload = encode(&Msg::Ack).unwrap();
+        let mut framed = Vec::new();
+        write_sync(&mut framed, &payload).unwrap();
+
+        let mut written = Vec::new();
+        now(write_async(&mut written, &payload)).unwrap();
+        assert_eq!(written, framed);
+
+        let mut message = Vec::new();
+        now(write_msg_async(&mut message, &Msg::Ack)).unwrap();
+        assert_eq!(message, framed);
+
+        assert_eq!(now(read_async(&mut framed.as_slice())).unwrap(), payload);
+        let oversize = (MAX_FRAME_LEN + 1).to_be_bytes();
+        assert_eq!(now(read_async(&mut oversize.as_slice())).unwrap_err().kind(), io::ErrorKind::InvalidData);
+    }
 }
