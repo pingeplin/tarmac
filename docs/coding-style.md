@@ -249,9 +249,8 @@ back from a rendered bitmap.
   test file fails unless `scripts/check/arch-exceptions.json` lists it, and an
   entry that is no longer needed fails too (a `<Module>+<Part>.swift` slice needs
   no file of its own; the check sees that a test file exists, not what it
-  tests). The modules that have none today are the entries of that file (#481);
-  a suite that
-  spans modules is named for its subject (`ConformanceTests`,
+  tests). The list is empty today; an entry names its issue and its reason. A
+  suite that spans modules is named for its subject (`ConformanceTests`,
   `RustEncoderParityTests`, `BoardPersistenceTests`).
 - **Access and isolation.** `public` is what the shell calls; tests reach the
   rest with `@testable import`. The package builds in Swift 6 language mode:
