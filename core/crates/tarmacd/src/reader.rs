@@ -182,6 +182,7 @@ impl Keys {
             None => {
                 let call = self.next_call.fetch_add(1, Ordering::Relaxed);
                 busy.insert(key.clone(), Busy { call, left: false, out_at, ended: watch::channel(()).0 });
+                drop(busy);
                 let (sent, answer) = oneshot::channel();
                 let flight = Flight { keys: self.clone(), key: key.clone(), call };
                 Claim::Flight(
