@@ -207,7 +207,7 @@ async fn the_poll_drops_a_gone_holders_command_with_no_leader() {
         let record =
             TermRecord { last_cwd: None, resume: Some(tarmac_protocol::ResumeRecord { cmd: "echo HI".into() }) };
         boards.known_registry_mut("board-0").unwrap().term_records.insert("T".into(), record);
-        #[expect(clippy::cast_possible_wrap, reason = "predates the lint; decided in #470")]
+        #[expect(clippy::cast_possible_wrap, reason = "a pid_t that std cast to u32: casting back is exact")]
         handle.hold_resume(crate::holder::StartedPid { pid: std::process::id() as Pid, started: 1 });
     }
 

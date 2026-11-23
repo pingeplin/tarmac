@@ -810,12 +810,11 @@ fn resume_cmd_cases() -> Vec<(String, Result<(), String>)> {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/resume_cmd_cases.json");
     let table: serde_json::Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     let case = |c: &serde_json::Value| {
-        #[expect(clippy::cast_possible_truncation, reason = "predates the lint; decided in #470")]
         let cmd: String = c["parts"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|p| p[0].as_str().unwrap().repeat(p[1].as_u64().unwrap() as usize))
+            .map(|p| p[0].as_str().unwrap().repeat(usize::try_from(p[1].as_u64().unwrap()).unwrap()))
             .collect();
         (cmd, c["cause"].as_str().map_or(Ok(()), |cause| Err(cause.to_owned())))
     };

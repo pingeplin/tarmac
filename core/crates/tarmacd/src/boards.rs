@@ -100,9 +100,10 @@ fn counted(data: Option<DataRead>) -> DataDir {
     data.map_or(DataDir::Uncounted, |read| read.dir)
 }
 
-#[expect(clippy::cast_possible_truncation, reason = "predates the lint; decided in #470")]
+/// `t` in ms since the epoch; 0 for a time before it or past `u64` ms, which
+/// a file's mtime can be.
 pub(crate) fn epoch_ms(t: SystemTime) -> u64 {
-    t.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+    t.duration_since(UNIX_EPOCH).ok().and_then(|d| u64::try_from(d.as_millis()).ok()).unwrap_or(0)
 }
 
 pub(crate) fn term_tile() -> Tile {
@@ -538,7 +539,10 @@ impl Boards {
                 .map(|b| BoardMeta {
                     board_id: b.id.clone(),
                     name: b.name.clone(),
-                    #[expect(clippy::cast_possible_truncation, reason = "predates the lint; decided in #470")]
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        reason = "each live term holds a pty fd: kern.maxfilesperproc is an int"
+                    )]
                     running: Some(live.get(&b.id).map_or(0, |terms| terms.len() as u32)),
                 })
                 .collect(),
@@ -642,6 +646,15 @@ mod tests {
 
     fn terms_kept(r: &Registry) -> Vec<Option<String>> {
         r.tiles.iter().filter(|t| t.kind == "term").map(|t| t.term_id.clone()).collect()
+    }
+
+    #[test]
+    fn a_time_is_milliseconds_since_the_epoch_or_zero() {
+        assert_eq!(epoch_ms(UNIX_EPOCH + Duration::from_millis(1_700_000_000_123)), 1_700_000_000_123);
+        assert_eq!(epoch_ms(UNIX_EPOCH + Duration::from_millis(u64::MAX)), u64::MAX);
+        assert_eq!(epoch_ms(UNIX_EPOCH - Duration::from_millis(1)), 0, "before the epoch");
+        let past = UNIX_EPOCH + Duration::from_millis(u64::MAX) + Duration::from_millis(2);
+        assert_eq!(epoch_ms(past), 0, "past u64 milliseconds, not a wrapped number");
     }
 
     #[test]
