@@ -6,11 +6,11 @@ import { spawnSync } from "node:child_process";
 import { join, relative, resolve } from "node:path";
 
 import { LANGUAGES, tracked } from "./languages.mjs";
-import { CLEAN, RULE, blockedFor, findings } from "./lint-common.mjs";
-import { failure } from "./report.mjs";
+import { CLEAN, RULE, findings } from "./lint-common.mjs";
+import { blockedFor, failure } from "./report.mjs";
 
 const THEN = "make lint";
-const cannotRun = blockedFor(THEN);
+const cannotRun = blockedFor(RULE, THEN);
 
 /** The compiler messages of a `--message-format=json` run. */
 const messages = (stdout) =>

@@ -11,9 +11,9 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { repoRoot, startedAs } from "./git.mjs";
+import { repoRoot } from "./git.mjs";
 import { parseList } from "./list.mjs";
-import { failure } from "./report.mjs";
+import { blockedFor, failure, runCheck } from "./report.mjs";
 
 const RULE = "arch";
 const THEN = "make arch-check";
@@ -189,7 +189,7 @@ const RULES = [
   },
 ];
 
-const cannotRun = (summary, why, fix) => ({ code: 2, text: failure({ rule: RULE, summary, why, fix, then: THEN }) });
+const cannotRun = blockedFor(RULE, THEN);
 
 function main() {
   const root = repoRoot();
@@ -204,7 +204,10 @@ function main() {
   return { code: broken.length > 0 ? 1 : 0, text };
 }
 
-/** A rule that throws has not judged the tree, so that is "could not run" and never "a rule is broken". */
+/**
+ * A rule that throws has not judged the tree, so that is "could not run" and never "a rule is broken".
+ * The shared entry would say that too; this keeps arch's own wording of it, which a test holds.
+ */
 function guarded() {
   try {
     return main();
@@ -213,8 +216,4 @@ function guarded() {
   }
 }
 
-if (startedAs(import.meta)) {
-  const { code, text } = guarded();
-  process.stderr.write(text);
-  process.exitCode = code;
-}
+await runCheck(import.meta, { rule: RULE, then: THEN }, guarded);
