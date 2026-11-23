@@ -1,6 +1,15 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: setup core ghostty-vt app test docs-check arch-check check-test mutants fmt fmt-check lint dco-check run qa qa-quit qa-resume kill-daemon bundle dmg release
+GOALS := setup core ghostty-vt app test docs-check arch-check check-test mutants fmt fmt-check lint dco-check run qa qa-quit qa-resume kill-daemon bundle dmg release
+
+.PHONY: help $(GOALS)
+
+# A make with no goal changes nothing (#515): a goal that is lost, for example
+# `make "lint ONLY=swift"` as one shell word, must not be the setup below.
+help:
+	@echo "make <goal>, where the goal is one of:"
+	@echo "  $(GOALS)"
+	@echo "CLAUDE.md (Build, run, test) says what each one does."
 
 # git gives a hook the variables that name its repository, and the pre-push hook
 # runs `make test`. A test that starts a git of its own (a fixture repository)
