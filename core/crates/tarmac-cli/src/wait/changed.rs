@@ -69,27 +69,38 @@ impl Sample {
 pub fn stat_helper(args: &[String]) -> i32 {
     let [raw] = args else { return 2 };
     let started = Instant::now();
-    let mut out = io::stdout().lock();
+    report_samples(raw, &mut io::stdout().lock(), || started.elapsed(), std::thread::sleep);
+    0
+}
+
+/// The helper's loop. The clock and the sleep are the caller's, so that a test
+/// holds the cadence with no wall-clock limit (#469).
+fn report_samples(
+    raw: &str,
+    out: &mut impl Write,
+    mut elapsed: impl FnMut() -> Duration,
+    mut sleep: impl FnMut(Duration),
+) {
     let path = match std::path::absolute(raw) {
         Ok(path) => path,
         Err(e) => {
             let _ = writeln!(out, "{STAT_ERROR}cannot stat {raw}: {e}");
-            return 0;
+            return;
         }
     };
     loop {
         match sample(&path) {
             Ok(s) => {
                 if writeln!(out, "{}", s.line()).and_then(|()| out.flush()).is_err() {
-                    return 0;
+                    return;
                 }
             }
             Err(e) => {
                 let _ = writeln!(out, "{STAT_ERROR}cannot stat {}: {e}", path.display());
-                return 0;
+                return;
             }
         }
-        std::thread::sleep(poll_interval(started.elapsed()));
+        sleep(poll_interval(elapsed()));
     }
 }
 
@@ -174,6 +185,49 @@ mod tests {
         assert_eq!(poll_interval(ms(1999)), ms(100));
         assert_eq!(poll_interval(ms(2000)), ms(250));
         assert_eq!(poll_interval(ms(60_000)), ms(250));
+    }
+
+    /// Takes `lines` lines, then fails as a pipe does when `wait` has gone.
+    struct Reader {
+        lines: usize,
+        got: Vec<u8>,
+    }
+
+    impl Write for Reader {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if self.got.iter().filter(|b| **b == b'\n').count() >= self.lines {
+                return Err(io::ErrorKind::BrokenPipe.into());
+            }
+            self.got.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    // S27
+    #[test]
+    fn the_helper_samples_at_the_poll_cadence_and_ends_when_its_reader_has_gone() {
+        let now = std::cell::Cell::new(Duration::ZERO);
+        let slept = std::cell::RefCell::new(Vec::new());
+        let mut reader = Reader { lines: 23, got: Vec::new() };
+
+        report_samples(
+            "/nonexistent/wait-changed",
+            &mut reader,
+            || now.get(),
+            |pause| {
+                slept.borrow_mut().push(pause);
+                now.set(now.get() + pause);
+            },
+        );
+
+        let ms = Duration::from_millis;
+        let fast = std::iter::repeat_n(ms(100), 20);
+        assert_eq!(*slept.borrow(), fast.chain([ms(250), ms(250), ms(250)]).collect::<Vec<_>>());
+        assert_eq!(String::from_utf8(reader.got).unwrap(), format!("{MISSING}\n").repeat(23));
     }
 
     // S27
