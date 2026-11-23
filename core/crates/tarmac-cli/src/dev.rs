@@ -336,6 +336,22 @@ mod tests {
         parses_to(&["zoom", "0.001"], &DevRequest::Zoom { z: 0.001 });
     }
 
+    /// `f64` parses `inf` and `NaN`; neither is a zoom.
+    #[test]
+    fn zoom_rejects_a_number_that_is_not_finite() {
+        for bad in ["inf", "-inf", "NaN"] {
+            assert!(parse(&["zoom", bad]).is_err(), "expected a usage error for {bad:?}");
+        }
+    }
+
+    /// Each side is checked on its own: one finite side does not pass the other.
+    #[test]
+    fn resize_rejects_a_side_that_is_not_finite() {
+        for bad in ["infx600", "800xinf", "NaNx600", "800xNaN"] {
+            assert!(parse(&["resize", "t-1", bad]).is_err(), "expected a usage error for {bad:?}");
+        }
+    }
+
     /// An empty text is a present argument, so it parses; the app answers it.
     #[test]
     fn an_empty_type_text_parses() {
@@ -521,8 +537,8 @@ mod tests {
         names(&["press", "cmd+q", "--hold", "x"], &["--hold"]);
         names(&["press", "cmd+q", "--age", "-1"], &["--age"]);
         names(&["press", "cmd+q", "--age", "60001"], &["--age"]);
-        names(&["press", "cmd+q", "--now"], &["--now"]);
-        names(&["press", "cmd+q", "extra"], &["extra"]);
+        names(&["press", "cmd+q", "--now"], &["unknown flag --now"]);
+        names(&["press", "cmd+q", "extra"], &["unexpected argument extra"]);
         names(&["press", "cmd+q", "--hold", "5", "--hold", "6"], &["--hold"]);
         names(&["press", "enter", "--repeat", "0"], &["--repeat"]);
         names(&["press", "enter", "--repeat", "101"], &["--repeat"]);

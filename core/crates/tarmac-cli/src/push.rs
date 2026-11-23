@@ -140,8 +140,9 @@ impl<R: Read> Iterator for Lines<R> {
             return None;
         }
         self.held.clear();
-        let (mut len, mut blank, mut last_cr, mut ended) = (0usize, true, false, false);
-        while !ended {
+        let (mut len, mut blank, mut last_cr) = (0usize, true, false);
+        // The newline found, not the count of bytes consumed, ends the loop.
+        let ended = loop {
             let chunk = match self.reader.fill_buf() {
                 Ok([]) if len == 0 => {
                     self.done = true;
@@ -151,7 +152,7 @@ impl<R: Read> Iterator for Lines<R> {
                 // for one more end of input.
                 Ok([]) => {
                     self.done = true;
-                    break;
+                    break false;
                 }
                 Ok(chunk) => chunk,
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
@@ -160,11 +161,10 @@ impl<R: Read> Iterator for Lines<R> {
                     return Some(Err(e));
                 }
             };
-            let (part, used) = match chunk.iter().position(|&b| b == b'\n') {
-                Some(at) => (&chunk[..at], at + 1),
-                None => (chunk, chunk.len()),
+            let (part, used, ended) = match chunk.iter().position(|&b| b == b'\n') {
+                Some(at) => (&chunk[..at], at + 1, true),
+                None => (chunk, chunk.len(), false),
             };
-            ended = used > part.len();
             if let Some(&last) = part.last() {
                 len += part.len();
                 blank &= part.iter().all(|b| matches!(b, b' ' | b'\t' | b'\r'));
@@ -173,7 +173,10 @@ impl<R: Read> Iterator for Lines<R> {
                 self.held.extend_from_slice(&part[..room]);
             }
             self.reader.consume(used);
-        }
+            if ended {
+                break true;
+            }
+        };
         let len = len - usize::from(last_cr && ended);
         let line = if blank {
             Line::Blank
@@ -200,8 +203,10 @@ mod tests {
     use super::*;
     use crate::fixtures::args;
 
-    fn read_all(input: &[u8], limit: usize) -> Vec<Line> {
-        Lines::new(input, limit).map(Result::unwrap).collect()
+    /// Every line of `input`, to at most 16: a broken iterator that never
+    /// ends fails a test here instead of hanging it.
+    fn lines_of(input: impl Read, limit: usize) -> Vec<Line> {
+        Lines::new(input, limit).take(16).map(Result::unwrap).collect()
     }
 
     fn value(text: &str) -> Line {
@@ -230,24 +235,24 @@ mod tests {
     // S4
     #[test]
     fn lines_end_at_a_newline_and_the_last_needs_none() {
-        assert_eq!(read_all(b"a\nb\n", 8), vec![value("a"), value("b")]);
-        assert_eq!(read_all(b"a\nb", 8), vec![value("a"), value("b")]);
+        assert_eq!(lines_of(&b"a\nb\n"[..], 8), vec![value("a"), value("b")]);
+        assert_eq!(lines_of(&b"a\nb"[..], 8), vec![value("a"), value("b")]);
     }
 
     // S5
     #[test]
     fn one_carriage_return_before_the_newline_is_dropped() {
-        assert_eq!(read_all(b"a\r\nb\r\n", 8), vec![value("a"), value("b")]);
-        assert_eq!(read_all(b"a\r\r\n", 8), vec![value("a\r")]);
+        assert_eq!(lines_of(&b"a\r\nb\r\n"[..], 8), vec![value("a"), value("b")]);
+        assert_eq!(lines_of(&b"a\r\r\n"[..], 8), vec![value("a\r")]);
     }
 
     // S6
     #[test]
     fn blank_lines_are_given_as_blank() {
-        assert_eq!(read_all(b"a\n\n \t\nb\n", 8), vec![value("a"), Line::Blank, Line::Blank, value("b")]);
-        assert_eq!(read_all(b"\r\n \r\n", 8), vec![Line::Blank, Line::Blank]);
-        assert_eq!(read_all(b"          \n", 8), vec![Line::Blank], "blank over the limit");
-        assert_eq!(read_all(b"        x\n", 8), vec![Line::OverLimit], "a value past the limit");
+        assert_eq!(lines_of(&b"a\n\n \t\nb\n"[..], 8), vec![value("a"), Line::Blank, Line::Blank, value("b")]);
+        assert_eq!(lines_of(&b"\r\n \r\n"[..], 8), vec![Line::Blank, Line::Blank]);
+        assert_eq!(lines_of(&b"          \n"[..], 8), vec![Line::Blank], "blank over the limit");
+        assert_eq!(lines_of(&b"        x\n"[..], 8), vec![Line::OverLimit], "a value past the limit");
     }
 
     /// Interrupted once, then its bytes.
@@ -269,19 +274,18 @@ mod tests {
     #[test]
     fn a_read_that_was_interrupted_is_made_again() {
         let input = Interrupted { interrupted: false, rest: b"1\n" };
-        let lines: Vec<Line> = Lines::new(input, 8).map(Result::unwrap).collect();
-        assert_eq!(lines, vec![value("1")]);
+        assert_eq!(lines_of(input, 8), vec![value("1")]);
     }
 
     #[test]
     fn white_space_around_a_value_is_kept() {
-        assert_eq!(read_all(b" 1 \t\n", 8), vec![value(" 1 \t")]);
+        assert_eq!(lines_of(&b" 1 \t\n"[..], 8), vec![value(" 1 \t")]);
     }
 
     // S7
     #[test]
     fn a_line_that_is_not_utf8_is_refused_and_the_next_is_read() {
-        assert_eq!(read_all(b"1\n\xff\xfe\n2\n", 8), vec![value("1"), Line::NotUtf8, value("2")]);
+        assert_eq!(lines_of(&b"1\n\xff\xfe\n2\n"[..], 8), vec![value("1"), Line::NotUtf8, value("2")]);
     }
 
     // S8
@@ -306,13 +310,13 @@ mod tests {
     // S8
     #[test]
     fn a_line_over_the_limit_that_is_not_utf8_is_refused_as_over_the_limit() {
-        assert_eq!(read_all(b"\xff\xfe\xff\xfe\xff\xfe\xff\xfe\xff\n", 8), vec![Line::OverLimit]);
+        assert_eq!(lines_of(&b"\xff\xfe\xff\xfe\xff\xfe\xff\xfe\xff\n"[..], 8), vec![Line::OverLimit]);
     }
 
     // S8: the carriage return is not part of the line.
     #[test]
     fn a_line_of_the_limit_with_a_carriage_return_is_read_whole() {
-        assert_eq!(read_all(b"abcdefgh\r\n", 8), vec![value("abcdefgh")]);
+        assert_eq!(lines_of(&b"abcdefgh\r\n"[..], 8), vec![value("abcdefgh")]);
     }
 
     /// One byte for each read: every line ends across reads.
@@ -331,15 +335,17 @@ mod tests {
     #[test]
     fn lines_split_across_reads_are_read_as_whole_lines() {
         let input = b"a\r\nabcdefgh\r\nx\xe2\x82\xacy\n123456789\nlast";
-        let lines: Vec<Line> = Lines::new(OneByte(input), 8).map(Result::unwrap).collect();
-        assert_eq!(lines, vec![value("a"), value("abcdefgh"), value("x\u{20ac}y"), Line::OverLimit, value("last")]);
+        assert_eq!(
+            lines_of(OneByte(input), 8),
+            vec![value("a"), value("abcdefgh"), value("x\u{20ac}y"), Line::OverLimit, value("last")]
+        );
     }
 
     // S5: a `\r` is dropped only before a `\n`.
     #[test]
     fn a_carriage_return_at_the_end_of_input_stays_in_the_line() {
-        assert_eq!(read_all(b"a\r", 8), vec![value("a\r")]);
-        assert_eq!(read_all(b"abcdefgh\r", 8), vec![Line::OverLimit]);
+        assert_eq!(lines_of(&b"a\r"[..], 8), vec![value("a\r")]);
+        assert_eq!(lines_of(&b"abcdefgh\r"[..], 8), vec![Line::OverLimit]);
     }
 
     /// `input`, then the end, after which a read panics: on a terminal a read
@@ -363,29 +369,34 @@ mod tests {
     #[test]
     fn the_end_of_input_is_read_once() {
         for input in [&b"a"[..], b"a\n", b""] {
-            let lines = Lines::new(EndsOnce { input, ended: false }, 8);
             let expected = if input.is_empty() { vec![] } else { vec![value("a")] };
-            assert_eq!(lines.map(Result::unwrap).collect::<Vec<_>>(), expected, "{input:?}");
+            assert_eq!(lines_of(EndsOnce { input, ended: false }, 8), expected, "{input:?}");
         }
     }
 
     // S9
     #[test]
     fn empty_input_has_no_line() {
-        assert_eq!(read_all(b"", 8), vec![]);
+        assert_eq!(lines_of(&b""[..], 8), vec![]);
     }
 
-    /// One line, then an I/O error for every read after it.
-    struct FailsAfter(&'static [u8]);
+    /// Its bytes, then one I/O error, after which a read panics: the error
+    /// ends the lines, and a read that tried again would never end.
+    struct FailsAfter {
+        input: &'static [u8],
+        failed: bool,
+    }
 
     impl Read for FailsAfter {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-            if self.0.is_empty() {
+            assert!(!self.failed, "a read after the error");
+            if self.input.is_empty() {
+                self.failed = true;
                 return Err(io::Error::other("the disk is gone"));
             }
-            let n = self.0.len().min(buf.len());
-            buf[..n].copy_from_slice(&self.0[..n]);
-            self.0 = &self.0[n..];
+            let n = self.input.len().min(buf.len());
+            buf[..n].copy_from_slice(&self.input[..n]);
+            self.input = &self.input[n..];
             Ok(n)
         }
     }
@@ -393,7 +404,7 @@ mod tests {
     // S55
     #[test]
     fn a_read_error_comes_after_the_lines_before_it_and_ends_the_lines() {
-        let mut lines = Lines::new(FailsAfter(b"1\n"), 8);
+        let mut lines = Lines::new(FailsAfter { input: b"1\n", failed: false }, 8);
         assert_eq!(lines.next().unwrap().unwrap(), value("1"));
         assert_eq!(lines.next().unwrap().unwrap_err().to_string(), "the disk is gone");
         assert!(lines.next().is_none());

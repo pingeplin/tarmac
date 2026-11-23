@@ -336,6 +336,44 @@ mod tests {
         assert_eq!(parse(&args(&["--term", "t1"])), want(None, Some("t1")));
     }
 
+    /// A stream whose daemon end has written `frames`.
+    fn daemon_wrote(frames: &[Msg]) -> (UnixStream, UnixStream) {
+        let (mut daemon, cli) = UnixStream::pair().unwrap();
+        for msg in frames {
+            frame::write_sync(&mut daemon, &proto::encode(msg).unwrap()).unwrap();
+        }
+        (cli, daemon)
+    }
+
+    fn failed(result: Result<Msg, Stop>) -> String {
+        match result {
+            Err(Stop::Fail(why)) => why,
+            Err(Stop::Late) => panic!("late, not failed"),
+            Ok(msg) => panic!("a frame, not failed: {msg:?}"),
+        }
+    }
+
+    #[test]
+    fn a_lost_daemon_before_the_deadline_is_a_failure_not_late() {
+        let (mut cli, daemon) = daemon_wrote(&[]);
+        drop(daemon);
+        let far = Instant::now() + std::time::Duration::from_secs(60);
+        assert!(failed(next(&mut cli, Some(far))).starts_with("daemon connection lost"));
+    }
+
+    #[test]
+    fn an_err_frame_other_than_lagged_is_given_as_its_own_words() {
+        let (mut cli, _daemon) = daemon_wrote(&[Msg::Err { msg: "boom".into() }, Msg::Err { msg: "lagged".into() }]);
+        assert_eq!(failed(next(&mut cli, None)), "boom");
+        assert_eq!(failed(next(&mut cli, None)), LAGGED);
+    }
+
+    #[test]
+    fn a_deadline_that_has_passed_is_late_even_with_a_frame_waiting() {
+        let (mut cli, _daemon) = daemon_wrote(&[Msg::Bell { term_id: "t1".into(), board_id: None }]);
+        assert!(matches!(next(&mut cli, Some(Instant::now())), Err(Stop::Late)));
+    }
+
     #[test]
     fn a_bad_flag_is_a_usage_error() {
         for bad in [

@@ -364,6 +364,20 @@ fn s7_status_reads_both_scopes_and_the_path() {
 }
 
 #[test]
+fn s7_status_shows_not_installed_for_a_file_with_none_of_ours_and_for_no_file() {
+    let dir = sandbox();
+    put(&user_settings(&dir), F_CLAUDE);
+
+    let out = hooks(&dir, &["status"]);
+
+    assert_eq!(out.code(), Some(0), "{}", out.stderr);
+    for scope in ["claude-code  user", "claude-code  project"] {
+        let line = status_line(&out, scope);
+        assert!(line.ends_with("  not installed"), "{line}");
+    }
+}
+
+#[test]
 fn s7_the_path_line_names_the_first_executable_tarmac() {
     let dir = sandbox();
     let empty = dir.join("empty");

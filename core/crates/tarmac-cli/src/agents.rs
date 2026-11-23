@@ -148,6 +148,12 @@ mod tests {
     }
 
     #[test]
+    fn user_scope_can_be_named_and_wins_over_an_earlier_scope() {
+        let a = install_args(&["--scope", "project", "--scope", "user"]).unwrap();
+        assert_eq!(a.scope, Scope::User);
+    }
+
+    #[test]
     fn usage_text_documents_every_flag_the_parser_accepts() {
         for flag in ["--target", "--scope", "--dry-run"] {
             assert!(FLAGS_USAGE.contains(flag), "USAGE omits {flag}");

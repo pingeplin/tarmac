@@ -121,6 +121,11 @@ fn spawn_helper(cmd: &mut Command) -> io::Result<(Child, Receiver<String>)> {
     Ok((child, rx))
 }
 
+/// When the settle after the last change ends, if there is one to wait for.
+fn quiet_at(changed_at: Option<Instant>, settle: Option<Duration>) -> Option<Instant> {
+    changed_at.zip(settle).map(|(at, settle)| at + settle)
+}
+
 /// Only changes after the start count: the first sample is the base.
 fn watch(lines: &Receiver<String>, settle: Option<Duration>, deadline: Option<Instant>) -> Outcome {
     let mut last: Option<String> = None;
@@ -133,8 +138,7 @@ fn watch(lines: &Receiver<String>, settle: Option<Duration>, deadline: Option<In
         if deadline.is_some_and(|d| now >= d) {
             return Outcome::TimedOut;
         }
-        let quiet_at = changed_at.zip(settle).map(|(at, settle)| at + settle);
-        let next = match deadline.into_iter().chain(quiet_at).min() {
+        let next = match deadline.into_iter().chain(quiet_at(changed_at, settle)).min() {
             Some(until) => lines.recv_timeout(until.saturating_duration_since(now)),
             None => lines.recv().map_err(|_| RecvTimeoutError::Disconnected),
         };
@@ -242,6 +246,30 @@ mod tests {
         assert!(!settled(Some(at(100)), settle, at(599)));
         assert!(settled(Some(at(100)), settle, at(600)));
         assert!(!settled(Some(at(400)), settle, at(600)), "a later change starts the settle again");
+    }
+
+    #[test]
+    fn the_settle_ends_a_settle_after_the_last_change() {
+        let start = Instant::now();
+        let settle = Some(Duration::from_millis(500));
+
+        assert_eq!(quiet_at(Some(start), settle), Some(start + Duration::from_millis(500)));
+        assert_eq!(quiet_at(None, settle), None, "no change yet: nothing to settle");
+        assert_eq!(quiet_at(Some(start), None), None);
+    }
+
+    // S27: the line holds the mtime to the nanosecond.
+    #[test]
+    fn a_sample_holds_the_mtime_in_nanoseconds() {
+        let dir = crate::fixtures::scratch();
+        let path = dir.join("f");
+        std::fs::write(&path, "ab").unwrap();
+        let mtime = std::time::UNIX_EPOCH + Duration::new(1_700_000_000, 123_456_789);
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(mtime).unwrap();
+
+        let got = sample(&path).unwrap();
+        let _ = std::fs::remove_dir_all(dir);
+        assert!(matches!(got, Sample::Present { mtime_ns: 1_700_000_000_123_456_789, size: 2, .. }), "{got:?}");
     }
 
     fn a() -> String {

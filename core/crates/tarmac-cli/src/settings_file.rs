@@ -141,6 +141,28 @@ pub(crate) fn render(root: &Value, original: Option<&str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixtures::scratch;
+
+    #[test]
+    fn a_file_that_is_not_a_symlink_is_written_at_the_path_as_given() {
+        let dir = scratch();
+        fs::create_dir(dir.join("real")).unwrap();
+        std::os::unix::fs::symlink(dir.join("real"), dir.join("link")).unwrap();
+        fs::write(dir.join("real/settings.json"), "{}\n").unwrap();
+        let path = dir.join("link/settings.json");
+        assert_eq!(load(&path).unwrap().real, path);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_read_is_refused_not_taken_as_missing() {
+        let dir = scratch();
+        let path = dir.join("settings.json");
+        fs::create_dir(&path).unwrap();
+        let refused = load(&path).err().expect("a directory is refused");
+        assert!(refused.starts_with("cannot read it ("), "{refused}");
+        let _ = fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn the_indent_is_the_first_indented_lines() {
