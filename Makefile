@@ -6,7 +6,7 @@ ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 # runs `make test`. A test that starts a git of its own (a fixture repository)
 # would then write to the repository of the hook (#502). No recipe here needs
 # them: each one names its directory.
-unexport GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_IMPLICIT_WORK_TREE
+unexport GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_IMPLICIT_WORK_TREE GIT_CONFIG
 
 # The dev channel: one directory that holds this worktree's own daemon socket,
 # state, driver socket and config directory. Everything that launches or drives
