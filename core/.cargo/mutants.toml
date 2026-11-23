@@ -22,11 +22,11 @@ exclude_re = [
   "fd_limit\\.rs:22:5: replace max_files_per_proc ",
   "proc\\.rs:109:5: replace process_name ",
   "proc\\.rs:146:5: replace pid_cwd ",
-  "proc\\.rs:206:5: replace proc_facts ",
+  "proc\\.rs:205:5: replace proc_facts ",
   # Each `!` decides only whether a `debug!` line is written; the call in the
   # condition runs either way. The daemon's default filter is `info`
   # (main.rs), so the line is not even written unless RUST_LOG asks for it.
-  "conn\\.rs:(354|379|384|389):16: delete ! in dispatch_app_msg",
+  "conn\\.rs:(355|380|385|390):16: delete ! in dispatch_app_msg",
   # OUTPUT_CHUNK = 64 + 1024: the size only decides where the output is cut,
   # in the pty reader's buffer and in the replay of a scrollback (conn.rs).
   # The bytes and their order are the same, and docs/protocol.md bounds a
