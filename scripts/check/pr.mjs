@@ -6,8 +6,8 @@
 // The event file, not the environment: a body can outgrow an environment
 // variable, and the text never passes through the workflow's shell.
 //
-// The squash merge makes the title the subject on main (for a pull request of
-// one commit, GitHub proposes that commit's subject instead), so the title is
+// The squash merge makes the title the subject on main (the repository's
+// squash title setting is PR_TITLE), so the title is
 // held to the subject rule of the commit-msg hook, the one function both call.
 
 import { readFileSync } from "node:fs";
@@ -40,7 +40,7 @@ export function judgePr({ number, title, body, head }) {
   const release = isReleasePr({ title, head });
   const found = [];
   if (!isSubject(title)) {
-    const why = ["the squash merge can make the title the subject on main, and the commit-msg hook holds a subject to this form", `types in use: ${TYPES.join(", ")}`];
+    const why = ["the squash merge makes the title the subject on main, and the commit-msg hook holds a subject to this form", `types in use: ${TYPES.join(", ")}`];
     found.push(refuse("the title is not `type(scope): summary`", [title || "(no title)"], why, `gh pr edit ${number} --title ${quoted("type(scope): summary")}`));
   } else if (SUFFIX.test(title)) {
     const why = ["docs/workflow.md: the squash merge keeps the (#N) suffix GitHub appends; a title with its own ends with two on main"];

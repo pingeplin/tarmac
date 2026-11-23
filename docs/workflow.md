@@ -73,8 +73,8 @@ Checks hold the form, so it is not reviewed by reading. The `commit-msg` hook
 unsigned commit on a PR (`make dco-check` locally). `pre-commit` runs the format
 check, the lints and the tree checks on what is staged, and `pre-push` runs
 `make test`. A hook can be skipped (`git commit --no-verify`, a clone with no
-`make setup`); CI cannot. The squash merge makes the PR title the subject (of
-a PR with one commit, GitHub proposes that commit's subject), so CI holds the
+`make setup`); CI cannot. The squash merge makes the PR title the subject (the
+repository setting is `PR_TITLE`, for a PR of one commit too), so CI holds the
 title to the same subject rule (`.github/workflows/pr.yml`). An agent in Claude Code gets most of them sooner, after
 each edit and at the end of a turn (not clippy, which needs the whole build). `CLAUDE.md` (*Build, run, test*) is the one
 description of what each hook runs.

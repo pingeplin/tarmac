@@ -121,9 +121,7 @@ editor/IDE may show stale SourceKit diagnostics — `make` is the source of trut
    only tell you sooner; a failed format, lint or tree check names the rule,
    the place and the command to run next. CI does not read the subjects of
    your commits. It holds the pull request's title to the subject form, since
-   the squash merge makes the title the subject on `main`. A pull request of
-   one commit is the exception: while the repository's squash title setting
-   is `COMMIT_OR_PR_TITLE`, it lands with that commit's subject. One CI job that no hook runs
+   the squash merge makes the title the subject on `main`. One CI job that no hook runs
    is `mutants (rust, in diff)`: it changes the Rust lines of your pull
    request, one expression at a time, and fails when the tests still pass. Run
    it yourself with `make mutants` (it needs `cargo-mutants` 27.1.0).
