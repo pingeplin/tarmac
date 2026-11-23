@@ -620,3 +620,26 @@ test("staged: a check that throws could not run: exit 2 and the reporter's form,
   assert.match(err[1], /^ {2}why {2}\S/);
   assert.deepEqual(err.slice(-3), ["  fix  git commit", "  then git commit", ""]);
 });
+
+test("staged: outside a git repository the check cannot run, in the reporter's form", () => {
+  const run = spawnSync(process.execPath, [join(HERE, "staged.mjs")], { cwd: scratch(), encoding: "utf8" });
+
+  assert.equal(run.status, 2);
+  assert.equal(run.stderr, "✗ staged: not in a git repository\n  fix  run it from inside the repository\n  then git commit\n");
+});
+
+test("staged: a git that cannot list the staged files is exit 2 with git's message, never a pass", () => {
+  const dir = repo();
+  write(dir, { "app/Loose.swift": "let  x=1\n" });
+  stage(dir, "app/Loose.swift");
+  const realGit = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+  const bin = scratch();
+  const stub = `#!/bin/sh\nif [ "$1 $2" = "diff --cached" ]; then echo "fatal: index file corrupt" >&2; echo "fatal: second line" >&2; exit 128; fi\nexec ${JSON.stringify(realGit)} "$@"\n`;
+  writeFileSync(join(bin, "git"), stub, { mode: 0o755 });
+
+  const run = spawnSync(process.execPath, [join(dir, "scripts/check/staged.mjs")], { cwd: dir, encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+
+  assert.notEqual(run.status, 0);
+  assert.equal(run.status, 2);
+  assert.equal(run.stderr, "✗ staged: cannot read the staged files\n  why  fatal: index file corrupt\n       fatal: second line\n  fix  git status\n  then git commit\n");
+});
