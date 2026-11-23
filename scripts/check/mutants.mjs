@@ -7,9 +7,9 @@
 // path, and a shell that a mutated daemon starts, cannot reach the real home.
 
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 
 import { repoRoot, startedAs } from "./git.mjs";
 import { cannotRunFor, failure } from "./report.mjs";
@@ -20,7 +20,7 @@ export const VERSION = "27.1.0";
 const RULE = "mutants";
 const THEN = "make mutants";
 const INSTALL = `cargo install cargo-mutants --version ${VERSION} --locked`;
-const USAGE = "usage: mutants.mjs [--base <ref>] [--all [--shard <k>/<n>]] [--jobs <n>] [--report] [--changed]\n";
+const USAGE = "usage: mutants.mjs [--base <ref>] [--all [--shard <k>/<n>] | --file <path>] [--jobs <n>] [--report] [--changed]\n";
 const cannotRun = cannotRunFor(RULE, THEN);
 
 // What the caller may hand to the tool. Every other variable is dropped: one
@@ -43,9 +43,9 @@ class Blocked extends Error {
 
 /** The options of a run, or null for arguments this check does not know. */
 function parse(args) {
-  const options = { base: "origin/main", all: false, shard: null, jobs: "2", report: false, changed: false };
+  const options = { base: "origin/main", all: false, shard: null, file: null, jobs: "2", report: false, changed: false };
   const flags = { "--all": "all", "--report": "report", "--changed": "changed" };
-  const valued = { "--base": ["base", /./], "--shard": ["shard", /^\d+\/[1-9]\d*$/], "--jobs": ["jobs", /^[1-9]\d*$/] };
+  const valued = { "--base": ["base", /./], "--shard": ["shard", /^\d+\/[1-9]\d*$/], "--jobs": ["jobs", /^[1-9]\d*$/], "--file": ["file", /./] };
   for (let at = 0; at < args.length; at++) {
     if (args[at] in flags) options[flags[args[at]]] = true;
     else if (args[at] in valued) {
@@ -55,7 +55,7 @@ function parse(args) {
       options[name] = value;
     } else return null;
   }
-  return options.shard && !options.all ? null : options;
+  return (options.shard && !options.all) || (options.file && options.all) ? null : options;
 }
 
 /** The output of a git command in `cwd`, or null when its exit code is none of `passes`. */
@@ -151,7 +151,7 @@ function mutate(core, diff, options, caller) {
     requireTool(core, env);
     const diffFile = join(temporary, "in.diff");
     if (diff !== null) writeFileSync(diffFile, diff);
-    const scope = diff !== null ? ["--in-diff", diffFile] : options.shard ? ["--shard", options.shard] : [];
+    const scope = options.file ? ["--file", options.file] : diff !== null ? ["--in-diff", diffFile] : options.shard ? ["--shard", options.shard] : [];
     // The tool writes no result when it finds no mutant, and an earlier run's files would be read as this one's.
     rmSync(join(core, "mutants.out"), { recursive: true, force: true });
     // The tool's progress is for the person who waits; stdout stays empty like the other checks'.
@@ -162,16 +162,33 @@ function mutate(core, diff, options, caller) {
   }
 }
 
+/**
+ * A named file as the tool wants it: a path from `core/`. The tool takes a glob
+ * and passes with no mutant when nothing matches, so the path must be one Rust
+ * file that is there.
+ */
+function fileInCore(core, cwd, named) {
+  const refuse = (why) => new Blocked(`--file ${named}: ${why}`, ["the tool tests nothing, and passes, for a path that matches no file"], "name one Rust file under core/");
+  const file = resolve(cwd, named);
+  if (!statSync(file, { throwIfNoEntry: false })) throw refuse("no such file");
+  const path = relative(realpathSync(core), realpathSync(file));
+  if (path.startsWith("..") || path === "") throw refuse("not under core/");
+  if (!statSync(file).isFile() || !path.endsWith(".rs")) throw refuse("not a Rust file");
+  return path.split(sep).join("/");
+}
+
 function run(options, cwd, caller) {
   const root = repoRoot(cwd);
   if (!root) throw new Blocked("not in a git repository", ["the mutants are those in the lines a branch changed"], "cd to the repository");
   const core = join(root, "core");
   if (!existsSync(core)) throw new Blocked("this repository has no core/ directory", ["the Rust workspace is core/"], "cd to the Tarmac repository");
-  const diff = options.all ? null : rustDiff(core, options.base);
+  // One file, whole: the way to see that a new test holds a mutant of code the branch did not change.
+  const file = options.file && fileInCore(core, cwd, options.file);
+  const diff = options.all || file ? null : rustDiff(core, options.base);
   // `--changed` only answers whether a run would start the tool, so that CI can leave out the install when it would not.
   if (options.changed) return { code: 0, text: "", out: `${diff !== ""}\n` };
   if (diff === "") return { code: 0, text: `mutants: no Rust change against ${options.base}\n` };
-  const result = mutate(core, diff, options, caller);
+  const result = mutate(core, diff, { ...options, file }, caller);
   if (!options.report || result.code !== 1) return result;
   // With `--report` a survivor is worded and written to the job summary, and fails nothing.
   if (caller.GITHUB_STEP_SUMMARY) appendFileSync(caller.GITHUB_STEP_SUMMARY, `\`\`\`\n${result.text}\`\`\`\n`);

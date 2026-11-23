@@ -292,6 +292,52 @@ test("S5/S30: --all starts the tool on the whole workspace, with a shard when on
   assert.deepEqual(given.map((args) => (args.includes("--shard") ? args[args.indexOf("--shard") + 1] : null)), [null, "3/8", null, null]);
 });
 
+test("S49: --file starts the tool on every mutant of one file, named from core/, and reads no base", () => {
+  const cargo = tool();
+  const dir = repo();
+  mutants(dir, cargo, ["--file", SOURCE]);
+  mutants(dir, cargo, ["--file", SOURCE, "--base", "no-such-ref"]);
+  mkdirSync(join(dir, "core/crates"), { recursive: true });
+  const fromInside = spawnSync(process.execPath, [SCRIPT, "--file", "x/src/a.rs"], { cwd: join(dir, "core/crates"), encoding: "utf8", env: { PATH: [cargo, process.env.PATH].join(delimiter), HOME: scratch("mutants-home-"), TMPDIR: tmpdir() } });
+  const given = calls(cargo).map(({ args }) => args);
+
+  assert.equal(fromInside.status, 0, fromInside.stderr);
+  assert.equal(given.length, 3);
+  for (const args of given) {
+    assert.equal(args[args.indexOf("--file") + 1], "crates/x/src/a.rs");
+    assert.equal(args.includes("--in-diff"), false);
+    assert.equal(args.includes("--shard"), false);
+  }
+});
+
+test("S50: --file with a path that is no Rust file of core/ cannot run, and the tool is not started", () => {
+  const cargo = tool();
+  const dir = repo({ "app/a.rs": "fn a() {}\n", "core/notes.md": "x\n" });
+  for (const [path, why] of [["core/crates/x/src/gone.rs", "no such file"], ["app/a.rs", "not under core/"], ["core/notes.md", "not a Rust file"], ["core/crates/x/src", "not a Rust file"], ["core/crates/x/src/*.rs", "no such file"]]) {
+    const run = mutants(dir, cargo, ["--file", path]);
+
+    assert.equal(run.code, 2, path);
+    assert.match(run.err, /^✗ mutants: --file /m, path);
+    assert.ok(run.err.includes(why), `${path}: ${run.err}`);
+  }
+  assert.deepEqual(calls(cargo), []);
+});
+
+test("S51: --file does not go with --all or --shard, and --changed with it says true", () => {
+  const cargo = tool();
+  const dir = repo();
+  for (const args of [["--file", SOURCE, "--all"], ["--all", "--file", SOURCE], ["--file"], ["--file", SOURCE, "--shard", "1/2"]]) {
+    const run = mutants(dir, cargo, args);
+
+    assert.equal(run.code, 2, args.join(" "));
+    assert.match(run.err, /^usage: mutants\.mjs /m, args.join(" "));
+  }
+  const asked = mutants(dir, cargo, ["--file", SOURCE, "--changed"]);
+
+  assert.deepEqual({ code: asked.code, out: asked.out, err: asked.err }, { code: 0, out: "true\n", err: "" });
+  assert.deepEqual(calls(cargo), []);
+});
+
 test("S6: the tool gets two jobs, or the number that was named", () => {
   const cargo = tool();
   const dir = changed();
@@ -464,6 +510,7 @@ test("S21: make mutants hands its variables to the script as arguments", () => {
   assert.equal(said(), "--base origin/main");
   assert.equal(said("BASE=origin/x"), "--base origin/x");
   assert.equal(said("ALL=1", "SHARD=3/8", "JOBS=4", "REPORT=1"), "--base origin/main --all --shard 3/8 --jobs 4 --report");
+  assert.equal(said("FILE=core/crates/x/src/a.rs"), "--base origin/main --file core/crates/x/src/a.rs");
 });
 
 test("S29: the result files of an earlier run are not read as this run's", () => {
