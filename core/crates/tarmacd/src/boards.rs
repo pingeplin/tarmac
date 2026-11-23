@@ -1064,6 +1064,23 @@ mod tests {
         assert_eq!(reg.data_paths().count(), 0);
     }
 
+    // A board keeps no stamp of a data file that no doc reads, so what it
+    // holds is bounded by its docs, not by every file a doc ever named.
+    #[test]
+    fn what_was_seen_of_a_data_file_that_no_doc_reads_is_dropped() {
+        let (a, b) = (Path::new("/d/a.html"), Path::new("/d/b.html"));
+        let data = PathBuf::from("/d/stats.json");
+        let mut reg = registry_reading(&[a, b], &data, at(10));
+
+        assert!(reg.set_data(a, uncounted("/d/next.json")).is_ok());
+        assert!(reg.close_doc(b).is_some());
+        assert!(!reg.data_seen.contains_key(&data), "after the close");
+
+        let mut reg = registry_reading(&[a], &data, at(10));
+        assert!(reg.set_data(a, None).is_ok());
+        assert!(!reg.data_seen.contains_key(&data), "after the change of registration");
+    }
+
     #[test]
     fn a_data_file_that_another_doc_still_reads_keeps_what_was_seen() {
         let (a, b, c) = (Path::new("/d/a.html"), Path::new("/d/b.html"), Path::new("/d/c.html"));

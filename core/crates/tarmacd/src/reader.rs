@@ -396,6 +396,84 @@ mod tests {
         (PathGate::new(fs.clone(), LIMIT, Arc::new(|| {})), fs, release)
     }
 
+    fn flight(keys: &Arc<Keys>, key: &Key) -> (Takeoff<()>, Landing<()>) {
+        match keys.claim(key, OnBusy::Skip, Instant::now() + LIMIT) {
+            Claim::Flight(takeoff, landing) => (takeoff, landing),
+            _ => panic!("the key is busy"),
+        }
+    }
+
+    // A caller whose limit came as its call returned may find a later call on
+    // the key: that one is not its to leave.
+    #[test]
+    fn a_caller_leaves_its_own_call_and_no_later_one_on_the_key() {
+        let keys = PathGate::new(Arc::new(RealFs), LIMIT, Arc::new(|| {})).keys;
+        let key = Key::Path(PathBuf::from("/d/a.md"));
+        let (first, first_landing) = flight(&keys, &key);
+        drop(first);
+        let (_second, second_landing) = flight(&keys, &key);
+        let left = || keys.busy.lock().unwrap()[&key].left;
+
+        assert!(!keys.leave(&key, first_landing.call), "the first call returned");
+        assert!(!left(), "the second call is not left");
+        assert!(keys.leave(&key, second_landing.call));
+        assert!(left());
+    }
+
+    /// `RealFs`, whose stamp takes a while and which counts the most stamps
+    /// that were in flight at once.
+    #[derive(Default)]
+    struct Overlaps {
+        now: std::sync::atomic::AtomicU32,
+        most: std::sync::atomic::AtomicU32,
+    }
+
+    impl PathFs for Overlaps {
+        fn resolve(&self, raw: &Path) -> Result<(PathBuf, FileStamp), String> {
+            RealFs.resolve(raw)
+        }
+
+        fn resolve_dir(&self, raw: &Path) -> Option<PathBuf> {
+            RealFs.resolve_dir(raw)
+        }
+
+        fn stamp(&self, path: &Path) -> Option<FileStamp> {
+            let now = self.now.fetch_add(1, Ordering::SeqCst) + 1;
+            self.most.fetch_max(now, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_millis(50));
+            self.now.fetch_sub(1, Ordering::SeqCst);
+            RealFs.stamp(path)
+        }
+
+        fn repo_of(&self, doc: &Path) -> Option<RepoInfo> {
+            RealFs.repo_of(doc)
+        }
+
+        fn is_dir(&self, path: &Path) -> bool {
+            RealFs.is_dir(path)
+        }
+
+        fn pid_cwd(&self, pid: libc::pid_t) -> Option<String> {
+            RealFs.pid_cwd(pid)
+        }
+    }
+
+    // Files that are read within the limit are read on one thread, one after
+    // the other: one thread each would cost a large look much more.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_look_within_its_limit_reads_its_files_one_after_the_other() {
+        let tmp = TmpDir::new("one-thread");
+        let paths: Vec<PathBuf> = (0..3).map(|i| write_doc(tmp.0.join(format!("d/{i}.md")))).collect();
+        let fs = Arc::new(Overlaps::default());
+        let reader = PathGate::new(fs.clone(), Duration::from_secs(5), Arc::new(|| {}));
+
+        let read = paths.clone();
+        let now = answers(async move { reader.stamps(read).await }).await;
+
+        assert_eq!(now, paths.iter().map(|p| (p.clone(), stamp(p))).collect());
+        assert_eq!(fs.most.load(Ordering::SeqCst), 1);
+    }
+
     // The doc that panics first, so the rest is read apart. It has no entry:
     // not known, which is not gone.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

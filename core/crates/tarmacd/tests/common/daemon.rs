@@ -39,6 +39,24 @@ impl TestDaemon {
         Self::launch(temp_dir(), configure)
     }
 
+    /// `start_with`, whose `configure` is also given the daemon's dir, which
+    /// is removed with the daemon.
+    pub fn start_with_dir(configure: impl FnOnce(&mut Command, &Path)) -> Self {
+        let dir = temp_dir();
+        let at = dir.clone();
+        Self::launch(dir, move |cmd| configure(cmd, &at))
+    }
+
+    /// Stops the daemon with SIGKILL and returns what it wrote to stderr,
+    /// which `configure` set to a pipe.
+    pub fn kill_and_read_stderr(&mut self) -> String {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut self.child.stderr.take().expect("stderr is piped"), &mut text).unwrap();
+        text
+    }
+
     /// A daemon whose `cmd: None` spawns are `/bin/sh -il` with `HOME` an empty
     /// dir: a job-control shell that reads no rc file of the user (spec
     /// 2611.0009, OQ4).

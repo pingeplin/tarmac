@@ -18,6 +18,50 @@ pub(crate) fn tmp_dir(tag: &str) -> PathBuf {
     d
 }
 
+/// A `tmp_dir` that is removed when it is dropped, also when an assertion fails.
+pub(crate) struct TmpDir(pub(crate) PathBuf);
+
+impl TmpDir {
+    pub(crate) fn new(tag: &str) -> Self {
+        TmpDir(tmp_dir(tag))
+    }
+}
+
+impl Drop for TmpDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+#[derive(Clone, Default)]
+struct LogLines(Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for LogLines {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// What `run` returns, and the lines it logs on this thread at the daemon's
+/// default filter, `info` (main.rs).
+pub(crate) fn logged<T>(run: impl FnOnce() -> T) -> (T, String) {
+    let lines = LogLines::default();
+    let writer = lines.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(move || writer.clone())
+        .finish();
+    let value = tracing::subscriber::with_default(subscriber, run);
+    let text = String::from_utf8_lossy(&lines.0.lock().unwrap()).into_owned();
+    (value, text)
+}
+
 pub(crate) fn write_doc(path: PathBuf) -> PathBuf {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "doc").unwrap();

@@ -581,16 +581,90 @@ mod tests {
 
     /// Runs the writer over one held input of `n` `y`s and a `\r` with a
     /// 300 ms deadline: how long it took, how many inputs it dropped, and the
-    /// pty's writer, whose drop would write an EOF line.
+    /// pty's writer, whose drop would write an EOF line. Each read of the keys
+    /// before the deadline is followed by a sleep of at least `HOLD_POLL`, so
+    /// a writer that reads them more often than that allows never decides.
     fn hold_past_the_deadline(master: &(dyn MasterPty + Send), n: usize) -> (Duration, usize, Box<dyn Write + Send>) {
         let (tx, rx) = mpsc::channel(1);
         tx.try_send(Input { bytes: format!("{}\r", "y".repeat(n)).into_bytes(), hold: true }).unwrap();
         drop(tx);
         let mut writer = master.take_writer().unwrap();
         let mut dropped = 0;
+        let (mut reads, most) = (0, 300 / HOLD_POLL.as_millis() + 1);
+        let keys = || {
+            reads += 1;
+            assert!(reads <= most, "the keys were read {reads} times");
+            keys_of(master)
+        };
         let started = Instant::now();
-        write_inputs(rx, &mut writer, Duration::from_millis(300), || keys_of(master), || dropped += 1);
+        write_inputs(rx, &mut writer, Duration::from_millis(300), keys, || dropped += 1);
         (started.elapsed(), dropped, writer)
+    }
+
+    #[test]
+    fn a_held_input_with_no_time_left_is_decided_at_the_first_read_of_the_keys() {
+        let (tx, rx) = mpsc::channel(1);
+        tx.try_send(Input { bytes: b"ls\r".to_vec(), hold: true }).unwrap();
+        drop(tx);
+        let (mut reads, mut written) = (0, Vec::new());
+        let keys = || {
+            reads += 1;
+            assert_eq!(reads, 1, "the keys were read again");
+            Keys::Canonical
+        };
+
+        write_inputs(rx, &mut written, Duration::ZERO, keys, || panic!("a short input is not dropped"));
+
+        assert_eq!(written, b"ls\r");
+    }
+
+    // architecture.md: a term's scrollback ring keeps its last 256 KiB.
+    const RING_BYTES: usize = 256 * 1024;
+
+    fn output_of(len: usize) -> Vec<u8> {
+        (0..len).map(|i| u8::try_from(i % 251).unwrap()).collect()
+    }
+
+    #[test]
+    fn the_scrollback_keeps_the_last_256_kib_of_the_output() {
+        let output = output_of(RING_BYTES + 5000);
+        let mut ring = ScrollbackRing::new();
+        for chunk in output.chunks(1000) {
+            ring.push(chunk);
+        }
+        assert!(ring.snapshot() == output[5000..], "{} bytes kept", ring.snapshot().len());
+    }
+
+    #[test]
+    fn a_chunk_longer_than_the_scrollback_keeps_its_last_256_kib() {
+        let output = output_of(RING_BYTES + 5000);
+        let mut ring = ScrollbackRing::new();
+        ring.push(b"before");
+        ring.push(&output);
+        assert!(ring.snapshot() == output[5000..], "{} bytes kept", ring.snapshot().len());
+    }
+
+    #[test]
+    fn a_report_flag_tells_no_report_a_read_one_and_an_unread_one() {
+        let handle = TermHandle::detached();
+        assert!(!handle.has_report() && !handle.unread_report(), "a new terminal");
+        handle.set_report(true, false);
+        assert!(handle.has_report() && !handle.unread_report(), "a read report");
+        handle.set_report(true, true);
+        assert!(handle.has_report() && handle.unread_report(), "an unread report");
+        handle.set_report(false, false);
+        assert!(!handle.has_report() && !handle.unread_report(), "no report");
+    }
+
+    #[test]
+    fn a_forgotten_resume_command_leaves_no_flag_and_no_holder() {
+        let handle = TermHandle::detached();
+        handle.hold_resume(StartedPid { pid: 200, started: 11 });
+
+        handle.forget_resume();
+
+        assert_eq!(handle.resume_flag(), Flag::None);
+        assert_eq!(handle.resume_holder(), None);
     }
 
     fn read_within(out: &std::path::Path, wait: Duration) -> String {

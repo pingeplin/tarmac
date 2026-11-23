@@ -16,4 +16,30 @@ exclude_re = [
   # cuts the text to the same first 279 chars and `…`; and a gap follows a
   # char, so `count` is still above 0 at the end. The text is the same.
   "hooks/input\\.rs:\\d+:19: replace \\+= with [-*]= in report_text$",
+  # The `#[cfg(not(target_os = "macos"))]` twins: compiled out of every
+  # build on macOS, the only target the daemon ships on (proc.rs). Their
+  # macOS twins have the same names and are tested.
+  "fd_limit\\.rs:22:5: replace max_files_per_proc ",
+  "proc\\.rs:109:5: replace process_name ",
+  "proc\\.rs:146:5: replace pid_cwd ",
+  "proc\\.rs:206:5: replace proc_facts ",
+  # Each `!` decides only whether a `debug!` line is written; the call in the
+  # condition runs either way. The daemon's default filter is `info`
+  # (main.rs), so the line is not even written unless RUST_LOG asks for it.
+  "conn\\.rs:(354|379|384|389):16: delete ! in dispatch_app_msg",
+  # OUTPUT_CHUNK = 64 + 1024: the size only decides where the output is cut,
+  # in the pty reader's buffer and in the replay of a scrollback (conn.rs).
+  # The bytes and their order are the same, and docs/protocol.md bounds a
+  # chunk only from above, at 64 KiB.
+  "term\\.rs:20:36: replace \\* with \\+",
+  # At a length of exactly SCROLLBACK_CAP the overflow drained is 0 bytes.
+  "replace > with >= in ScrollbackRing::push",
+  # `Keys::claim` adds a key's entry only when the key has none, and only the
+  # Flight of that entry's call removes it: the entry a Flight finds at its
+  # drop is always its own, so the guard is always true.
+  "replace match guard b\\.call == self\\.call with true in <impl Drop for Flight>::drop",
+  # The ids become 0, 1, 2, … instead of 1, 2, 3, …: still distinct, and a
+  # req_id is only matched to its request (`TermNews::take`), never read
+  # for its value; docs/protocol.md gives it no range.
+  "replace \\+ with \\* in TermNews::wait",
 ]

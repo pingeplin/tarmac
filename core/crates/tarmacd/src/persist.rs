@@ -341,6 +341,39 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), kept);
     }
 
+    // `active` is optional: a file without it opens on board-0, wherever
+    // board-0 is in `boards`.
+    #[test]
+    fn a_nested_file_with_no_active_board_opens_on_board_0() {
+        let dir = crate::fixtures::TmpDir::new("no-active");
+        let path = dir.0.join("state.json");
+        std::fs::write(&path, r#"{"boards": [{"board_id":"board-1"}, {"board_id":"board-0"}]}"#).unwrap();
+
+        assert_eq!(load(&path).active_id(), DEFAULT_BOARD_ID);
+    }
+
+    #[test]
+    fn a_missing_state_file_starts_empty_with_no_warning() {
+        let dir = crate::fixtures::TmpDir::new("missing-silent");
+
+        let (boards, log) = crate::fixtures::logged(|| load(&dir.0.join("state.json")));
+
+        assert_eq!(boards.active_id(), DEFAULT_BOARD_ID);
+        assert_eq!(log, "");
+    }
+
+    // A directory where the file should be: a read that fails, not a file
+    // that is missing.
+    #[test]
+    fn a_state_file_that_cannot_be_read_starts_empty_with_a_warning() {
+        let dir = crate::fixtures::TmpDir::new("unreadable");
+
+        let (boards, log) = crate::fixtures::logged(|| load(&dir.0));
+
+        assert_eq!(boards.active_id(), DEFAULT_BOARD_ID);
+        assert!(log.contains("WARN") && log.contains("cannot read state file"), "{log}");
+    }
+
     // Missing or corrupt files are never fatal: a single default board-0.
     #[test]
     fn missing_and_corrupt_files_yield_default_board() {

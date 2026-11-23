@@ -155,10 +155,14 @@ mod tests {
     const CHAIN: &[(Pid, Pid)] = &[(CALLER, X), (X, A), (A, CHILD), (CHILD, 1)];
 
     /// A process table: each pid's parent; every pid in it started at its own
-    /// pid, and any other is gone.
+    /// pid, and any other is gone. A walk reads at most `MAX_HOPS` of it, so
+    /// one more read panics: a walk that would not end fails at once.
     fn table(parents: &[(Pid, Pid)]) -> impl Fn(Pid) -> Facts + use<> {
         let parents = parents.to_vec();
+        let reads = std::cell::Cell::new(0);
         move |pid| {
+            reads.set(reads.get() + 1);
+            assert!(reads.get() <= MAX_HOPS, "a walk read the table {} times", reads.get());
             parents.iter().find(|(p, _)| *p == pid).map_or(Facts::Gone, |&(_, ppid)| Facts::Live {
                 ppid,
                 #[expect(clippy::cast_sign_loss, reason = "predates the lint; decided in #470")]

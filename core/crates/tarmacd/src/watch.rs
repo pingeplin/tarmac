@@ -271,12 +271,66 @@ impl<W: Fn(&Path) -> bool, O: Fn(&Path) -> bool, F: Fn()> Thread<W, O, F> {
 
 #[cfg(test)]
 mod tests {
-    use super::is_watch_not_found;
+    use super::*;
+    use crate::fixtures::{TmpDir, logged};
 
     #[test]
     fn only_notifys_watch_not_found_is_one() {
         assert!(is_watch_not_found(&notify::Error::watch_not_found().into()));
         assert!(!is_watch_not_found(&notify::Error::path_not_found().into()));
         assert!(!is_watch_not_found(&anyhow::anyhow!("watch not found")));
+    }
+
+    // What `reconcile` reads to take a watch back quietly.
+    #[test]
+    fn an_unwatch_of_a_dir_that_is_not_watched_is_notifys_watch_not_found() {
+        let dir = TmpDir::new("never-watched");
+        let mut source = NotifySource::new(|| {}).unwrap();
+
+        let refused = source.unwatch(&dir.0).unwrap_err();
+
+        assert!(is_watch_not_found(&refused), "{refused}");
+    }
+
+    /// A source that refuses every watch, and every unwatch with `unwatch`.
+    struct Refuses(fn() -> anyhow::Error);
+
+    impl WakeSource for Refuses {
+        fn watch(&mut self, _: &Path) -> anyhow::Result<()> {
+            Err(anyhow::anyhow!("refused"))
+        }
+
+        fn unwatch(&mut self, _: &Path) -> anyhow::Result<()> {
+            Err((self.0)())
+        }
+    }
+
+    /// The log of a reconcile of `/d`, which is wanted, against `source`.
+    fn reconcile_log(source: Refuses) -> String {
+        let wanted: fn(&Path) -> bool = |_| true;
+        let is_out: fn(&Path) -> bool = |_| false;
+        let mut thread = Thread {
+            source: Box::new(source),
+            watched: HashSet::new(),
+            retry: HashSet::new(),
+            wanted,
+            is_out,
+            woke: || {},
+        };
+        let (answer, log) = logged(|| thread.reconcile(Path::new("/d")));
+        assert!(matches!(answer, Err(NotWatched::Refused(_))));
+        log
+    }
+
+    #[test]
+    fn a_refused_watch_that_notify_did_not_keep_is_taken_back_with_no_warning() {
+        let log = reconcile_log(Refuses(|| notify::Error::watch_not_found().into()));
+        assert!(!log.contains("cannot take back"), "{log}");
+    }
+
+    #[test]
+    fn a_refused_watch_that_cannot_be_taken_back_warns() {
+        let log = reconcile_log(Refuses(|| anyhow::anyhow!("still in the stream")));
+        assert!(log.contains("cannot take back the watch of /d: still in the stream"), "{log}");
     }
 }

@@ -188,6 +188,24 @@ fn board_switch_to_unknown_is_noop() {
     assert_eq!(active, "board-1");
 }
 
+// The refusal comes before any kill: the last board keeps its terminals.
+#[test]
+fn a_refused_delete_of_the_last_board_kills_none_of_its_terminals() {
+    let daemon = TestDaemon::start();
+    let mut app = daemon.connect_app_drained();
+    app.spawn_term("t1", &["/bin/sh", "-c", "read line; echo got-$line"]);
+
+    app.send(&Msg::BoardDelete { board_id: "board-0".into() });
+    app.input("t1", b"on\n");
+
+    let seen = app.recv_until("t1's answer or its exit", |m| match m {
+        Msg::Output { term_id, bytes } => term_id == "t1" && common::contains(bytes, b"got-on"),
+        Msg::Exit { term_id, .. } => term_id == "t1",
+        _ => false,
+    });
+    assert!(matches!(seen, Msg::Output { .. }), "t1 ended: {seen:?}");
+}
+
 // Deleting the active board kills its ptys (the killed term's pump pushes Exit)
 // and re-pushes board_list (the deleted board gone, active fixed to a survivor) +
 // the new active board's restore. Deleting the last board is refused.

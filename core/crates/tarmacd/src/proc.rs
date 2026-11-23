@@ -74,12 +74,18 @@ fn argv0_name(pid: Pid) -> Option<String> {
     thread_local!(static PROCARGS: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) });
     PROCARGS.with_borrow_mut(|buf| {
         if buf.is_empty() {
-            let argmax = sysctl_i32(&mut [libc::CTL_KERN, libc::KERN_ARGMAX])?;
-            buf.resize(usize::try_from(argmax).ok().filter(|&n| n > 0)?, 0);
+            buf.resize(procargs_len(sysctl_i32(&mut [libc::CTL_KERN, libc::KERN_ARGMAX])?)?, 0);
         }
         let size = sysctl(&mut [libc::CTL_KERN, libc::KERN_PROCARGS2, pid], buf)?;
         argv0(&buf[..size]).and_then(name_of_argv0)
     })
+}
+
+/// The argument buffer's length for a `KERN_ARGMAX` of `argmax`: `None` for
+/// one that is not positive, which no read could fill.
+#[cfg(target_os = "macos")]
+fn procargs_len(argmax: i32) -> Option<usize> {
+    usize::try_from(argmax).ok().filter(|&n| n > 0)
 }
 
 #[cfg(target_os = "macos")]
@@ -272,7 +278,7 @@ mod parse_tests {
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
-    use super::{Facts, pid_cwd, proc_facts, process_name, start_micros};
+    use super::{Facts, pid_cwd, proc_facts, procargs_len, process_name, start_micros};
     use std::os::unix::process::CommandExt;
     use std::process::{Child, Command, Stdio};
     use std::time::{Duration, Instant};
@@ -316,6 +322,14 @@ mod tests {
     #[test]
     fn a_process_with_unreadable_argv_is_named_by_its_path() {
         assert_eq!(process_name(1).as_deref(), Some("launchd"));
+    }
+
+    #[test]
+    fn an_argument_area_of_no_bytes_gives_no_buffer() {
+        assert_eq!(procargs_len(1_048_576), Some(1_048_576));
+        assert_eq!(procargs_len(1), Some(1));
+        assert_eq!(procargs_len(0), None);
+        assert_eq!(procargs_len(-1), None);
     }
 
     #[test]
