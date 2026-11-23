@@ -219,7 +219,7 @@ final class FrameReader {
         }
     }
 
-    private func get<Value>(_ data: GhosttyRenderStateData, _ fallback: Value) -> Value {
+    private func get<Value: BitwiseCopyable>(_ data: GhosttyRenderStateData, _ fallback: Value) -> Value {
         var value = fallback
         guard ghostty_render_state_get(state, data, &value) == GHOSTTY_SUCCESS else { return fallback }
         return value
