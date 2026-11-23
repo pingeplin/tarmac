@@ -163,6 +163,7 @@ final class DevRelayTests: XCTestCase {
         XCTAssertEqual(app.events, (givenUpOn + [last]).map { "\($0)" })
     }
 
+    /// `lock` guards `reply`.
     private final class Reply: @unchecked Sendable {
         private let lock = NSLock()
         private var reply: DevReply?

@@ -118,9 +118,118 @@ function untested(tree, list) {
   return [...bare, ...stale];
 }
 
+// ------------------------------------------------------- code and comments
+
+/**
+ * A Rust or Swift line split at its `//` comment, with the contents of its
+ * one-line strings blanked out of `code`. A string that spans lines, and a
+ * `/* *\/` comment, are read as code.
+ */
+function partsOf(line) {
+  const masked = line.replace(/"(?:[^"\\]|\\.)*"/g, (string) => `"${" ".repeat(string.length - 2)}"`);
+  const at = masked.indexOf("//");
+  return at < 0 ? { code: masked, comment: "" } : { code: masked.slice(0, at), comment: line.slice(at) };
+}
+
+/** `path:line` for each line `i` of the paths for which `breaks(lines, i)` holds. */
+const placesWhere = (tree, paths, breaks) =>
+  paths.flatMap((path) => {
+    const lines = tree.lines(path);
+    return lines.flatMap((_, i) => (breaks(lines, i) ? [`${path}:${i + 1}`] : []));
+  });
+
+/** The index of the nearest line above line `i` that `passOver` does not hold for, or -1 at the top of the file. */
+function above(lines, i, passOver) {
+  let j = i - 1;
+  while (j >= 0 && passOver(lines[j])) j--;
+  return j;
+}
+
+const isComment = (line) => /^\s*\/\//.test(line);
+
+// ------------------------------------------------------------------ Rust
+
+const RUST_ATTRIBUTE = /^\s*#!?\[/;
+
+function skipsWithoutReason(lines, i) {
+  const { code, comment } = partsOf(lines[i]);
+  if (!/#!?\[\s*rustfmt::skip\b/.test(code)) return false;
+  // Over the other attributes and the item's `///` doc, which is not a reason for the skip.
+  const reason = /^\s*\/\/(?![/!])\s*\S/;
+  const passOver = (line) => RUST_ATTRIBUTE.test(line) || /^\s*\/\/\//.test(line);
+  return !/^\/\/\s*\S/.test(comment) && !reason.test(lines[above(lines, i, passOver)] ?? "");
+}
+
+const FN = /^\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?(?:(?:const|async|unsafe|extern\s+"[^"]*")\s+)*fn\s+((get|test)_\w*)/;
+const TEST_ATTRIBUTE = /#\[\s*(?:\w+::)*test\s*[\](]/;
+// The getter variants the Rust API guidelines name.
+const GUIDELINE_GETTER = /^get_(?:mut|unchecked|unchecked_mut|or_\w+)$/;
+
+function misnamed(lines, i) {
+  const { code, comment } = partsOf(lines[i]);
+  const [, name, prefix] = code.match(FN) ?? [];
+  // A name chosen elsewhere (a C library's, a foreign trait's) is an extern fn, or has its reason after it on the line.
+  if (!name || /\bextern\s+"/.test(code) || /^\/\/\s*\S/.test(comment)) return false;
+  if (prefix === "get") return !GUIDELINE_GETTER.test(name);
+  // A test is a function its attributes mark: the lines from it up over them and the doc comment.
+  const top = above(lines, i, (line) => RUST_ATTRIBUTE.test(line) || isComment(line));
+  return lines.slice(top + 1, i + 1).some((line) => TEST_ATTRIBUTE.test(partsOf(line).code));
+}
+
+const DEPENDENCIES = /^(?:target\..+\.|workspace\.)?(?:dev-|build-)?dependencies(?:\.|$)/;
+
+function thiserror(tree) {
+  const manifests = tree.paths.filter((path) => path === "Cargo.toml" || path.endsWith("/Cargo.toml"));
+  return manifests.flatMap((path) =>
+    tomlLines(tree, path)
+      .filter(({ table, code }) => {
+        if (!DEPENDENCIES.test(table)) return false;
+        if (/^\s*\[/.test(code)) return /dependencies\.thiserror$/.test(table);
+        return /^\s*"?thiserror"?\s*[.=]/.test(code) || /\bpackage\s*=\s*"thiserror"/.test(code);
+      })
+      .map(({ number }) => `${path}:${number}`),
+  );
+}
+
+const MILESTONES = ["m0", "m1", "m2", "m3", "v4", "v4c"];
+
+const milestoneSuites = (tree) =>
+  tree.paths
+    .filter((path) => /^core\/crates\/[^/]+\/tests\/[^/]+\.rs$/.test(path))
+    .filter((path) => path.slice(path.lastIndexOf("/") + 1, -".rs".length).toLowerCase().split("_").some((part) => MILESTONES.includes(part)))
+    .map((path) => `${path}:1`);
+
+// ----------------------------------------------------------------- Swift
+
+function uncheckedWithoutComment(lines, i) {
+  if (!/@unchecked\s+Sendable\b/.test(partsOf(lines[i]).code)) return false;
+  // Over the attributes, and the declaration's earlier lines when a formatter split it.
+  const declaration = (line) => /^\s*(?:@\w+(?:\([^)]*\))?\s*)+$/.test(line) || /[,:]\s*$/.test(partsOf(line).code);
+  return !isComment(lines[above(lines, i, declaration)] ?? "");
+}
+
+const TEST_CLASS = /^\s*((?:@\w+\s+)*(?:(?:public|package|internal|fileprivate|private|final)\s+)*)class\s+(\w+)\s*:\s*XCTestCase\b/;
+
+function unnamedTestClass(tree) {
+  return tree.paths
+    .filter((path) => path.startsWith("app/Tests/") && path.endsWith(".swift"))
+    .flatMap((path) => {
+      const name = path.slice(path.lastIndexOf("/") + 1, -".swift".length);
+      const classes = tree.lines(path).flatMap((line, i) => {
+        const [, modifiers, type] = partsOf(line).code.match(TEST_CLASS) ?? [];
+        const final = /\bfinal\b/.test(modifiers ?? "");
+        // A class that is not final and not named …Tests is a shared base case, which cannot be final.
+        return type && (final || type.endsWith("Tests")) ? [{ final, type, number: i + 1 }] : [];
+      });
+      const named = classes.some(({ final, type }) => final && type === name);
+      return classes.length > 0 && !named ? [`${path}:${classes[0].number}`] : [];
+    });
+}
+
 // ------------------------------------------------------------- the rules
 
 const swiftFiles = (tree) => tree.paths.filter((path) => path.endsWith(".swift"));
+const rustFiles = (tree) => tree.paths.filter((path) => path.endsWith(".rs"));
 
 // Each rule: what it says when broken, why it exists, what fixes it, and
 // `find(tree, exceptions)`, the places that break it. A new rule is a new entry.
@@ -186,6 +295,51 @@ const RULES = [
     why: "every kit module ships with its <Module>Tests.swift (docs/coding-style.md §4)",
     fix: `add ${KIT_TESTS}<Module>Tests.swift, or remove the entry from ${LIST}`,
     find: untested,
+  },
+  {
+    summary: "#[rustfmt::skip] has no reason in a // comment beside it",
+    why: "layout belongs to rustfmt; a skip is the exception, and its reason is what a reviewer weighs (docs/coding-style.md §2)",
+    fix: "say why in a // comment on the line above the attribute or after it on its line, or remove the skip",
+    // A `///` line is not a reason; `rustfmt.toml`'s `ignore` and a skip inside `cfg_attr` are not seen.
+    find: (tree) => placesWhere(tree, rustFiles(tree), skipsWithoutReason),
+  },
+  {
+    summary: "a Rust function is named get_…, or a test function test_…",
+    why: "getters read as nouns and test names are sentences (docs/coding-style.md §3)",
+    fix: "drop the prefix: name a getter for what it returns, a test for what it shows; a name fixed elsewhere (a foreign trait's, a C library's) takes a // reason after it on its line",
+    // A test is a function under #[test] or #[<path>::test]; a test_ helper is not one. get_mut, get_unchecked(_mut) and
+    // get_or_… are the API guidelines' names; an extern "…" fn is a C name. An attribute split over lines is not seen.
+    find: (tree) => placesWhere(tree, rustFiles(tree), misnamed),
+  },
+  {
+    summary: "a crate depends on thiserror",
+    why: "errors follow the crate's role, and no crate may take thiserror (docs/coding-style.md §3)",
+    fix: "return the error of the crate's role: anyhow in tarmacd, a string or a small enum in tarmac-cli, io and rmp_serde errors in tarmac-protocol",
+    // Dependency tables of every tracked Cargo.toml; Cargo.lock lists what other crates bring in, which is not ours.
+    find: thiserror,
+  },
+  {
+    summary: "an integration suite is named for a milestone",
+    why: "M0–M3 and v4 are closed history; a suite is named for its subject (docs/coding-style.md §1.1)",
+    fix: "rename the file for the behaviour it tests, as boards_integration.rs is",
+    // The milestone is a whole _-separated part of the name: m0basics.rs is not seen, and a v4_… (IPv4) or m1_…/m2_…
+    // (Apple chips) suite is reported, whose fix is another name.
+    find: milestoneSuites,
+  },
+  {
+    summary: "@unchecked Sendable has no comment directly above it",
+    why: "the compiler no longer checks that type's state; the comment says what guards it (docs/coding-style.md §4)",
+    fix: "say what guards the state (a lock, a condition) in a comment above the declaration",
+    // It sees that a comment is there, not what it says.
+    find: (tree) => placesWhere(tree, swiftFiles(tree), uncheckedWithoutComment),
+  },
+  {
+    summary: "a Swift test file does not declare final class <its name>: XCTestCase",
+    why: "one final class <Module>Tests: XCTestCase per module, and one main type per file, the file named for it (docs/coding-style.md §4)",
+    fix: "name the file's test class for the file, and make it final",
+    // A file with no XCTestCase class is not judged, nor a shared base case (not final, not named …Tests), nor a class
+    // that subclasses another test case.
+    find: unnamedTestClass,
   },
 ];
 

@@ -6,6 +6,7 @@ import TarmacKit
 // `file_event` end to end. Prints PASS/FAIL per check; exits nonzero on any
 // failure.
 
+/// `cond` guards `queue` and `closedReason`.
 final class Inbox: @unchecked Sendable {
     private let cond = NSCondition()
     private var queue: [Message] = []
