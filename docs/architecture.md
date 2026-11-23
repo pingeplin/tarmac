@@ -326,9 +326,15 @@ board. A board is never term-less (an empty layout is seeded with one terminal
 tile). `delete()` refuses the last board and, if the deleted board was active,
 fixes `active` to the board now at the clamped deleted index.
 
-**Lock discipline (load-bearing).** Mutexes are taken **sequentially, one
-statement at a time, dropped before the next — never nested**. The clearest
-example is `BoardDelete`: snapshot the board's term_ids under `term_boards` and
+**Lock discipline (load-bearing).** Each mutex is held for the least work it
+guards, and most are taken **one statement at a time, dropped before the
+next**. Where one lock is taken while another is held, the order is fixed and
+**never reversed**: `looking` → `boards`, and `reports` → `app` → `boards`. A
+`std::sync::Mutex` (`busy`, `resume_holder`, a terminal's `master`, `term_news`,
+`doc_counts`) is a leaf: taken last and released before any `.await`; the one
+pair of them is `batch` → `busy` in the reader. A closure that runs under
+`boards` is synchronous, so it takes no other async lock. The clearest example
+of the first rule is `BoardDelete`: snapshot the board's term_ids under `term_boards` and
 drop; clone their `Arc<TermHandle>`s under `terms` and drop; **kill with no lock
 held**; then `Daemon::delete_board`; then recompute counts and re-push. The
 per-terminal scrollback ring uses a `std::sync::Mutex` that is **never held
