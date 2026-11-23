@@ -167,7 +167,7 @@ const RULES = [
     summary: "a test uses the system clipboard",
     why: "NSPasteboard.general is what the developer last copied; a test that writes to it replaces that on every `make test`, and so on every push",
     fix: "give the view under test a pasteboard of the test's own (NSPasteboard.withUniqueName()), and read that one",
-    find: (tree) => linesWhere(tree, swiftFiles(tree).filter((path) => path.startsWith("app/Tests/")), "//", (code) => /\bNSPasteboard\s*\.\s*general\b/.test(code)),
+    find: (tree) => linesWhere(tree, swiftFiles(tree).filter((path) => path.startsWith("app/Tests/")), "//", (code) => /\bNSPasteboard\b.*\.general\b/.test(code)),
   },
   {
     summary: "a profile sets debug-assertions",

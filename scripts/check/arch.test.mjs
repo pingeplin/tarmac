@@ -196,7 +196,7 @@ test("2611.0033 S6: kill(2) in Swift is called in the app's wiring and the tests
 });
 
 test("#490: the system clipboard is named in no test", () => {
-  const use = "func f() {\n    NSPasteboard.general.clearContents()\n    // NSPasteboard.general\n    let p = NSPasteboard .general\n    let own = NSPasteboard.withUniqueName()\n    let other = NSPasteboard.generalPurpose\n}\n";
+  const use = "func f() {\n    NSPasteboard.general.clearContents()\n    // NSPasteboard.general\n    let p = NSPasteboard .general\n    let own = NSPasteboard.withUniqueName()\n    let other = NSPasteboard.generalPurpose\n    let named = NSPasteboard(name: .general)\n    let typed: NSPasteboard = .general\n    let name = NSPasteboard.Name.general\n}\n";
   const run = arch(
     repo({
       "app/Tests/TarmacTermTests/TerminalViewTests.swift": use,
@@ -208,7 +208,7 @@ test("#490: the system clipboard is named in no test", () => {
   );
 
   assert.deepEqual(summaries(run), [CLIPBOARD]);
-  assert.deepEqual(places(run), ["app/Tests/TarmacKitTests/ATests.swift:2", "app/Tests/TarmacKitTests/ATests.swift:4", "app/Tests/TarmacTermTests/TerminalViewTests.swift:2", "app/Tests/TarmacTermTests/TerminalViewTests.swift:4"]);
+  assert.deepEqual(places(run), [2, 4, 7, 8, 9].map((line) => `app/Tests/TarmacKitTests/ATests.swift:${line}`).concat([2, 4, 7, 8, 9].map((line) => `app/Tests/TarmacTermTests/TerminalViewTests.swift:${line}`)));
 });
 
 test("S6/S16: debug-assertions in any profile table is reported at its line, and nowhere else", () => {
