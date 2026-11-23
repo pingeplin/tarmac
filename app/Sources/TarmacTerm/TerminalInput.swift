@@ -102,10 +102,10 @@ final class KeyEncoder {
         try check(ghostty_key_encoder_new(nil, &encoder), "key_encoder_new")
         var event: GhosttyKeyEvent?
         try check(ghostty_key_event_new(nil, &event), "key_event_new")
-        // predates the lint; decided in #476
+        // check throws unless ghostty_key_encoder_new succeeded, and a success always stores the handle
         // swift-format-ignore: NeverForceUnwrap
         self.encoder = encoder!
-        // predates the lint; decided in #476
+        // check throws unless ghostty_key_event_new succeeded, and a success always stores the handle
         // swift-format-ignore: NeverForceUnwrap
         self.event = event!
     }
@@ -148,10 +148,10 @@ final class MouseEncoder {
         try check(ghostty_mouse_encoder_new(nil, &encoder), "mouse_encoder_new")
         var event: GhosttyMouseEvent?
         try check(ghostty_mouse_event_new(nil, &event), "mouse_event_new")
-        // predates the lint; decided in #476
+        // check throws unless ghostty_mouse_encoder_new succeeded, and a success always stores the handle
         // swift-format-ignore: NeverForceUnwrap
         self.encoder = encoder!
-        // predates the lint; decided in #476
+        // check throws unless ghostty_mouse_event_new succeeded, and a success always stores the handle
         // swift-format-ignore: NeverForceUnwrap
         self.event = event!
         var trackLastCell = true

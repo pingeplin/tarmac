@@ -31,7 +31,7 @@ enum DaemonSocket {
         addr.sun_family = sa_family_t(AF_UNIX)
         path.withCString { src in
             withUnsafeMutableBytes(of: &addr.sun_path) { dst in
-                // predates the lint; decided in #476
+                // dst covers the fixed-size sun_path array, never empty, so it has a base address
                 // swift-format-ignore: NeverForceUnwrap
                 _ = memcpy(dst.baseAddress!, src, strlen(src) + 1)
             }

@@ -92,7 +92,7 @@ public struct Inbox: Equatable, Sendable {
 
         private static func cycle(_ filter: Filter, by step: Int) -> Filter {
             let all = Filter.allCases
-            // filter is a Filter and all is Filter.allCases, one line above
+            // all is the synthesized Filter.allCases: it lists every case, filter among them
             // swift-format-ignore: NeverForceUnwrap
             let index = all.firstIndex(of: filter)! + step + all.count
             return all[index % all.count]

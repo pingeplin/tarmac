@@ -30,7 +30,7 @@ final class TerminalSelection {
         self.engine = engine
         var gesture: GhosttySelectionGesture?
         try check(ghostty_selection_gesture_new(nil, &gesture), "selection_gesture_new")
-        // predates the lint; decided in #476
+        // check throws unless ghostty_selection_gesture_new succeeded, and a success always stores the handle
         // swift-format-ignore: NeverForceUnwrap
         self.gesture = gesture!
         pressEvent = try Self.event(GHOSTTY_SELECTION_GESTURE_EVENT_TYPE_PRESS)
@@ -49,7 +49,7 @@ final class TerminalSelection {
     private static func event(_ type: GhosttySelectionGestureEventType) throws -> GhosttySelectionGestureEvent {
         var event: GhosttySelectionGestureEvent?
         try check(ghostty_selection_gesture_event_new(nil, &event, type), "selection_gesture_event_new")
-        // predates the lint; decided in #476
+        // check throws unless ghostty_selection_gesture_event_new succeeded, and a success always stores the handle
         // swift-format-ignore: NeverForceUnwrap
         return event!
     }

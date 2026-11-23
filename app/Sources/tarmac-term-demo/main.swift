@@ -16,10 +16,10 @@ import TarmacTerm
 final class Demo: NSObject, NSApplicationDelegate {
     let client = DaemonClient(signal: { _, _ in })
     let termID = BootTerminal.mint()
-    // predates the lint; decided in #476
+    // set in applicationDidFinishLaunching; every read comes after, there or in a callback it installs
     // swift-format-ignore: NeverUseImplicitlyUnwrappedOptionals
     var window: NSWindow!
-    // predates the lint; decided in #476
+    // set in applicationDidFinishLaunching; every read comes after, there or in a callback it installs
     // swift-format-ignore: NeverUseImplicitlyUnwrappedOptionals
     var terminal: TerminalView!
     let environment = ProcessInfo.processInfo.environment
@@ -32,7 +32,7 @@ final class Demo: NSObject, NSApplicationDelegate {
             styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false
         )
         window.title = "tarmac-term-demo"
-        // predates the lint; decided in #476
+        // throws only when a libghostty-vt object cannot be made; the app stops then too (makeTerminalView)
         // swift-format-ignore: NeverUseForceTry
         terminal = try! TerminalView(frame: NSRect(origin: .zero, size: window.contentLayoutRect.size))
         terminal.autoresizingMask = [.width, .height]
