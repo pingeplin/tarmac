@@ -215,6 +215,7 @@ final class FileBytesTests: XCTestCase {
     }
 }
 
+/// `lock` guards `value`.
 private final class Locked<Value>: @unchecked Sendable {
     private let lock = NSLock()
     private var value: Value

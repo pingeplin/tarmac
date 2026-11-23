@@ -393,3 +393,246 @@ test("a rule that throws is reported in arch's own words: the error, what to cor
   assert.match(run.err[1], /^ {2}why {2}\S/);
   assert.deepEqual(run.err.slice(2), ["  fix  correct what the line above names", "  then make arch-check", ""]);
 });
+
+const SKIP = "#[rustfmt::skip] has no reason in a // comment beside it";
+const NAMES = "a Rust function is named get_…, or a test function test_…";
+const THISERROR = "a crate depends on thiserror";
+const MILESTONE = "an integration suite is named for a milestone";
+const UNCHECKED = "@unchecked Sendable has no comment directly above it";
+const TEST_CLASS = "a Swift test file does not declare final class <its name>: XCTestCase";
+
+test("#496: #[rustfmt::skip] needs a // reason on the line above it, over other attributes, or after it on its line", () => {
+  const source = [
+    "#[rustfmt::skip]",
+    "fn a() {}",
+    "// the table reads as a grid",
+    "#[rustfmt::skip]",
+    "const B: [u8; 2] = [1, 2];",
+    "#[rustfmt::skip] // the table reads as a grid",
+    "const C: u8 = 1;",
+    "/// The item's doc, not a reason for the skip.",
+    "#[rustfmt::skip]",
+    "fn d() {}",
+    "// the table reads as a grid",
+    "#[cfg(test)]",
+    "#[rustfmt::skip]",
+    "mod e {}",
+    "#![rustfmt::skip]",
+    "// #[rustfmt::skip]",
+    "fn g() {}",
+    'const F: &str = "#[rustfmt::skip]";',
+    "#[rustfmt::skip::macros(vec)]",
+    "#[rustfmt::skip] //",
+  ].join("\n");
+
+  const run = arch(repo({ "core/crates/x/src/lib.rs": source }));
+
+  assert.equal(run.code, 1);
+  assert.deepEqual(summaries(run), [SKIP]);
+  assert.deepEqual(places(run), [1, 15, 19, 20, 9].map((line) => `core/crates/x/src/lib.rs:${line}`));
+});
+
+test("#496: a function named get_… is reported, and test_… only on a function a test attribute marks", () => {
+  const source = [
+    "fn get_board() {}",
+    "pub(crate) async fn get_x() {}",
+    "fn board() {}",
+    "#[test]",
+    "fn test_board() {}",
+    '#[tokio::test(flavor = "multi_thread", worker_threads = 2)]',
+    "/// Its doc.",
+    "async fn test_restore() {}",
+    "fn test_dir() -> u8 { 1 }",
+    "#[cfg(test)]",
+    "fn test_helper() {}",
+    "// fn get_x() {}",
+    '    "fn get_x() {}",',
+    "fn getter() {}",
+    "#[test] fn test_inline() {}",
+    "fn budget_x() {}",
+    "#[test]",
+    "fn shows_the_board() {}",
+  ].join("\n");
+
+  const run = arch(repo({ "core/crates/x/src/lib.rs": source }));
+
+  assert.equal(run.code, 1);
+  assert.deepEqual(summaries(run), [NAMES]);
+  assert.deepEqual(places(run), [1, 15, 2, 5, 8].map((line) => `core/crates/x/src/lib.rs:${line}`));
+});
+
+test("#496: thiserror in a dependency table of any Cargo.toml is reported, in each form a manifest names it", () => {
+  const crate = [
+    "[package]",
+    'name = "a"',
+    'description = "no thiserror"',
+    "[dependencies]",
+    'anyhow = "1"',
+    'thiserror = "2"',
+    '# thiserror = "2"',
+    'thiserror-impl = "2"',
+    "[dev-dependencies]",
+    "thiserror.workspace = true",
+    "[build-dependencies]",
+    'err = { package = "thiserror", version = "2" }',
+    "[target.'cfg(unix)'.dependencies]",
+    '"thiserror" = "2"',
+    "[dependencies.thiserror]",
+    'version = "2"',
+    "[features]",
+    "thiserror = []",
+  ].join("\n");
+
+  const run = arch(repo({ [CARGO]: `${PINNED}thiserror = "2"\n`, "core/crates/a/Cargo.toml": crate, "core/Cargo.lock": '[[package]]\nname = "thiserror"\n' }));
+
+  assert.equal(run.code, 1);
+  assert.deepEqual(summaries(run), [THISERROR]);
+  assert.deepEqual(places(run), ["core/Cargo.toml:5", ...[10, 12, 14, 15, 6].map((line) => `core/crates/a/Cargo.toml:${line}`)]);
+});
+
+test("#496: a suite under a crate's tests/ named for a closed milestone is reported; helpers, fixtures and other names are not", () => {
+  const run = arch(
+    repo({
+      "core/crates/tarmacd/tests/m0_basics.rs": "",
+      "core/crates/tarmacd/tests/restore_m2_integration.rs": "",
+      "core/crates/tarmac-cli/tests/v4c.rs": "",
+      "core/crates/tarmacd/tests/M3_edit.rs": "",
+      "core/crates/tarmacd/tests/boards_integration.rs": "",
+      "core/crates/tarmacd/tests/v2_state.rs": "",
+      "core/crates/tarmacd/tests/m0basics.rs": "",
+      "core/crates/tarmacd/tests/common/m0.rs": "",
+      "core/crates/tarmacd/tests/fixtures/m0.json": "",
+      "core/crates/tarmacd/src/state/tests/m1.rs": "",
+    }),
+  );
+
+  assert.equal(run.code, 1);
+  assert.deepEqual(summaries(run), [MILESTONE]);
+  assert.deepEqual(places(run), ["core/crates/tarmac-cli/tests/v4c.rs:1", "core/crates/tarmacd/tests/M3_edit.rs:1", "core/crates/tarmacd/tests/m0_basics.rs:1", "core/crates/tarmacd/tests/restore_m2_integration.rs:1"]);
+});
+
+test("#496: @unchecked Sendable needs a comment above its declaration, over attributes and the declaration's earlier lines", () => {
+  const source = [
+    "final class A: @unchecked Sendable {}",
+    "/// Guarded by `lock`.",
+    "final class B: @unchecked Sendable {}",
+    "// `lock` guards every stored property.",
+    "@available(macOS 26, *)",
+    "final class C: @unchecked Sendable {}",
+    "final class D: @unchecked Sendable {}  // `lock`",
+    "// `lock` guards it.",
+    "final class E: NSObject,",
+    "    @unchecked Sendable {}",
+    "// @unchecked Sendable",
+    "let x = 1",
+    'let s = "@unchecked Sendable"',
+    "extension F: @unchecked Sendable {}",
+  ].join("\n");
+
+  const run = arch(repo({ "app/Sources/TarmacApp/A.swift": source }));
+
+  assert.equal(run.code, 1);
+  assert.deepEqual(summaries(run), [UNCHECKED]);
+  assert.deepEqual(places(run), [1, 14, 7].map((line) => `app/Sources/TarmacApp/A.swift:${line}`));
+});
+
+test("#496: a test file that declares an XCTestCase class declares final class <its name>, under app/Tests only", () => {
+  const kit = "app/Tests/TarmacKitTests";
+  const run = arch(
+    repo({
+      [`${kit}/ATests.swift`]: "final class ATests: XCTestCase {}\n",
+      [`${kit}/BTests.swift`]: "import XCTest\n\nfinal class BLayoutTests: XCTestCase {}\n",
+      [`${kit}/CTests.swift`]: "class CTests: XCTestCase {}\n",
+      [`${kit}/DTests.swift`]: "@MainActor\nfinal class DTests: XCTestCase {}\nfinal class DPointerTests: XCTestCase {}\n",
+      [`${kit}/ETests.swift`]: "",
+      [`${kit}/FTests.swift`]: "// final class FTests: XCTestCase\nfinal class Other: XCTestCase {}\n",
+      [`${kit}/HTests.swift`]: "@MainActor final public class HTests: XCTestCase, Sendable {}\n",
+      [`${kit}/Fixtures.swift`]: "final class Helper {}\n",
+      "app/Tests/TarmacTermTests/TermTests.swift": "final class TerminalTests: XCTestCase {}\n",
+      "app/Sources/TarmacApp/GTests.swift": "final class Other: XCTestCase {}\n",
+    }),
+  );
+
+  assert.equal(run.code, 1);
+  assert.deepEqual(summaries(run), [TEST_CLASS]);
+  assert.deepEqual(places(run), [`${kit}/BTests.swift:3`, `${kit}/CTests.swift:1`, `${kit}/FTests.swift:2`, "app/Tests/TarmacTermTests/TermTests.swift:1"]);
+});
+
+test("#496: a tree that keeps the six rules passes", () => {
+  const run = arch(
+    repo({
+      "core/crates/x/src/lib.rs": "// the table reads as a grid\n#[rustfmt::skip]\nconst A: u8 = 1;\nfn board() {}\n#[test]\nfn shows_the_board() {}\n",
+      "core/crates/x/Cargo.toml": '[dependencies]\nanyhow = "1"\n',
+      "core/crates/x/tests/boards_integration.rs": "",
+      "app/Sources/TarmacApp/A.swift": "/// `lock` guards it.\nfinal class A: @unchecked Sendable {}\n",
+      "app/Tests/TarmacKitTests/ATests.swift": "final class ATests: XCTestCase {}\n",
+    }),
+  );
+
+  assert.deepEqual(run, { code: 0, out: "", err: [""] });
+});
+
+test("#496 review: get_ is reported indented and behind each modifier; API-guideline names, an extern fn and a same-line reason are not; an indented test_ is", () => {
+  const source = [
+    "impl X {",
+    "    pub fn get_x(&self) {}",
+    "    pub const fn get_c() {}",
+    "    unsafe fn get_u() {}",
+    "    pub(crate) async fn get_a() {}",
+    "    fn get_mut(&mut self) {}",
+    "    fn get_unchecked(&self) {}",
+    "    fn get_unchecked_mut(&mut self) {}",
+    "    fn get_or_insert(&mut self) {}",
+    "    fn get_or_default(&self) {}",
+    "    fn get_mutable(&self) {}",
+    "    fn get_name(&self) {} // the foreign trait Named fixes this name",
+    "    fn get_y(&self) {} //",
+    "}",
+    'extern "C" fn get_version() {}',
+    'unsafe extern "C" {',
+    "    pub fn get_errno() -> i32;",
+    "    pub fn get_pid() -> i32; // the C library names it",
+    "}",
+    "mod t {",
+    "    #[test]",
+    "    fn test_y() {}",
+    "}",
+  ].join("\n");
+
+  const run = arch(repo({ "core/crates/x/src/lib.rs": source }));
+
+  assert.deepEqual(summaries(run), [NAMES]);
+  assert.deepEqual(places(run), [11, 13, 17, 2, 22, 3, 4, 5].map((line) => `core/crates/x/src/lib.rs:${line}`));
+});
+
+test("#496 review: a metadata table named dependencies is not a dependency table", () => {
+  const crate = '[package]\nname = "a"\n[package.metadata.dependencies]\nthiserror = "2"\n';
+  const workspace = `${PINNED}[workspace.metadata.dependencies]\nthiserror = "2"\n`;
+
+  assert.deepEqual(arch(repo({ [CARGO]: workspace, "core/crates/a/Cargo.toml": crate })), { code: 0, out: "", err: [""] });
+});
+
+test("#496 review: a shared base case is not judged, and a misnamed class behind a same-line attribute is", () => {
+  const kit = "app/Tests/TarmacKitTests";
+  const run = arch(
+    repo({
+      [`${kit}/BaseCase.swift`]: "class BaseCase: XCTestCase {}\n",
+      [`${kit}/XTests.swift`]: "@MainActor final class XOtherTests: XCTestCase {}\n",
+    }),
+  );
+
+  assert.deepEqual(summaries(run), [TEST_CLASS]);
+  assert.deepEqual(places(run), [`${kit}/XTests.swift:1`]);
+});
+
+test("#496 review: the comment above @unchecked Sendable may sit over a line of several attributes", () => {
+  const source = "// `lock` guards it.\n@MainActor @preconcurrency\nfinal class G: @unchecked Sendable {}\n";
+
+  assert.equal(arch(repo({ "app/Sources/TarmacApp/G.swift": source })).code, 0);
+});
+
+test("#496 review: a // reason above the item's doc comment is the skip's reason", () => {
+  const source = "// the table reads as a grid\n/// The table.\n#[rustfmt::skip]\nconst A: u8 = 1;\n";
+
+  assert.equal(arch(repo({ "core/crates/x/src/lib.rs": source })).code, 0);
+});
