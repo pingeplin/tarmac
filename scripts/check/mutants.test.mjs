@@ -493,10 +493,19 @@ test("S37: without --report the job summary is not written", () => {
   assert.equal(existsSync(summary), false);
 });
 
-test("S19: the config excludes the one function that sends a signal, and git ignores the tool's output", () => {
-  const config = readFileSync(join(ROOT, "core/.cargo/mutants.toml"), "utf8");
+test("S19: the config excludes the one function that sends a signal, each exclusion has its reason above it, and git ignores the tool's output", () => {
+  const lines = readFileSync(join(ROOT, "core/.cargo/mutants.toml"), "utf8").trimEnd().split("\n").map((line) => line.trim());
+  const isEntry = (line) => /^"(?:[^"\\]|\\.)*",$/.test(line);
+  const isReason = (line) => /^# \S/.test(line);
 
-  assert.deepEqual(config.split("\n").filter((line) => line && !line.startsWith("#")), ['exclude_re = ["TermHandle::kill\\\\b"]']);
+  assert.equal(lines[0], "exclude_re = [");
+  assert.equal(lines.at(-1), "]");
+  const body = lines.slice(1, -1);
+  assert.deepEqual(body.filter((line) => !isEntry(line) && !isReason(line)), []);
+  assert.ok(body.includes('"TermHandle::kill\\\\b",'));
+  // An entry stands under its reason, or under another entry with the same reason.
+  assert.deepEqual(body.filter((line, at) => isEntry(line) && (at === 0 || !(isReason(body[at - 1]) || isEntry(body[at - 1])))), []);
+  assert.ok(isReason(body[0]));
   assert.ok(readFileSync(join(ROOT, ".gitignore"), "utf8").split("\n").includes("/core/mutants.out*/"));
 });
 
