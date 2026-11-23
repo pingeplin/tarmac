@@ -14,7 +14,7 @@ use tokio::sync::broadcast::{self, error::RecvError};
 /// The frames one subscriber can fall behind by. Above the app channel's 256,
 /// because that one waits and this one does not: a look over a board with
 /// many docs pushes a burst of `file_event`s.
-pub const EVENTS_CAPACITY: usize = 1024;
+pub(crate) const EVENTS_CAPACITY: usize = 1024;
 const EXIT_RING: usize = 64;
 const LAGGED_WRITE: Duration = Duration::from_secs(1);
 
@@ -22,23 +22,23 @@ fn is_event(msg: &Msg) -> bool {
     EventKind::of(msg).is_some()
 }
 
-pub struct Fanout(broadcast::Sender<Msg>);
+pub(crate) struct Fanout(broadcast::Sender<Msg>);
 
 impl Fanout {
-    pub fn new(capacity: usize) -> Self {
+    pub(crate) fn new(capacity: usize) -> Self {
         Fanout(broadcast::channel(capacity).0)
     }
 
     /// Nothing is cloned with no subscriber. `send` never waits; with no
     /// receiver left it fails, which is not an error here.
-    pub fn publish(&self, msg: &Msg) {
+    pub(crate) fn publish(&self, msg: &Msg) {
         if !is_event(msg) || self.0.receiver_count() == 0 {
             return;
         }
         let _ = self.0.send(msg.clone());
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<Msg> {
+    pub(crate) fn subscribe(&self) -> broadcast::Receiver<Msg> {
         self.0.subscribe()
     }
 
@@ -50,10 +50,10 @@ impl Fanout {
 
 /// The last `EXIT_RING` exits, bounded by count.
 #[derive(Default)]
-pub struct ExitRing(VecDeque<(String, Option<i64>)>);
+pub(crate) struct ExitRing(VecDeque<(String, Option<i64>)>);
 
 impl ExitRing {
-    pub fn record(&mut self, term_id: &str, code: Option<i64>) {
+    pub(crate) fn record(&mut self, term_id: &str, code: Option<i64>) {
         self.0.push_back((term_id.to_owned(), code));
         if self.0.len() > EXIT_RING {
             self.0.pop_front();
@@ -62,12 +62,12 @@ impl ExitRing {
 
     /// The code of the latest exit of `term_id`.
     #[expect(clippy::option_option, reason = "predates the lint; a design change, not part of #468")]
-    pub fn lookup(&self, term_id: &str) -> Option<Option<i64>> {
+    pub(crate) fn lookup(&self, term_id: &str) -> Option<Option<i64>> {
         self.0.iter().rev().find(|(id, _)| id == term_id).map(|(_, code)| *code)
     }
 }
 
-pub struct Filter {
+pub(crate) struct Filter {
     kinds: Vec<EventKind>,
     term_id: Option<String>,
 }
@@ -75,7 +75,7 @@ pub struct Filter {
 impl Filter {
     /// `kinds` names `exit`, `bell`, `changed` and `report`; `None` is all
     /// four. Unknown names are ignored; none known left is the `Err`.
-    pub fn new(kinds: Option<Vec<String>>, term_id: Option<String>) -> Result<Filter, String> {
+    pub(crate) fn new(kinds: Option<Vec<String>>, term_id: Option<String>) -> Result<Filter, String> {
         let kinds: Vec<EventKind> = match kinds {
             None => EventKind::ALL.to_vec(),
             Some(names) => EventKind::ALL.into_iter().filter(|k| names.iter().any(|n| n == k.name())).collect(),
@@ -86,18 +86,18 @@ impl Filter {
         Ok(Filter { kinds, term_id })
     }
 
-    pub fn wants(&self, kind: EventKind) -> bool {
+    pub(crate) fn wants(&self, kind: EventKind) -> bool {
         self.kinds.contains(&kind)
     }
 
-    pub fn admits(&self, msg: &Msg) -> bool {
+    pub(crate) fn admits(&self, msg: &Msg) -> bool {
         EventKind::admits(&self.kinds, self.term_id.as_deref(), msg)
     }
 }
 
 /// A subscriber's start: what it receives from now on, its filter, and the
 /// snapshot it is sent before `ack`.
-pub struct Subscription {
+pub(crate) struct Subscription {
     pub rx: broadcast::Receiver<Msg>,
     pub filter: Filter,
     pub snapshot: Vec<Msg>,
@@ -106,7 +106,7 @@ pub struct Subscription {
 /// Writes the frames `filter` admits until the client closes, a write fails,
 /// or the subscriber lags. The read arm is a plain `read`, which is
 /// cancel-safe; a framed read would lose its bytes whenever a frame wins.
-pub async fn serve(
+pub(crate) async fn serve(
     mut rx: broadcast::Receiver<Msg>,
     filter: &Filter,
     mut read: impl AsyncRead + Unpin,

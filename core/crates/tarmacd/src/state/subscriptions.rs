@@ -8,7 +8,11 @@ impl Daemon {
     /// The receiver comes first: a report is changed, and an exit recorded,
     /// before it is published, so each is in the snapshot, or after it in `rx`,
     /// or both. `terms`, `exits` and `reports` are each taken alone.
-    pub async fn subscribe(&self, kinds: Option<Vec<String>>, term_id: Option<String>) -> Result<Subscription, String> {
+    pub(crate) async fn subscribe(
+        &self,
+        kinds: Option<Vec<String>>,
+        term_id: Option<String>,
+    ) -> Result<Subscription, String> {
         let filter = Filter::new(kinds, term_id.clone())?;
         let rx = self.events.subscribe();
         let mut snapshot = Vec::new();

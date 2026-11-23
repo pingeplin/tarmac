@@ -9,7 +9,7 @@ const MAX_HOPS: usize = 32;
 
 /// The process whose life the report lasts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Holder {
+pub(crate) enum Holder {
     /// `started` tells the process from a later one with the same pid.
     Agent {
         pid: Pid,
@@ -28,14 +28,14 @@ pub enum Holder {
 
 /// A process told from a later one with the same pid by its start time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StartedPid {
+pub(crate) struct StartedPid {
     pub pid: Pid,
     pub started: u64,
 }
 
 impl StartedPid {
     /// `Unread` keeps it.
-    pub fn alive(&self, facts_of: impl Fn(Pid) -> Facts) -> bool {
+    pub(crate) fn alive(&self, facts_of: impl Fn(Pid) -> Facts) -> bool {
         match facts_of(self.pid) {
             Facts::Live { started, .. } => started == self.started,
             Facts::Gone => false,
@@ -55,7 +55,7 @@ impl Holder {
     /// gone or unread, pid 1 reached, or a chain of more than `MAX_HOPS`)
     /// falls back to the foreground `leader`, read only then. `None`: no
     /// process to tie the report to.
-    pub fn resolve(
+    pub(crate) fn resolve(
         caller: Option<Pid>,
         child: Option<Pid>,
         child_is_cmd: bool,
@@ -92,7 +92,7 @@ impl Holder {
         }
     }
 
-    pub fn pid(&self) -> Pid {
+    pub(crate) fn pid(&self) -> Pid {
         match *self {
             Holder::Agent { pid, .. } | Holder::Shell { pid, .. } | Holder::Leader { pid } => pid,
         }
@@ -100,7 +100,7 @@ impl Holder {
 
     /// `leader` is a fresh foreground-leader read; `None` (a failed read)
     /// keeps the report for this tick, as `Facts::Unread` does.
-    pub fn alive(&self, facts_of: impl Fn(Pid) -> Facts, leader: Option<Pid>) -> bool {
+    pub(crate) fn alive(&self, facts_of: impl Fn(Pid) -> Facts, leader: Option<Pid>) -> bool {
         match *self {
             Holder::Agent { pid, started } => StartedPid { pid, started }.alive(facts_of),
             Holder::Shell { pid, caller } => leader.is_none_or(|l| l == pid || l == caller),
@@ -113,7 +113,7 @@ impl Holder {
 /// a command lasts for a process's life, not until the next foreground job.
 /// So the shell itself holds one set at the prompt, and the leader the
 /// fallback's. `None` when that process cannot be read.
-pub fn tie(holder: Holder, facts_of: impl Fn(Pid) -> Facts) -> Option<StartedPid> {
+pub(crate) fn tie(holder: Holder, facts_of: impl Fn(Pid) -> Facts) -> Option<StartedPid> {
     match holder {
         Holder::Agent { pid, started } => Some(StartedPid { pid, started }),
         Holder::Shell { pid, .. } | Holder::Leader { pid } => match facts_of(pid) {

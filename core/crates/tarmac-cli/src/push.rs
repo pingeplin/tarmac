@@ -12,7 +12,7 @@ const LIMIT: usize = proto::MAX_FRAME_LEN as usize;
 const NO_ANSWER_WHY: &str = "an older daemon, or the app is not reading";
 static NO_ANSWER: LazyLock<String> = LazyLock::new(|| crate::daemon::no_answer(NO_ANSWER_WHY));
 
-pub fn run(args: &[String]) -> i32 {
+pub(crate) fn run(args: &[String]) -> i32 {
     let Some((raw_path, mode)) = parse(args) else {
         eprintln!("tarmac: usage: tarmac push <path> <json>  |  tarmac push <path> -");
         return 2;

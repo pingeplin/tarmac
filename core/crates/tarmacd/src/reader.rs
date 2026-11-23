@@ -17,15 +17,15 @@ use crate::docs::RepoInfo;
 
 /// How long a caller waits for a call of the gate. A look waits for its files
 /// at most twice that: once on one thread, once on a thread each (`stamps`).
-pub const READ_LIMIT: Duration = Duration::from_secs(1);
+pub(crate) const READ_LIMIT: Duration = Duration::from_secs(1);
 
 /// The call did not return within the limit, or an earlier call on its key is
 /// still out.
 #[derive(Debug)]
-pub struct Out;
+pub(crate) struct Out;
 
 /// `None` for a file that is not there or cannot be read.
-pub fn stamp(path: &Path) -> Option<FileStamp> {
+pub(crate) fn stamp(path: &Path) -> Option<FileStamp> {
     stamp_of(&std::fs::metadata(path).ok()?).ok()
 }
 
@@ -34,7 +34,7 @@ fn stamp_of(meta: &std::fs::Metadata) -> std::io::Result<FileStamp> {
 }
 
 /// The file-system calls the gate makes.
-pub trait PathFs: Send + Sync {
+pub(crate) trait PathFs: Send + Sync {
     /// canonicalize + stat. Err for a missing path, an I/O error, or a path
     /// that is not a regular file; the message is the one an open answers.
     fn resolve(&self, raw: &Path) -> Result<(PathBuf, FileStamp), String>;
@@ -47,7 +47,7 @@ pub trait PathFs: Send + Sync {
     fn pid_cwd(&self, pid: libc::pid_t) -> Option<String>;
 }
 
-pub struct RealFs;
+pub(crate) struct RealFs;
 
 impl PathFs for RealFs {
     fn resolve(&self, raw: &Path) -> Result<(PathBuf, FileStamp), String> {
@@ -99,7 +99,7 @@ impl PathFs for RealFs {
 /// canonical one: a doc opened through a symlink can hold two calls. A
 /// startup walk is keyed by its directory, a spawn's `is_dir` by its cwd, and
 /// a `pid_cwd` by the pid.
-pub struct PathGate {
+pub(crate) struct PathGate {
     fs: Arc<dyn PathFs>,
     limit: Duration,
     keys: Arc<Keys>,
@@ -248,22 +248,22 @@ impl<T> Landing<T> {
 }
 
 impl PathGate {
-    pub fn new(fs: Arc<dyn PathFs>, limit: Duration, returned: Arc<dyn Fn() + Send + Sync>) -> Self {
+    pub(crate) fn new(fs: Arc<dyn PathFs>, limit: Duration, returned: Arc<dyn Fn() + Send + Sync>) -> Self {
         let keys = Keys { busy: Mutex::default(), next_call: AtomicU64::new(0), returned };
         PathGate { fs, limit, keys: Arc::new(keys) }
     }
 
-    pub fn limit(&self) -> Duration {
+    pub(crate) fn limit(&self) -> Duration {
         self.limit
     }
 
     /// The answer to a caller of `what` that got `Out`.
-    pub fn did_not_answer(&self, what: &str) -> String {
+    pub(crate) fn did_not_answer(&self, what: &str) -> String {
         format!("{what}: did not answer in {:?}", self.limit)
     }
 
     /// `op` on a blocking thread, keyed by `key`.
-    pub async fn run<T: Send + 'static>(
+    pub(crate) async fn run<T: Send + 'static>(
         &self,
         key: &Path,
         op: impl FnOnce(&dyn PathFs) -> T + Send + 'static,
@@ -272,7 +272,7 @@ impl PathGate {
     }
 
     /// The cwd of `pid`, one call per pid at a time.
-    pub async fn pid_cwd(&self, pid: libc::pid_t) -> Result<Option<String>, Out> {
+    pub(crate) async fn pid_cwd(&self, pid: libc::pid_t) -> Result<Option<String>, Out> {
         self.run_keyed(Key::Pid(pid), move |fs| fs.pid_cwd(pid)).await
     }
 
@@ -307,7 +307,7 @@ impl PathGate {
     }
 
     /// True while an out key is `dir` or a file in it.
-    pub fn is_out_dir(&self, dir: &Path) -> bool {
+    pub(crate) fn is_out_dir(&self, dir: &Path) -> bool {
         let (busy, now) = (self.keys.busy.lock().expect("keys lock"), Instant::now());
         busy.iter().any(|(key, b)| b.is_out(now) && matches!(key, Key::Path(p) if p == dir || p.parent() == Some(dir)))
     }
@@ -318,7 +318,7 @@ impl PathGate {
     /// left on its thread, and the files not started are read on a thread
     /// each, within one more `limit`. A path whose key is busy has no entry:
     /// it is not known, which is not `None` (gone).
-    pub async fn stamps(&self, paths: impl IntoIterator<Item = PathBuf>) -> HashMap<PathBuf, Option<FileStamp>> {
+    pub(crate) async fn stamps(&self, paths: impl IntoIterator<Item = PathBuf>) -> HashMap<PathBuf, Option<FileStamp>> {
         let deadline = Instant::now() + self.limit;
         let batch = Arc::new(Mutex::new(Batch { rest: paths.into_iter().collect(), landed: Vec::new() }));
         let reading = tokio::task::spawn_blocking({

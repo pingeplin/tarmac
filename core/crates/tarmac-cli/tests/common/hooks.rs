@@ -6,7 +6,7 @@ use super::{scratch, tarmac};
 /// A scratch dir in its canonical form, so a path the cli prints compares
 /// equal to one the test builds (`/var` is `/private/var` on macOS), with the
 /// `home` and `proj` dirs that `hooks_cmd` points at.
-pub fn sandbox() -> PathBuf {
+pub(crate) fn sandbox() -> PathBuf {
     let dir = scratch().canonicalize().unwrap();
     for sub in ["home", "proj"] {
         std::fs::create_dir_all(dir.join(sub)).unwrap();
@@ -16,7 +16,7 @@ pub fn sandbox() -> PathBuf {
 
 /// `tarmac hooks`, with `dir/home` as HOME, `dir/proj` as the cwd, an empty
 /// CLAUDE_CONFIG_DIR (unset, so HOME decides) and no TARMAC_TERM_ID.
-pub fn hooks_cmd(dir: &Path) -> Command {
+pub(crate) fn hooks_cmd(dir: &Path) -> Command {
     let mut cmd = tarmac();
     cmd.env("HOME", dir.join("home"))
         .env("CLAUDE_CONFIG_DIR", "")
@@ -26,7 +26,7 @@ pub fn hooks_cmd(dir: &Path) -> Command {
     cmd
 }
 
-pub fn fixture(name: &str) -> Vec<u8> {
+pub(crate) fn fixture(name: &str) -> Vec<u8> {
     std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hooks").join(format!("{name}.json")))
         .unwrap()
 }

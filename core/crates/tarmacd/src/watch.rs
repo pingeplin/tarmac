@@ -16,7 +16,7 @@ use tokio::sync::{Notify, oneshot};
 /// The burst window docs/protocol.md gives a `file_event`: how long
 /// `docs::watch_loop` waits after a wake before it looks, and so the least
 /// time between two of its looks.
-pub const BURST: Duration = Duration::from_millis(100);
+pub(crate) const BURST: Duration = Duration::from_millis(100);
 
 /// What wakes the look (`docs::watch_loop`), and whether a wake since the
 /// last one came from the file system. Only such a wake tries again a data
@@ -24,7 +24,7 @@ pub const BURST: Duration = Duration::from_millis(100);
 /// wakes a look after each call of the source, also one that failed, so a
 /// try at its wake would never end.
 #[derive(Default)]
-pub struct Wake {
+pub(crate) struct Wake {
     notify: Notify,
     from_fs: AtomicBool,
 }
@@ -33,7 +33,7 @@ impl Wake {
     /// A file in a watched directory may have changed, or a gate call that
     /// was out returned.
     #[expect(clippy::wrong_self_convention, reason = "predates the lint; a design change, not part of #468")]
-    pub fn from_fs(&self) {
+    pub(crate) fn from_fs(&self) {
         self.from_fs.store(true, Ordering::SeqCst);
         self.notify.notify_one();
     }
@@ -41,19 +41,19 @@ impl Wake {
     /// The daemon's own: the watcher thread after a call of the source, or a
     /// repair.
     #[expect(clippy::wrong_self_convention, reason = "predates the lint; a design change, not part of #468")]
-    pub fn from_daemon(&self) {
+    pub(crate) fn from_daemon(&self) {
         self.notify.notify_one();
     }
 
     /// True when a wake since the last one came from the file system.
-    pub async fn woken(&self) -> bool {
+    pub(crate) async fn woken(&self) -> bool {
         self.notify.notified().await;
         self.from_fs.swap(false, Ordering::SeqCst)
     }
 }
 
 /// `unwatch` is also called for a dir whose `watch` failed.
-pub trait WakeSource: Send {
+pub(crate) trait WakeSource: Send {
     fn watch(&mut self, dir: &Path) -> anyhow::Result<()>;
     fn unwatch(&mut self, dir: &Path) -> anyhow::Result<()>;
 }
@@ -62,7 +62,7 @@ pub trait WakeSource: Send {
 /// restarts its one stream; notify 9 starts the new one at the last event the
 /// old one delivered, where 8.2 lost the events not delivered yet (#253). The
 /// watcher thread still wakes a look after either. No debouncer (#258).
-pub struct NotifySource(RecommendedWatcher);
+pub(crate) struct NotifySource(RecommendedWatcher);
 
 fn is_watch_not_found(e: &anyhow::Error) -> bool {
     e.downcast_ref::<notify::Error>().is_some_and(|e| matches!(e.kind, notify::ErrorKind::WatchNotFound))
@@ -70,7 +70,7 @@ fn is_watch_not_found(e: &anyhow::Error) -> bool {
 
 impl NotifySource {
     /// `wake` runs on the watcher's thread, for each event.
-    pub fn new(wake: impl Fn() + Send + 'static) -> anyhow::Result<Self> {
+    pub(crate) fn new(wake: impl Fn() + Send + 'static) -> anyhow::Result<Self> {
         let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
             if let Err(error) = res {
                 tracing::warn!("watch error: {error:?}");
@@ -92,7 +92,7 @@ impl WakeSource for NotifySource {
 }
 
 /// Why a directory that is wanted is not watched.
-pub enum NotWatched {
+pub(crate) enum NotWatched {
     /// A call on a path in it is out (`PathGate::is_out_dir`): it is not
     /// asked of the source until that call returns.
     Out,
@@ -100,7 +100,7 @@ pub enum NotWatched {
 }
 
 /// `Ok(true)` when the source was called and the stream restarted.
-pub type Answer = Result<bool, NotWatched>;
+pub(crate) type Answer = Result<bool, NotWatched>;
 
 enum Ask {
     Reconcile(PathBuf, Option<oneshot::Sender<Answer>>),
@@ -112,12 +112,12 @@ enum Ask {
 /// The callers' end of the watcher thread (`Asks::spawn`). No call on it
 /// waits for the thread; only an answer does.
 #[derive(Clone)]
-pub struct Watcher(mpsc::Sender<Ask>);
+pub(crate) struct Watcher(mpsc::Sender<Ask>);
 
 /// The thread's end, until it is spawned.
-pub struct Asks(mpsc::Receiver<Ask>);
+pub(crate) struct Asks(mpsc::Receiver<Ask>);
 
-pub fn channel() -> (Watcher, Asks) {
+pub(crate) fn channel() -> (Watcher, Asks) {
     let (tx, rx) = mpsc::channel();
     (Watcher(tx), Asks(rx))
 }
@@ -126,12 +126,12 @@ impl Watcher {
     /// Has the thread make the watch of `dir` follow whether it is wanted
     /// now. A request is not an edge: what the thread compares is the state
     /// when it comes to it.
-    pub fn reconcile(&self, dir: &Path) {
+    pub(crate) fn reconcile(&self, dir: &Path) {
         self.ask(dir, None);
     }
 
     /// `reconcile`, and its answer.
-    pub fn answer(&self, dir: &Path) -> oneshot::Receiver<Answer> {
+    pub(crate) fn answer(&self, dir: &Path) -> oneshot::Receiver<Answer> {
         let (tx, rx) = oneshot::channel();
         self.ask(dir, Some(tx));
         rx
@@ -142,14 +142,14 @@ impl Watcher {
     }
 
     /// Reconciles again each dir that was skipped while it was out.
-    pub fn retry(&self) {
+    pub(crate) fn retry(&self) {
         let _ = self.0.send(Ask::Retry);
     }
 
     /// Whether `dir` is watched, once the thread has done what it was asked
     /// before.
     #[cfg(test)]
-    pub async fn watched(&self, dir: &Path) -> bool {
+    pub(crate) async fn watched(&self, dir: &Path) -> bool {
         let (tx, rx) = oneshot::channel();
         let _ = self.0.send(Ask::Watched(dir.to_owned(), tx));
         rx.await.expect("the watcher thread answers")
@@ -162,7 +162,7 @@ impl Asks {
     /// this thread. A dir is wanted while `wanted` says so; `woke` runs after
     /// each call of the source, whether it succeeded or not (#253). It ends
     /// when every `Watcher` is dropped.
-    pub fn spawn(
+    pub(crate) fn spawn(
         self,
         source: Box<dyn WakeSource>,
         wanted: impl Fn(&Path) -> bool + Send + 'static,

@@ -29,7 +29,7 @@ enum Mode {
     Changed { path: String, settle: Option<Duration> },
 }
 
-pub fn run(args: &[String]) -> i32 {
+pub(crate) fn run(args: &[String]) -> i32 {
     let started = Instant::now();
     let Some((mode, timeout)) = parse(args) else {
         eprintln!("tarmac: {USAGE}");

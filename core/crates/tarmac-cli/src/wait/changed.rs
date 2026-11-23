@@ -10,7 +10,7 @@ use serde_json::json;
 use super::Outcome;
 
 /// The argument that runs `stat_helper`: internal, so not in `tarmac help`.
-pub const STAT_HELPER: &str = "__wait-changed-stat";
+pub(crate) const STAT_HELPER: &str = "__wait-changed-stat";
 
 /// One stat of the path: its identity, mtime and size, or that it is not
 /// there. A change of `ino` or `dev` is a file replaced by a rename.
@@ -66,7 +66,7 @@ impl Sample {
 /// The helper, run as `tarmac __wait-changed-stat PATH`: one line for each
 /// sample at the poll cadence, until a stat error, or until a write fails
 /// because `wait` has gone.
-pub fn stat_helper(args: &[String]) -> i32 {
+pub(crate) fn stat_helper(args: &[String]) -> i32 {
     let [raw] = args else { return 2 };
     let started = Instant::now();
     report_samples(raw, &mut io::stdout().lock(), || started.elapsed(), std::thread::sleep);

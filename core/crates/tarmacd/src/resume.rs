@@ -8,14 +8,14 @@
 /// which typed input drops.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum Flag {
+pub(crate) enum Flag {
     None = 0,
     Held = 1,
     Unclaimed = 2,
 }
 
 impl Flag {
-    pub fn from_u8(raw: u8) -> Flag {
+    pub(crate) fn from_u8(raw: u8) -> Flag {
         match raw {
             1 => Flag::Held,
             2 => Flag::Unclaimed,

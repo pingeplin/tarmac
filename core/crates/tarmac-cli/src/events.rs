@@ -15,7 +15,7 @@ use crate::daemon::NoHandshake;
 const USAGE: &str = "usage: tarmac events [--term ID] [--kind exit,bell,changed,report]";
 const LAGGED: &str = "the daemon dropped this stream: it fell behind (lagged)";
 
-pub fn run(args: &[String]) -> i32 {
+pub(crate) fn run(args: &[String]) -> i32 {
     let Some(want) = parse(args) else {
         eprintln!("tarmac: {USAGE}");
         return 2;

@@ -21,7 +21,7 @@ const USAGE: &str = "usage: tarmac hooks install|uninstall [--target claude-code
 const SKIPPED_CODEX: &str = "skipped codex: hooks are not supported for codex yet";
 const OLD_FORM: &str = "installed, old form (run tarmac hooks install)";
 
-pub fn run(args: &[String]) -> i32 {
+pub(crate) fn run(args: &[String]) -> i32 {
     match args.first().map(String::as_str) {
         Some("run") => run_hook(&args[1..]),
         Some("install") => change(Verb::Install, &args[1..]),

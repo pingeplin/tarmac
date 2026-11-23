@@ -7,7 +7,7 @@ use tarmac_protocol::{Msg, REPORT_CLEAR, ReportKind, cap_report_text};
 const USAGE: &str = "usage: tarmac report blocked|done [\"<text>\"]  |  tarmac report clear";
 const NEEDS_TERM: &str = "report needs TARMAC_TERM_ID (run it in a Tarmac terminal)";
 
-pub fn run(args: &[String]) -> i32 {
+pub(crate) fn run(args: &[String]) -> i32 {
     let Some((kind, text)) = parse(args) else {
         eprintln!("tarmac: {USAGE}");
         return 2;

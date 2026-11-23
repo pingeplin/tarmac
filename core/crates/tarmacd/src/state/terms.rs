@@ -22,7 +22,7 @@ impl Daemon {
     ///
     /// A moved resume command has no holder: `handle` is marked unclaimed in
     /// the same step, so typed input drops it (spec 2611.0011, D6).
-    pub async fn adopt_term(&self, plan: &SpawnPlan, handle: &TermHandle) {
+    pub(crate) async fn adopt_term(&self, plan: &SpawnPlan, handle: &TermHandle) {
         let succeeds = self.dead_successor(plan.succeeds.as_deref()).await;
         self.term_boards.lock().await.insert(plan.term_id.clone(), plan.board.clone());
         let mut boards = self.boards.lock().await;
@@ -45,7 +45,7 @@ impl Daemon {
 
     /// The folder a spawn with no cwd of its own starts in when it succeeds
     /// `old` (#412): the recorded cwd of the record `adopt_term` moves.
-    pub async fn succeeded_cwd(&self, board: &BoardId, old: &str) -> Option<String> {
+    pub(crate) async fn succeeded_cwd(&self, board: &BoardId, old: &str) -> Option<String> {
         let old = self.dead_successor(Some(old)).await?;
         let boards = self.boards.lock().await;
         boards.known_registry(board)?.term_records.get(old)?.last_cwd.clone()
@@ -55,7 +55,7 @@ impl Daemon {
     /// `term_id`, on the board the term is filed under. A record that is gone
     /// (closed, ended cleanly, or its board deleted) is not made again, and a
     /// read with no answer keeps the cwd before it. Not saved by itself.
-    pub async fn note_cwd(&self, term_id: &str, pid: proc::Pid) {
+    pub(crate) async fn note_cwd(&self, term_id: &str, pid: proc::Pid) {
         let Ok(Some(cwd)) = self.gate.pid_cwd(pid).await else { return };
         self.with_record(term_id, |_, record| {
             if let Some(record) = record {
@@ -67,7 +67,7 @@ impl Daemon {
 
     /// Typed input: marks the report read, then drops a resume command that
     /// has no holder.
-    pub async fn typed_input(&self, term_id: &str, handle: &TermHandle) {
+    pub(crate) async fn typed_input(&self, term_id: &str, handle: &TermHandle) {
         self.mark_report_read(term_id, handle).await;
         self.claim_resume(term_id, handle).await;
     }
@@ -103,7 +103,7 @@ impl Daemon {
 
     /// Deletes the record of `term_id`, live or not, and kills its process
     /// group when it is live.
-    pub async fn close_term(&self, term_id: &str) {
+    pub(crate) async fn close_term(&self, term_id: &str) {
         self.forget_record(term_id).await;
         if let Some(h) = self.term(term_id).await {
             h.kill();
@@ -120,7 +120,7 @@ impl Daemon {
     /// after this the daemon no longer knows it (spec 2611.0013).
     /// The exit is recorded first (spec 2611.0012, D4): a subscriber then
     /// finds the id live or in the ring, never neither.
-    pub async fn term_ended(&self, term_id: &str, code: Option<i64>) -> Option<BoardId> {
+    pub(crate) async fn term_ended(&self, term_id: &str, code: Option<i64>) -> Option<BoardId> {
         self.exits.lock().expect("exits lock").record(term_id, code);
         if self.terms.lock().await.remove(term_id).is_none() {
             tracing::warn!("term {term_id} missing from registry at exit");
@@ -141,7 +141,7 @@ impl Daemon {
     /// order, then by id. Each one's process name and cwd are read at the same
     /// time, the cwd on the gate, so the list takes about one gate limit, not
     /// one for each terminal. No lock is held while they are read.
-    pub async fn terms_list(&self) -> Vec<TermInfo> {
+    pub(crate) async fn terms_list(&self) -> Vec<TermInfo> {
         let by_board = self.live_terms_by_board().await;
         let live: Vec<(String, BoardId, Arc<TermHandle>)> = {
             let terms = self.terms.lock().await;

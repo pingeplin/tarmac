@@ -6,7 +6,7 @@ use std::panic::Location;
 
 /// Chains onto the hook already installed, which still prints the panic as
 /// before. The record goes to the subscriber set when the panic happens.
-pub fn install() {
+pub(crate) fn install() {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         tracing::error!("{}", record(std::thread::current().name(), info.location(), info.payload()));

@@ -14,7 +14,7 @@ use crate::reports::Reports;
 use crate::term::TermHandle;
 use crate::watch::{NotWatched, NotifySource, Wake, WakeSource, Watcher};
 
-pub struct AppSlot {
+pub(crate) struct AppSlot {
     pub generation: u64,
     pub tx: mpsc::Sender<Msg>,
     pub cancel: CancellationToken,
@@ -56,7 +56,7 @@ impl DocCounts {
     }
 }
 
-pub struct Daemon {
+pub(crate) struct Daemon {
     pub app: Mutex<Option<AppSlot>>,
     pub boards: Mutex<Boards>,
     /// Keyed by the globally-unique term_id, whatever board the term belongs to.
@@ -97,7 +97,7 @@ pub struct Daemon {
 }
 
 impl Daemon {
-    pub async fn new(state_path: PathBuf) -> anyhow::Result<Arc<Self>> {
+    pub(crate) async fn new(state_path: PathBuf) -> anyhow::Result<Arc<Self>> {
         let wake = Arc::new(Wake::default());
         let source = NotifySource::new({
             let wake = wake.clone();
@@ -185,12 +185,12 @@ impl Daemon {
         daemon
     }
 
-    pub fn gate(&self) -> &PathGate {
+    pub(crate) fn gate(&self) -> &PathGate {
         &self.gate
     }
 
     /// True when a wake since the last one came from the file system.
-    pub async fn woken(&self) -> bool {
+    pub(crate) async fn woken(&self) -> bool {
         self.wake.woken().await
     }
 
@@ -200,7 +200,7 @@ impl Daemon {
     /// time, so that an older reading is never applied after a newer one.
     /// Nothing is pushed from inside it. A doc whose file could not be read in
     /// time (`PathGate`) is not in the reading.
-    pub async fn look<P, T>(
+    pub(crate) async fn look<P, T>(
         &self,
         paths: impl FnOnce(&Boards) -> P,
         apply: impl FnOnce(&mut Boards, &HashMap<PathBuf, Option<FileStamp>>) -> T,
@@ -255,7 +255,7 @@ impl Daemon {
     /// whose watch fails gives its count back at once: both are `Wanted`.
     /// True with it when the stream restarted: the caller looks at the docs,
     /// as `open_doc` does.
-    pub async fn count_data_dir(&self, doc: &Path, data: &Path) -> (DataDir, bool) {
+    pub(crate) async fn count_data_dir(&self, doc: &Path, data: &Path) -> (DataDir, bool) {
         let (Some(doc_dir), Some(dir)) = (doc.parent(), data.parent()) else { return (DataDir::Uncounted, false) };
         if dir == doc_dir {
             return (DataDir::Uncounted, false);
@@ -277,7 +277,7 @@ impl Daemon {
     }
 
     /// Gives back what a data registration counted.
-    pub fn release_data_dir(&self, dir: &DataDir) {
+    pub(crate) fn release_data_dir(&self, dir: &DataDir) {
         if let DataDir::Counted(dir) = dir {
             self.release_watch(dir);
         }
@@ -298,7 +298,7 @@ impl Daemon {
     /// board (2611.0005). Called at a wake of the file system only (`Wake`).
     /// A registration replaced, cleared or dropped during its try keeps
     /// nothing of it.
-    pub async fn try_wanted_data(&self) {
+    pub(crate) async fn try_wanted_data(&self) {
         let wanted = self.boards.lock().await.wanted_data();
         for WantedData { board, doc, file } in wanted {
             let (dir, _) = self.count_data_dir(&doc, &file).await;
@@ -314,7 +314,7 @@ impl Daemon {
     /// one already there. `seen` and `repo` are the doc's file and repo, read
     /// by the caller, for a doc that is new to `board`. Fails, with nothing
     /// registered, when its directory cannot be watched.
-    pub async fn open_doc(
+    pub(crate) async fn open_doc(
         &self,
         board: Option<&str>,
         path: &Path,
@@ -359,7 +359,7 @@ impl Daemon {
 
     /// Forgets a doc of the active board and takes it, and its data file's
     /// directory, off their counts. False for an unknown path.
-    pub async fn close_doc(&self, path: &Path) -> bool {
+    pub(crate) async fn close_doc(&self, path: &Path) -> bool {
         let closed = self.boards.lock().await.active_registry_mut().close_doc(path);
         let Some(info) = closed else { return false };
         self.mark_dirty();
@@ -373,7 +373,7 @@ impl Daemon {
     /// not look at the docs: its caller sends the active board next, and that
     /// send looks (`conn::change_and_send_active_board`), and the watcher
     /// thread wakes a look after its unwatches.
-    pub async fn delete_board(&self, id: &str) -> bool {
+    pub(crate) async fn delete_board(&self, id: &str) -> bool {
         let deleted = self.boards.lock().await.delete(id);
         let Some(board) = deleted else { return false };
         self.mark_dirty();
@@ -385,7 +385,7 @@ impl Daemon {
 
     /// Has the save loop read each live terminal's cwd once more, write the
     /// state a last time and stop: no write follows. Returns once written.
-    pub async fn final_save(&self) {
+    pub(crate) async fn final_save(&self) {
         self.shutting_down.store(true, Ordering::SeqCst);
         let (done, saved) = oneshot::channel();
         if self.finals.send(done).await.is_ok() {
@@ -393,22 +393,22 @@ impl Daemon {
         }
     }
 
-    pub fn mark_dirty(&self) {
+    pub(crate) fn mark_dirty(&self) {
         self.dirty.notify_one();
     }
 
-    pub async fn dirty_notified(&self) {
+    pub(crate) async fn dirty_notified(&self) {
         self.dirty.notified().await;
     }
 
-    pub fn state_path(&self) -> &Path {
+    pub(crate) fn state_path(&self) -> &Path {
         &self.state_path
     }
 
     /// The connection takes the app's place. The data registrations of the
     /// one it replaces are dropped while the place is held, so that none of
     /// its own is: the app names each file again when it connects (2611.0005).
-    pub async fn install_app(&self, tx: mpsc::Sender<Msg>, version: Option<String>) -> (u64, CancellationToken) {
+    pub(crate) async fn install_app(&self, tx: mpsc::Sender<Msg>, version: Option<String>) -> (u64, CancellationToken) {
         let cancel = CancellationToken::new();
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
         let mut slot = self.app.lock().await;
@@ -423,7 +423,7 @@ impl Daemon {
     }
 
     /// Slot occupancy and the version the occupant reported — see `AppSlot`.
-    pub async fn app_slot_version(&self) -> (bool, Option<String>) {
+    pub(crate) async fn app_slot_version(&self) -> (bool, Option<String>) {
         let slot = self.app.lock().await;
         match slot.as_ref() {
             Some(s) => (true, s.version.clone()),
@@ -434,7 +434,7 @@ impl Daemon {
     /// The connection `generation` ends. When it holds the app's place, the
     /// place is left and the data registrations are dropped, with the place
     /// held: a connection that took the place meanwhile loses nothing.
-    pub async fn remove_app(&self, generation: u64) {
+    pub(crate) async fn remove_app(&self, generation: u64) {
         let mut slot = self.app.lock().await;
         if slot.as_ref().is_some_and(|s| s.generation == generation) {
             *slot = None;
@@ -452,14 +452,14 @@ impl Daemon {
         }
     }
 
-    pub async fn term(&self, id: &str) -> Option<Arc<TermHandle>> {
+    pub(crate) async fn term(&self, id: &str) -> Option<Arc<TermHandle>> {
         self.terms.lock().await.get(id).cloned()
     }
 
     /// A terminal that is live or in the exit ring. `terms` is read before
     /// the ring, and each lock is taken alone: an ending terminal is recorded
     /// in the ring before it leaves `terms`, so it is never neither.
-    pub async fn knows_term(&self, id: &str) -> Option<Known> {
+    pub(crate) async fn knows_term(&self, id: &str) -> Option<Known> {
         if self.term(id).await.is_some() {
             return Some(Known::Live);
         }
@@ -468,13 +468,13 @@ impl Daemon {
 
     /// The board of the calling terminal `term_id`, `None` for a terminal the
     /// daemon does not have: a stale `TARMAC_TERM_ID` names no board (#386).
-    pub async fn caller_board(&self, term_id: Option<&str>) -> Option<BoardId> {
+    pub(crate) async fn caller_board(&self, term_id: Option<&str>) -> Option<BoardId> {
         self.term_boards.lock().await.get(term_id?).cloned()
     }
 
     /// `path` is a directory, as the gate reads it. A read that fails or is
     /// out is not.
-    pub async fn is_dir(&self, path: &Path) -> bool {
+    pub(crate) async fn is_dir(&self, path: &Path) -> bool {
         let probe = path.to_owned();
         matches!(self.gate.run(path, move |fs| fs.is_dir(&probe)).await, Ok(true))
     }
@@ -495,7 +495,7 @@ impl Daemon {
 
     /// A board_list with live-pty counts, locking terms, term_boards, then
     /// boards — each released before the next is taken.
-    pub async fn board_list_msg(&self) -> Msg {
+    pub(crate) async fn board_list_msg(&self) -> Msg {
         let live = self.live_terms_by_board().await;
         self.boards.lock().await.board_list_msg(&live)
     }
@@ -504,7 +504,7 @@ impl Daemon {
     /// while its term is still in `terms`). Locks `terms`, then `term_boards`,
     /// each released before the next, so it cannot deadlock against the pump's
     /// terms-then-term_boards exit cleanup.
-    pub async fn live_terms_by_board(&self) -> HashMap<BoardId, Vec<String>> {
+    pub(crate) async fn live_terms_by_board(&self) -> HashMap<BoardId, Vec<String>> {
         let live: HashSet<String> = self.terms.lock().await.keys().cloned().collect();
         let term_boards = self.term_boards.lock().await;
         let mut by_board: HashMap<BoardId, Vec<String>> = HashMap::new();
@@ -518,20 +518,20 @@ impl Daemon {
 
     /// `msg`, published to the subscribers first (spec 2611.0012): every
     /// event frame for the app passes here, whatever channel then sends it.
-    pub fn published(&self, msg: Msg) -> Msg {
+    pub(crate) fn published(&self, msg: Msg) -> Msg {
         self.events.publish(&msg);
         msg
     }
 
     /// An event frame, published and then pushed. The return is `push`'s: a
     /// subscriber is not an app.
-    pub async fn emit(&self, msg: Msg) -> bool {
+    pub(crate) async fn emit(&self, msg: Msg) -> bool {
         self.push(self.published(msg)).await
     }
 
     /// Pushes to the connected app. False when there is none, or it went
     /// away: the frame is dropped.
-    pub async fn push(&self, msg: Msg) -> bool {
+    pub(crate) async fn push(&self, msg: Msg) -> bool {
         let tx = self.app.lock().await.as_ref().map(|s| s.tx.clone());
         match tx {
             Some(tx) => tx.send(msg).await.is_ok(),
@@ -546,10 +546,10 @@ mod subscriptions;
 mod term_news;
 mod terms;
 
-pub use term_news::{TERM_NEW_APP_WAIT, TermNews};
+pub(crate) use term_news::{TERM_NEW_APP_WAIT, TermNews};
 
 /// What the daemon knows of a terminal id (`Daemon::knows_term`).
-pub enum Known {
+pub(crate) enum Known {
     Live,
     /// One of the last terminals that ended, with its exit code.
     Exited(Option<i64>),

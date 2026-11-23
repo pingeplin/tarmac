@@ -2,16 +2,22 @@
 
 use tarmac_protocol::Msg;
 
-pub fn bell(term_id: &str) -> Msg {
+pub(crate) fn bell(term_id: &str) -> Msg {
     Msg::Bell { term_id: term_id.into(), board_id: None }
 }
 
-pub fn exit(term_id: &str, code: Option<i64>) -> Msg {
+pub(crate) fn exit(term_id: &str, code: Option<i64>) -> Msg {
     Msg::Exit { term_id: term_id.into(), code, board_id: None }
 }
 
 /// A `term_report`; one with a `kind` is at 1 700 000 000 000 ms.
-pub fn term_report(term_id: &str, kind: Option<&str>, text: Option<&str>, proc: Option<&str>, read: bool) -> Msg {
+pub(crate) fn term_report(
+    term_id: &str,
+    kind: Option<&str>,
+    text: Option<&str>,
+    proc: Option<&str>,
+    read: bool,
+) -> Msg {
     Msg::TermReport {
         term_id: term_id.into(),
         kind: kind.map(str::to_string),

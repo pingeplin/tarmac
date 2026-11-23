@@ -36,7 +36,7 @@ fn write_skill(path: &Path, doc: &str) -> Result<(), String> {
 }
 
 /// Returns the exit code: 0 ok, 1 a target failed, 2 usage.
-pub fn run(args: &[String]) -> i32 {
+pub(crate) fn run(args: &[String]) -> i32 {
     match args.first().map(String::as_str) {
         None => {
             print!("{GUIDE}");

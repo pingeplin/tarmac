@@ -74,7 +74,7 @@ fn default_active() -> String {
 
 // Missing or unreadable/corrupt state is never fatal: a missing file is silent,
 // anything else warns, and the daemon starts empty.
-pub fn load(path: &Path) -> Boards {
+pub(crate) fn load(path: &Path) -> Boards {
     let state = match std::fs::read(path) {
         Ok(bytes) => serde_json::from_slice::<PersistedState>(&bytes)
             .map_err(|e| format!("corrupt state file {} ({e})", path.display())),
@@ -197,7 +197,7 @@ async fn write(daemon: &Daemon) {
 /// a burst of changes into one write. A request from `Daemon::final_save`
 /// ends it: each live terminal's cwd is read once more, the state is
 /// written a last time, and the request is answered.
-pub async fn save_loop(daemon: Arc<Daemon>, mut finals: mpsc::Receiver<oneshot::Sender<()>>) {
+pub(crate) async fn save_loop(daemon: Arc<Daemon>, mut finals: mpsc::Receiver<oneshot::Sender<()>>) {
     loop {
         tokio::select! {
             _ = async {
