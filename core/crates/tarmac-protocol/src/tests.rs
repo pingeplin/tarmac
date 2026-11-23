@@ -727,6 +727,48 @@ fn s21_term_resume_is_not_an_event() {
 }
 
 #[test]
+fn the_frame_limit_is_16_mib() {
+    assert_eq!(MAX_FRAME_LEN, 16_777_216);
+}
+
+#[test]
+fn an_event_kind_has_the_name_the_cli_takes() {
+    let names = [
+        (EventKind::Exit, "exit"),
+        (EventKind::Bell, "bell"),
+        (EventKind::Changed, "changed"),
+        (EventKind::Report, "report"),
+    ];
+    for (kind, name) in names {
+        assert_eq!(kind.name(), name);
+        assert_eq!(EventKind::named(name), Some(kind));
+    }
+    assert_eq!(EventKind::named("exits"), None);
+    assert_eq!(EventKind::named(""), None);
+}
+
+#[test]
+fn an_event_frame_has_its_kind_and_its_terminal() {
+    let exit = Msg::Exit { term_id: "t0".into(), code: Some(0), board_id: None };
+    let bell = Msg::Bell { term_id: "t2".into(), board_id: None };
+    let changed = Msg::FileEvent { path: "/a.md".into(), mtime_ms: 5 };
+    let report = term_report_none();
+
+    assert_eq!(EventKind::of(&exit), Some((EventKind::Exit, Some("t0"))));
+    assert_eq!(EventKind::of(&bell), Some((EventKind::Bell, Some("t2"))));
+    assert_eq!(EventKind::of(&changed), Some((EventKind::Changed, None)));
+    assert_eq!(EventKind::of(&report), Some((EventKind::Report, Some("t1"))));
+    assert_eq!(EventKind::of(&Msg::Ack), None);
+}
+
+#[test]
+fn a_refused_resume_command_says_so_with_its_cause() {
+    assert_eq!(refuse_resume_cmd("claude --resume abc"), Ok(()));
+    assert_eq!(refuse_resume_cmd("").unwrap_err(), "resume command refused: empty");
+    assert_eq!(refuse_resume_cmd(&"x".repeat(257)).unwrap_err(), "resume command refused: over 256 characters");
+}
+
+#[test]
 fn an_event_is_admitted_by_its_kind_and_its_terminal() {
     let bell = |term: &str| Msg::Bell { term_id: term.into(), board_id: None };
     let changed = Msg::FileEvent { path: "/a.md".into(), mtime_ms: 5 };
