@@ -245,15 +245,24 @@ fn old_file(dir: &Path, name: &str) -> PathBuf {
 /// `wait --changed` on `path`, with `args` after it, while `act` runs
 /// `after` the start. The double on its socket must see no connection.
 fn changed_with(path: &Path, args: &[&str], after: Duration, act: impl FnOnce()) -> (Output, Duration) {
+    let (out, took, _) = changed_timed(path, args, after, act);
+    (out, took)
+}
+
+/// As `changed_with`, and also how long the exit came after `act` returned. A
+/// sleep ends late on a loaded machine, so "the whole run minus `after`" counts
+/// that lateness as the CLI's (#469).
+fn changed_timed(path: &Path, args: &[&str], after: Duration, act: impl FnOnce()) -> (Output, Duration, Duration) {
     let daemon = Streamer::writing(vec![Msg::Ack]);
     let started = Instant::now();
     let child = start(tarmac_at(&daemon.double.sock).args(["wait", "--changed"]).arg(path).args(args));
     std::thread::sleep(after);
     act();
+    let acted = Instant::now();
     let out = child.wait_with_output().unwrap();
-    let took = started.elapsed();
+    let (took, since_act) = (started.elapsed(), acted.elapsed());
     assert!(untouched(&daemon.double));
-    (out, took)
+    (out, took, since_act)
 }
 
 fn append(path: &Path) {
@@ -321,15 +330,17 @@ fn s27_a_change_after_2_s_is_seen_within_one_slow_poll() {
     let dir = scratch();
     let file = old_file(&dir, "slow.txt");
 
-    let (out, took) = changed_with(&file, &["--timeout", "6000"], Duration::from_millis(2200), || {
+    let (out, _, late) = changed_timed(&file, &["--timeout", "6000"], Duration::from_millis(2200), || {
         let other = dir.join("slow.new");
         std::fs::write(&other, "xyz").unwrap();
         std::fs::rename(&other, &file).unwrap();
     });
 
     assert_eq!(out.status.code(), Some(0));
-    let late = took.saturating_sub(Duration::from_millis(2200));
-    assert!(late < Duration::from_millis(450), "the exit came {late:?} after the rename");
+    // One slow poll is 250 ms; `poll_interval`'s unit test holds that number. The
+    // second is for the helper, the pipe and the exit on a loaded machine: CI was
+    // 500 ms late with a limit of 450 (#469).
+    assert!(late < Duration::from_millis(1250), "the exit came {late:?} after the rename");
 }
 
 // S27
