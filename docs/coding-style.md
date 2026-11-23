@@ -137,8 +137,17 @@ back from a rendered bitmap.
   change what the program does, or is a design change, keep the code with its
   reason, in the one form the check accepts:
   - Rust: `#[expect(lint, reason = "…")]` on the narrowest item, never
-    `#[allow]`. A stale `expect` fails by itself. State a bound in the reason
-    only when the code beside it shows the bound.
+    `#[allow]` (`clippy::allow_attributes`). A stale `expect` fails by itself.
+    State a bound in the reason only when the code beside it shows the bound.
+    The one exception is a shared `tests/common` module that several test
+    binaries include: an `expect` there is unfulfilled in each binary that
+    uses the item. Such a module keeps `#![allow(dead_code, reason = "…")]`,
+    an item in it `#[allow(lint, reason = "…")]`, and the module
+    `#![expect(clippy::allow_attributes, reason = "…")]` (an `expect` on a
+    `use` item is `clippy::useless_attribute`).
+    `clippy::allow_attributes_without_reason` holds every reason, and
+    `make arch-check` refuses an allow, inner or outer, in any other file
+    (`allow_attributes` does not read an inner `#![allow]`).
   - Swift: a `//` comment that says why, then `// swift-format-ignore: <Rule>`,
     on the two lines before the statement or declaration and above its `///`
     doc comment (a `//` line between a doc comment and its declaration hides

@@ -139,7 +139,7 @@ export function docsCheck(root = ROOT, argv = process.argv) {
   if (!enumBody) {
     fail(PROTO_SRC, 1, "could not locate `pub enum Msg` — docs-check rule 4 cannot run");
   } else {
-    const variants = [...enumBody[1].matchAll(/^ {4}([A-Z][A-Za-z0-9]*)\s*(\{|,)/gm)]
+    const variants = [...enumBody[1].matchAll(/^ {4}([A-Z][A-Za-z0-9]*)\s*(\{|\(|,)/gm)]
       .map((m) => m[1])
       .filter((v) => v !== "Unknown"); // #[serde(other)] catch-all, never sent
     const snake = (v) => v.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();

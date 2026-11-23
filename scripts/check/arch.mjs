@@ -191,6 +191,11 @@ function thiserror(tree) {
   );
 }
 
+// The shared harness of each crate's integration tests: an expect there is unfulfilled in each test binary that uses the item.
+const HARNESS = /^core\/crates\/[^/]+\/tests\/common\/mod\.rs$/;
+
+const allows = (tree) => placesWhere(tree, rustFiles(tree).filter((path) => !HARNESS.test(path)), (lines, i) => /#!?\[\s*allow\s*\(/.test(partsOf(lines[i]).code));
+
 const MILESTONES = ["m0", "m1", "m2", "m3", "v4", "v4c"];
 
 const milestoneSuites = (tree) =>
@@ -224,6 +229,80 @@ function unnamedTestClass(tree) {
       const named = classes.some(({ final, type }) => final && type === name);
       return classes.length > 0 && !named ? [`${path}:${classes[0].number}`] : [];
     });
+}
+
+// ------------------------------------------------------------ the codecs
+
+const MSG = "core/crates/tarmac-protocol/src/lib.rs";
+const MESSAGES = `${KIT}Messages.swift`;
+
+/** The lines of `path` and the block that opens on the first line `opens` matches, to the `}` at that line's indentation. */
+function blockOf(tree, path, opens, what) {
+  if (!tree.has(path)) throw new Error(`${path} is missing`);
+  const lines = tree.lines(path);
+  const start = lines.findIndex((line) => opens.test(line));
+  if (start < 0) throw new Error(`${path} has no ${what}`);
+  const close = `${lines[start].match(/^\s*/)[0]}}`;
+  const end = lines.findIndex((line, i) => i > start && line === close);
+  if (end < 0) throw new Error(`${path} has no end of ${what}`);
+  return { lines, start, end };
+}
+
+// serde's snake_case: an underscore before each capital but the first.
+const snake = (name) => name.replace(/(?<!^)[A-Z]/g, (capital) => `_${capital}`).toLowerCase();
+
+/** Each `Msg` variant that has a `"t"` tag on the wire, as `{ tag, number }`. */
+function wireVariants(tree) {
+  const { lines, start, end } = blockOf(tree, MSG, /^pub enum Msg \{/, "pub enum Msg");
+  const attributes = lines.slice(above(lines, start, (line) => RUST_ATTRIBUTE.test(line)) + 1, start).join(" ");
+  if (!attributes.includes('#[serde(tag = "t", rename_all = "snake_case")]')) {
+    throw new Error(`${MSG}: pub enum Msg is not #[serde(tag = "t", rename_all = "snake_case")]`);
+  }
+  const variants = [];
+  let own = [];
+  for (let i = start + 1; i < end; i++) {
+    if (/^ {4}#\[/.test(lines[i])) own.push(lines[i]);
+    const name = lines[i].match(/^ {4}([A-Z]\w*)\s*(?:[{(,]|$)/)?.[1];
+    if (!name) continue;
+    // The #[serde(other)] catch-all is what an unknown tag decodes to: it has no tag of its own.
+    if (!own.some((line) => /\bserde\(\s*other\s*\)/.test(line))) {
+      variants.push({ tag: own.join(" ").match(/\brename\s*=\s*"([^"]*)"/)?.[1] ?? snake(name), number: i + 1 });
+    }
+    own = [];
+  }
+  return variants;
+}
+
+/** A line of Swift without its `//` comment; a `//` inside a one-line string stays. */
+const codeOf = (line) => line.slice(0, partsOf(line).code.length);
+
+/** The tags of the cases of `Message.decode`'s own switch, and those `encodedValue` passes to a `Self.<helper>` call. */
+function swiftTags(tree) {
+  const body = (opens, what) => {
+    const { lines, start, end } = blockOf(tree, MESSAGES, opens, what);
+    return lines.slice(start + 1, end).map(codeOf);
+  };
+  const DECODE = "static func decode(_: MsgPackValue)";
+  const decode = body(/\bstatic func decode\(_ \w+: MsgPackValue\)/, DECODE);
+  const encode = body(/\bfunc encodedValue\(\)/, "func encodedValue()").join("\n");
+  // Swift lays a switch's cases at the switch's own indentation; a nested switch's are deeper.
+  const indent = decode.find((line) => /^\s*switch\b/.test(line))?.match(/^\s*/)[0];
+  if (indent === undefined) throw new Error(`${MESSAGES} has no switch in ${DECODE}`);
+  const labels = decode.flatMap((line) => line.match(new RegExp(`^${indent}case\\s+("[^"]*"(?:\\s*,\\s*"[^"]*")*)\\s*:`))?.[1] ?? []);
+  const decoded = labels.flatMap((label) => [...label.matchAll(/"([^"]*)"/g)].map(([, tag]) => tag));
+  const encoded = [...encode.matchAll(/\bSelf\.\w+\(\s*"([^"]*)"/g)].map(([, tag]) => tag);
+  return { decoded: new Set(decoded), encoded: new Set(encoded) };
+}
+
+function uncoded(tree) {
+  try {
+    const { decoded, encoded } = swiftTags(tree);
+    return wireVariants(tree)
+      .filter(({ tag }) => !decoded.has(tag) || !encoded.has(tag))
+      .map(({ number }) => `${MSG}:${number}`);
+  } catch (error) {
+    throw new Error(`${error.message} (the codec rule in scripts/check/arch.mjs reads this path)`);
+  }
 }
 
 // ------------------------------------------------------------- the rules
@@ -340,6 +419,22 @@ const RULES = [
     // A file with no XCTestCase class is not judged, nor a shared base case (not final, not named …Tests), nor a class
     // that subclasses another test case.
     find: unnamedTestClass,
+  },
+  {
+    summary: "#[allow] or #![allow] is used outside a shared tests/common harness",
+    why: "a kept lint finding is #[expect(lint, reason = …)], which fails once it is stale; clippy refuses an outer #[allow] only (docs/coding-style.md §2)",
+    fix: "use #[expect(lint, reason = \"…\")] on the narrowest item, or fix the finding",
+    // A line's code, without its // comment and its one-line strings. An allow inside cfg_attr is not seen.
+    find: allows,
+  },
+  {
+    summary: "a Msg variant of the Rust codec has no decode case or no encode in the Swift codec",
+    why: "the wire contract has two codecs; a tag the Swift codec does not decode is dropped as unknown, and one it does not encode the app cannot send",
+    fix: `add the variant to Message in ${MESSAGES}: a case "<tag>": in decode and its encode in encodedValue, in the change that adds it to Msg`,
+    // A tag is the name in snake_case or a one-line #[serde(rename = "…")]; other serde attributes that change a tag
+    // (skip, alias, a split rename) are not seen. It sees that a case is there, not which keys it reads or writes:
+    // the conformance vectors hold those.
+    find: uncoded,
   },
 ];
 

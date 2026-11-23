@@ -53,6 +53,13 @@ match_same_arms = "warn"
 map_unwrap_or = "warn"
 semicolon_if_nothing_returned = "warn"
 redundant_closure_for_method_calls = "warn"
+# A kept finding is #[expect(lint, reason = "…")]. allow_attributes refuses an
+# outer #[allow], and does not read an inner #![allow], which arch-check
+# refuses; both need a reason. The exception is a crate's tests/common/mod.rs,
+# where an expect is unfulfilled in each test binary that uses the item
+# (docs/coding-style.md §2).
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
 
 [workspace.dependencies]
 tarmac-protocol = { path = "crates/tarmac-protocol" }

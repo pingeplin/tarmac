@@ -9,7 +9,7 @@ exclude_re = [
   # twins share the name and their mutants are caught. When the line moves,
   # these come back as survivors and the line here must follow.
   "help\\.rs:229:5: replace dev_forms ",
-  "main\\.rs:68:5: replace dev_dispatch ",
+  "main\\.rs:79:5: replace dev_dispatch ",
   # The `count += 1` for the space before a word (column 19; the one for the
   # word itself is column 15). `count` only decides when the loop stops early.
   # A count that is too low reads on past the cap, and `cap_report_text` then

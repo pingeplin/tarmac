@@ -44,12 +44,23 @@ fn term_of(value: Option<OsString>) -> Option<String> {
     value?.into_string().ok()
 }
 
-pub(crate) fn home_or_root() -> OsString {
-    std::env::var_os("HOME").unwrap_or_else(|| "/".into())
+/// One environment variable's value: the process's, or a test's table.
+pub(crate) type Env<'a> = &'a dyn Fn(&str) -> Option<OsString>;
+
+pub(crate) fn process_env(name: &str) -> Option<OsString> {
+    std::env::var_os(name)
+}
+
+pub(crate) fn home_or_root(env: Env) -> OsString {
+    env("HOME").unwrap_or_else(|| "/".into())
 }
 
 fn socket_path() -> PathBuf {
-    proto::resolve_socket_path(env_override("TARMAC_SOCKET"), &home_or_root(), current_channel())
+    socket_path_from(&process_env, current_channel())
+}
+
+fn socket_path_from(env: Env, channel: proto::Channel) -> PathBuf {
+    proto::resolve_socket_path(env("TARMAC_SOCKET").filter(|v| !v.is_empty()), &home_or_root(env), channel)
 }
 
 // Compiled out of release builds; the same `cfg!(debug_assertions)` feeds
@@ -188,12 +199,26 @@ mod tests {
     use std::ffi::{OsStr, OsString};
     use std::os::unix::ffi::OsStrExt;
 
-    use super::term_of;
+    use super::{socket_path_from, term_of};
+    use crate::fixtures::socket_rows;
 
     #[test]
     fn a_term_id_is_the_value_as_it_is_and_one_that_is_not_utf8_is_none() {
         assert_eq!(term_of(Some("t9".into())), Some("t9".to_string()));
         assert_eq!(term_of(Some(OsString::from(OsStr::from_bytes(b"t\xff9")))), None);
         assert_eq!(term_of(None), None);
+    }
+
+    #[test]
+    fn each_row_of_the_shared_socket_table() {
+        let rows = socket_rows("socket");
+        assert_eq!(rows.len(), 15);
+        for row in rows {
+            assert_eq!(
+                socket_path_from(&|name| row.var(name), row.channel).to_str(),
+                Some(row.path.as_str()),
+                "{row:?}"
+            );
+        }
     }
 }

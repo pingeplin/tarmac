@@ -67,6 +67,15 @@ test("a Msg variant that a doc does not name is a failure of that doc", () => {
   ]);
 });
 
+test("a Msg variant that holds one value, not named fields, is read as the others are", () => {
+  const lib = "pub enum Msg {\n    Ping,\n    DocOpened(DocEntry),\n}\n";
+
+  assert.deepEqual(failures({ "core/crates/tarmac-protocol/src/lib.rs": lib, "docs/protocol.md": `${banner("ACTIVE")}ping\n` }), [
+    "docs/architecture.md:1: Msg::DocOpened exists on the wire but is absent from this doc",
+    'docs/protocol.md:1: Msg::DocOpened ("doc_opened") exists on the wire but is absent from this doc',
+  ]);
+});
+
 test("the script prints its failures in its own form and ends with 1, and ends with 0 when there is none", () => {
   const run = (dir) => runScript(join(dir, "scripts/docs-check.mjs"), [], { cwd: dir });
 

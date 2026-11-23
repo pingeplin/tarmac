@@ -20,10 +20,7 @@
         /// a live sibling worktree, a path too long for a socket — is logged and
         /// the app runs without a driver.
         func start(_ verbs: DevVerbs) {
-            let environment = ProcessInfo.processInfo.environment
-            let path = ChannelPaths.devSocketPath(
-                override: environment["TARMAC_DEV_SOCKET"], home: ChannelPaths.home(env: environment), channel: .build
-            )
+            let path = ChannelPaths.devSocketPath(env: ProcessInfo.processInfo.environment, channel: .build)
             switch DevSocket.claim(path: path) {
             case .failure(.liveOwner):
                 Log.stderr("a dev driver is already listening on \(path) — not starting a second one")

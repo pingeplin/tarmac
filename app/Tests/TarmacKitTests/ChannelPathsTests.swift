@@ -4,8 +4,7 @@ import XCTest
 
 /// 2606.0003: per-channel daemon socket path derivation — the Swift mirror of
 /// the Rust `tarmac_protocol` resolver. Pure, table-driven, S-numbers in
-/// comments. The impure shell (`DaemonClient.resolveSocketPath`, the
-/// `#if DEBUG` → Channel mapping) is not unit-tested.
+/// comments. The `#if DEBUG` → Channel mapping is not unit-tested.
 final class ChannelPathsTests: XCTestCase {
     private let home = "/Users/eplin"
 
@@ -34,6 +33,58 @@ final class ChannelPathsTests: XCTestCase {
                 c.expected,
                 "socketPath(override: \(c.override.map { "\"\($0)\"" } ?? "nil"), channel: \(c.channel))"
             )
+        }
+    }
+
+    /// `tarmac-protocol`'s `tests/fixtures/socket_path_cases.json`, the table
+    /// the Rust copies in `tarmacd` and `tarmac-cli` run too.
+    private struct SocketTable: Decodable {
+        struct Row: Decodable {
+            let channel: String
+            let env: [String: String]
+            let path: String
+
+            var buildChannel: ChannelPaths.Channel {
+                switch channel {
+                case "dev": return .dev
+                case "release": return .release
+                default: preconditionFailure("no channel \(channel)")
+                }
+            }
+        }
+
+        let socket: [Row]
+        let devSocket: [Row]
+
+        enum CodingKeys: String, CodingKey {
+            case socket
+            case devSocket = "dev_socket"
+        }
+
+        static func read(from file: String = #filePath) throws -> SocketTable {
+            let fixture = URL(fileURLWithPath: file)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("core/crates/tarmac-protocol/tests/fixtures/socket_path_cases.json")
+            return try JSONDecoder().decode(SocketTable.self, from: Data(contentsOf: fixture))
+        }
+    }
+
+    func testEachRowOfTheSharedSocketTable() throws {
+        let rows = try SocketTable.read().socket
+        XCTAssertEqual(rows.count, 15)
+        XCTAssertEqual(Set(rows.map(\.channel)), ["dev", "release"])
+        for row in rows {
+            XCTAssertEqual(DaemonClient.resolveSocketPath(env: row.env, channel: row.buildChannel), row.path, "\(row)")
+        }
+    }
+
+    func testEachRowOfTheSharedDevSocketTable() throws {
+        let rows = try SocketTable.read().devSocket
+        XCTAssertEqual(rows.count, 8)
+        XCTAssertEqual(Set(rows.map(\.channel)), ["dev", "release"])
+        for row in rows {
+            XCTAssertEqual(ChannelPaths.devSocketPath(env: row.env, channel: row.buildChannel), row.path, "\(row)")
         }
     }
 

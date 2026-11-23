@@ -40,18 +40,29 @@ fn current_channel() -> Channel {
     if cfg!(debug_assertions) { Channel::Dev } else { Channel::Release }
 }
 
-fn home_dir() -> OsString {
-    std::env::var_os("HOME").unwrap_or_else(|| OsString::from("/"))
+/// One environment variable's value: the process's, or a test's table.
+type Env<'a> = &'a dyn Fn(&str) -> Option<OsString>;
+
+fn process_env(name: &str) -> Option<OsString> {
+    std::env::var_os(name)
+}
+
+fn home_dir(env: Env) -> OsString {
+    env("HOME").unwrap_or_else(|| OsString::from("/"))
 }
 
 fn socket_path() -> PathBuf {
-    let over = std::env::var_os("TARMAC_SOCKET").filter(|v| !v.is_empty());
-    resolve_socket_path(over, &home_dir(), current_channel())
+    socket_path_from(&process_env, current_channel())
+}
+
+fn socket_path_from(env: Env, channel: Channel) -> PathBuf {
+    let over = env("TARMAC_SOCKET").filter(|v| !v.is_empty());
+    resolve_socket_path(over, &home_dir(env), channel)
 }
 
 fn state_path() -> PathBuf {
     let over = std::env::var_os("TARMAC_STATE").filter(|v| !v.is_empty());
-    resolve_state_path(over, &home_dir(), current_channel())
+    resolve_state_path(over, &home_dir(&process_env), current_channel())
 }
 
 // Per docs/protocol.md: if the socket file exists, try connecting — success
@@ -152,6 +163,35 @@ async fn main() -> anyhow::Result<()> {
                 warn!("accept failed: {e}");
                 tokio::time::sleep(ACCEPT_RETRY).await;
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsString;
+
+    use tarmac_protocol::Channel;
+
+    use super::socket_path_from;
+
+    /// The `socket` rows of the table that tarmac-cli's `socket_path` and the
+    /// Swift `DaemonClient.resolveSocketPath` run too.
+    #[test]
+    fn each_row_of_the_shared_socket_table() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../tarmac-protocol/tests/fixtures/socket_path_cases.json");
+        let table: serde_json::Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let rows = table["socket"].as_array().unwrap();
+        let channel = |row: &serde_json::Value| match row["channel"].as_str() {
+            Some("dev") => Channel::Dev,
+            Some("release") => Channel::Release,
+            other => panic!("no channel {other:?}"),
+        };
+        assert_eq!(rows.len(), 15);
+        assert!([Channel::Dev, Channel::Release].iter().all(|c| rows.iter().any(|row| channel(row) == *c)));
+        for row in rows {
+            let env = |name: &str| row["env"].get(name).map(|v| OsString::from(v.as_str().unwrap()));
+            assert_eq!(socket_path_from(&env, channel(row)).to_str(), row["path"].as_str(), "{row}");
         }
     }
 }

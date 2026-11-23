@@ -1,5 +1,5 @@
 // Shared harness: run the `tarmac` binary and capture what it printed.
-#![allow(dead_code)] // each test binary uses a different slice of the harness
+#![allow(dead_code, reason = "each test binary uses a different slice of the harness")]
 
 use std::io::Write;
 use std::path::{Path, PathBuf};

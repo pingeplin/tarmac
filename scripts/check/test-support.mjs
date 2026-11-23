@@ -51,3 +51,24 @@ export const atRows = (text) =>
     .map((line) => line.slice(7));
 /** The one row of a reporter's text with `label` (`why`, `fix`, `then`), without the label. */
 export const rowOf = (text, label) => text.split("\n").find((line) => line.startsWith(`  ${label.padEnd(4)} `))?.slice(7);
+
+/** The two wire codecs as the smallest tree that keeps arch-check's codec rule: one message, `ack`, in each. */
+export const WIRE_CODECS = {
+  "core/crates/tarmac-protocol/src/lib.rs": '#[serde(tag = "t", rename_all = "snake_case")]\npub enum Msg {\n    Ack,\n    #[serde(other)]\n    Unknown,\n}\n',
+  "app/Sources/TarmacKit/Messages.swift": [
+    "extension Message {",
+    "    static func decode(_ value: MsgPackValue) -> Message {",
+    "        switch t {",
+    '        case "ack":',
+    "            return .ack",
+    "        }",
+    "    }",
+    "",
+    "    func encodedValue() -> MsgPackValue {",
+    '        Self.tagged("ack")',
+    "    }",
+    "}",
+    "",
+  ].join("\n"),
+  "app/Tests/TarmacKitTests/MessagesTests.swift": "",
+};

@@ -415,3 +415,24 @@ fn a_spawn_with_an_empty_cmd_is_refused() {
     let reply = app.recv_until("err", |m| matches!(m, Msg::Err { .. }));
     assert!(matches!(&reply, Msg::Err { msg } if msg == "cmd must be a non-empty argv"), "{reply:?}");
 }
+
+/// A launch whose daemon never binds the socket the harness waits on panics,
+/// and the panic stops the daemon: no daemon is left with no parent.
+#[test]
+fn a_launch_that_never_sees_its_socket_stops_its_daemon() {
+    let dir = temp_dir();
+    let elsewhere = dir.join("elsewhere.sock");
+    let to = elsewhere.clone();
+
+    let launched = std::panic::catch_unwind(|| {
+        TestDaemon::start_with(move |cmd| {
+            cmd.env("TARMAC_SOCKET", &to);
+        })
+    });
+
+    assert!(launched.is_err(), "the harness saw a socket it was not given");
+    assert!(elsewhere.exists(), "the daemon never bound the socket it was given");
+    let survivor = std::os::unix::net::UnixStream::connect(&elsewhere).is_ok();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(!survivor, "the daemon still listens on {}", elsewhere.display());
+}

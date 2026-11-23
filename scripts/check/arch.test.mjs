@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { chmodSync, rmSync } from "node:fs";
+import { chmodSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
 import "./test-env.mjs";
 
-import { atRows, runScript, scratchIn, tracked, write } from "./test-support.mjs";
+import { WIRE_CODECS, atRows, runScript, scratchIn, tracked, write } from "./test-support.mjs";
 
 const SCRIPT = join(import.meta.dirname, "arch.mjs");
 const LIST = "scripts/check/arch-exceptions.json";
@@ -13,9 +13,35 @@ const CARGO = "core/Cargo.toml";
 const PINNED = '[workspace.dependencies]\nserde = { version = "=1.0.228", features = ["derive"] }\nrmp-serde = "=1.3.1"\nserde_bytes = "=0.11.19"\n';
 const KIT = "app/Sources/TarmacKit";
 const scratch = scratchIn("arch-test-");
+const MSG = "core/crates/tarmac-protocol/src/lib.rs";
+const MESSAGES = `${KIT}/Messages.swift`;
+
+/** The wire enum with `variants`, each a line or more at its indentation. */
+const rustMsg = (...variants) => `#[derive(Serialize, Deserialize)]\n#[serde(tag = "t", rename_all = "snake_case")]\npub enum Msg {\n${variants.join("\n")}\n}\n`;
+
+/** The Swift codec: a decode case for each of `decoded`, and an encode line for each of `encoded`. */
+const swiftCodec = (decoded, encoded) =>
+  [
+    "extension Message {",
+    "    public static func decode(_ value: MsgPackValue) throws -> Message {",
+    "        switch t {",
+    ...decoded.map((tag) => `        case "${tag}":\n            return .x`),
+    "        default:",
+    "            return .unknown(type: t)",
+    "        }",
+    "    }",
+    "",
+    "    public func encodedValue() -> MsgPackValue {",
+    "        switch self {",
+    ...encoded.map((line) => `        case .x:\n            ${line}`),
+    "        }",
+    "    }",
+    "}",
+    "",
+  ].join("\n");
 
 /** A git repository that breaks no rule, plus the listed files, all tracked. */
-const repo = (files = {}) => tracked(scratch(), { [CARGO]: PINNED, [LIST]: "[]\n", ...files });
+const repo = (files = {}) => tracked(scratch(), { [CARGO]: PINNED, [LIST]: "[]\n", ...WIRE_CODECS, ...files });
 
 function arch(dir) {
   const run = runScript(SCRIPT, [], { cwd: dir });
@@ -614,4 +640,125 @@ test("#496 review: a // reason above the item's doc comment is the skip's reason
   const source = "// the table reads as a grid\n/// The table.\n#[rustfmt::skip]\nconst A: u8 = 1;\n";
 
   assert.equal(arch(repo({ "core/crates/x/src/lib.rs": source })).code, 0);
+});
+
+const CODECS = "a Msg variant of the Rust codec has no decode case or no encode in the Swift codec";
+
+test("#496: each Msg variant, unit, struct or tuple, needs a decode case and an encode in the Swift codec, or is reported at its line", () => {
+  const msg = rustMsg(
+    "    Ack,",
+    "    /// A doc comment and a field's attribute are not variants.",
+    "    Open {",
+    "        #[serde(default)]",
+    "        path: String,",
+    "    },",
+    "    DocOpened(DocEntry),",
+    "    BoardCreate,",
+    "    TermsList,",
+  );
+  const codec = swiftCodec(["ack", "open", "board_create"], ['return Self.tagged("ack")', 'return Self.tagged("doc_opened")', 'return Self.tagged("board_create")']);
+
+  const run = arch(repo({ [MSG]: msg, [MESSAGES]: codec }));
+
+  assert.equal(run.code, 1);
+  assert.deepEqual(summaries(run), [CODECS]);
+  assert.deepEqual(places(run), [10, 12, 6].map((line) => `${MSG}:${line}`));
+});
+
+test("#496: an encode through another helper counts; a field name in the encode body, or a tag outside it, does not", () => {
+  const msg = rustMsg("    Ack,", "    Resume {", "        cmd: String,", "    },", "    Terms(Vec<TermInfo>),");
+  const codec = swiftCodec(["ack", "resume", "terms"], ['return Self.tagged("ack")', 'return Self.resumeValue("resume", cmd: cmd)', 'return Self.tagged("list") { $0.put("terms", x) }']);
+
+  const run = arch(repo({ [MSG]: msg, [MESSAGES]: `${codec}let other = tagged("terms")\n` }));
+
+  assert.deepEqual(summaries(run), [CODECS]);
+  assert.deepEqual(places(run), [`${MSG}:8`]);
+});
+
+test("#496: the #[serde(other)] catch-all has no tag and needs no case; #[serde(rename)] names a variant's tag", () => {
+  const msg = rustMsg("    #[serde(rename = \"hi\")]", "    Hello,", "    #[serde(other)]", "    Unknown,");
+  const codec = swiftCodec(["hi"], ['return Self.tagged("hi")']);
+
+  assert.deepEqual(arch(repo({ [MSG]: msg, [MESSAGES]: codec })), { code: 0, out: "", err: [""] });
+});
+
+const READS = " (the codec rule in scripts/check/arch.mjs reads this path)";
+
+for (const [name, files, why] of [
+  ["the Rust codec is missing", { [MSG]: null }, `${MSG} is missing`],
+  ["the Swift codec is missing", { [MESSAGES]: null }, `${MESSAGES} is missing`],
+  ["no Msg enum is found", { [MSG]: "pub enum Other {\n}\n" }, `${MSG} has no pub enum Msg`],
+  ["the Msg enum names its tags another way", { [MSG]: rustMsg("    Ack,").replace(', rename_all = "snake_case"', "") }, `${MSG}: pub enum Msg is not #[serde(tag = "t", rename_all = "snake_case")]`],
+  ["the Swift codec has no decode", { [MESSAGES]: swiftCodec([], []).replace("func decode", "func read") }, `${MESSAGES} has no static func decode(_: MsgPackValue)`],
+  ["the Swift codec has no encodedValue", { [MESSAGES]: swiftCodec([], []).replace("encodedValue", "value") }, `${MESSAGES} has no func encodedValue()`],
+  ["encodedValue has no end", { [MESSAGES]: swiftCodec(["ack"], ['return Self.tagged("ack")']).replace(/\n {4}\}\n\}\n$/, "\n}\n") }, `${MESSAGES} has no end of func encodedValue()`],
+  ["decode has no switch", { [MESSAGES]: swiftCodec(["ack"], ['return Self.tagged("ack")']).replace("switch t {", "if t {") }, `${MESSAGES} has no switch in static func decode(_: MsgPackValue)`],
+]) {
+  test(`#496: the check cannot run when ${name}`, () => {
+    const run = arch(repo(files));
+
+    assert.equal(run.code, 2);
+    assert.deepEqual(run.err.slice(0, 2), ["✗ arch: cannot run the architecture check", `  why  ${why}${READS}`]);
+  });
+}
+
+test("#496: the real codecs, as they are in this tree, pass", () => {
+  const root = join(import.meta.dirname, "..", "..");
+  const real = (path) => readFileSync(join(root, path), "utf8");
+
+  assert.deepEqual(arch(repo({ [MSG]: real(MSG), [MESSAGES]: real(MESSAGES) })), { code: 0, out: "", err: [""] });
+});
+
+test("#496 review: a tag in a // comment is neither a decode case nor an encode", () => {
+  const msg = rustMsg("    Ack,", "    NewX,");
+  const codec = swiftCodec(["ack"], ['return Self.tagged("ack") // Self.tagged("new_x")']).replace('        case "ack":', '        // case "new_x":\n        case "ack":');
+
+  const run = arch(repo({ [MSG]: msg, [MESSAGES]: codec }));
+
+  assert.deepEqual(summaries(run), [CODECS]);
+  assert.deepEqual(places(run), [`${MSG}:5`]);
+});
+
+test("#496 review: a case of a switch nested in decode is not a decode case; a // inside a tag's string is not a comment", () => {
+  const msg = rustMsg("    Ack,", "    BoardSwitch,", "    #[serde(rename = \"a//b\")]", "    Slashed,");
+  const nested = ['        case "ack":', "            switch kind {", '            case "board_switch":', "                return .x", "            default:", "                return .x", "            }"].join("\n");
+  const codec = swiftCodec(["a//b"], ['return Self.tagged("ack")', 'return Self.tagged("board_switch")', 'return Self.tagged("a//b")']).replace("        switch t {", `        switch t {\n${nested}`);
+
+  const run = arch(repo({ [MSG]: msg, [MESSAGES]: codec }));
+
+  assert.deepEqual(summaries(run), [CODECS]);
+  assert.deepEqual(places(run), [`${MSG}:5`]);
+});
+
+test("#496 review: only a call of Self.<helper> is an encode, not another helper of the fields", () => {
+  const msg = rustMsg("    Ack,", "    BoardSwitch,");
+  const codec = swiftCodec(["ack", "board_switch"], ['return Self.tagged("ack")', 'return Self.tagged("x") { $0.putOpt("board_switch", y) }']);
+
+  const run = arch(repo({ [MSG]: msg, [MESSAGES]: codec }));
+
+  assert.deepEqual(summaries(run), [CODECS]);
+  assert.deepEqual(places(run), [`${MSG}:5`]);
+});
+
+const ALLOW = "#[allow] or #![allow] is used outside a shared tests/common harness";
+
+test("#496 review: an inner or outer allow is reported in src and in a test file, at its line", () => {
+  const source = '#![allow(dead_code, reason = "r")]\nfn a() {}\n#[allow(unused)]\nfn b() {}\n  #[ allow (x)]\nfn c() {}\n';
+
+  const run = arch(repo({ "core/crates/x/src/lib.rs": source, "core/crates/x/tests/y.rs": source, "core/crates/x/tests/common/other.rs": source }));
+
+  assert.deepEqual(summaries(run), [ALLOW]);
+  assert.deepEqual(
+    places(run),
+    ["core/crates/x/src/lib.rs", "core/crates/x/tests/common/other.rs", "core/crates/x/tests/y.rs"].flatMap((path) => [1, 3, 5].map((line) => `${path}:${line}`)),
+  );
+});
+
+test("#496 review: the two shared harnesses may allow; an expect, a comment and a string are not an allow", () => {
+  const harness = '#![allow(dead_code, reason = "r")]\n#[allow(unused_imports, reason = "r")]\npub(crate) use a::*;\n';
+  const source = '#[expect(dead_code, reason = "r")]\nfn a() {}\n// #[allow(x)] is refused\nconst S: &str = "#[allow(x)]";\n';
+
+  const run = arch(repo({ "core/crates/tarmacd/tests/common/mod.rs": harness, "core/crates/tarmac-cli/tests/common/mod.rs": harness, "core/crates/x/src/lib.rs": source }));
+
+  assert.deepEqual(run, { code: 0, out: "", err: [""] });
 });
