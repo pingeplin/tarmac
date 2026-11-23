@@ -6,6 +6,8 @@ import XCTest
 @MainActor
 final class TerminalViewTests: XCTestCase {
     private var view: TerminalView!
+    /// The view's clipboard in a test: its own, never the system's (`make arch-check`).
+    private let pasteboard = NSPasteboard.withUniqueName()
     private var window: NSWindow!
     private var calls: [Sent] = []
     private var resizes: [[Int]] = []
@@ -30,6 +32,7 @@ final class TerminalViewTests: XCTestCase {
 
     override func setUp() async throws {
         view = try TerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        view.pasteboard = pasteboard
         view.onInput = { [unowned self] in self.calls.append(Sent(bytes: $0, source: $1)) }
         view.onResize = { [unowned self] in self.resizes.append([$0, $1]) }
         window = NSWindow(
@@ -40,6 +43,10 @@ final class TerminalViewTests: XCTestCase {
         window.makeFirstResponder(view)
         calls = []
         resizes = []
+    }
+
+    override func tearDown() async throws {
+        pasteboard.releaseGlobally()
     }
 
     private func feed(_ text: String) {
@@ -478,7 +485,7 @@ final class TerminalViewTests: XCTestCase {
         let menu = try XCTUnwrap(view.menu(for: try mouse(.rightMouseDown, col: 7, row: 0)))
         XCTAssertEqual(menu.items.map(\.title), ["Copy", "Paste", "Select All"])
         view.copy(nil)
-        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "world")
+        XCTAssertEqual(pasteboard.string(forType: .string), "world")
     }
 
     func testRightClickInsideASelectionKeepsIt() throws {
@@ -486,7 +493,7 @@ final class TerminalViewTests: XCTestCase {
         view.selectAll(nil)
         _ = view.menu(for: try mouse(.rightMouseDown, col: 7, row: 0))
         view.copy(nil)
-        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "hello world")
+        XCTAssertEqual(pasteboard.string(forType: .string), "hello world")
     }
 
     func testAProgramThatTracksTheMouseGetsNoContextMenu() throws {
@@ -810,8 +817,8 @@ final class TerminalViewTests: XCTestCase {
     // MARK: clipboard
 
     func testPasteHonoursBracketedMode() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString("a\nb", forType: .string)
+        pasteboard.clearContents()
+        pasteboard.setString("a\nb", forType: .string)
         view.paste(nil)
         XCTAssertEqual(sentText, "a\rb")
 
@@ -824,9 +831,9 @@ final class TerminalViewTests: XCTestCase {
     func testCopyPutsTheSelectionOnThePasteboard() {
         feed("hello")
         view.selectAll(nil)
-        NSPasteboard.general.clearContents()
+        pasteboard.clearContents()
         view.copy(nil)
-        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "hello")
+        XCTAssertEqual(pasteboard.string(forType: .string), "hello")
     }
 
     func testCopyIsOfferedOnlyWithASelection() {
@@ -838,10 +845,10 @@ final class TerminalViewTests: XCTestCase {
     }
 
     func testProgramClipboardWritesAreTheHostsDecision() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString("mine", forType: .string)
+        pasteboard.clearContents()
+        pasteboard.setString("mine", forType: .string)
         feed("\u{1b}]52;c;aGVsbG8=\u{07}")
-        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "mine")
+        XCTAssertEqual(pasteboard.string(forType: .string), "mine")
 
         var offered: [String] = []
         view.onClipboardWrite = { offered.append($0) }
@@ -1454,13 +1461,8 @@ final class TerminalViewTests: XCTestCase {
     }
 
     func test2611_0008S2APasteIsTheUsers() {
-        let saved = NSPasteboard.general.string(forType: .string)
-        defer {
-            NSPasteboard.general.clearContents()
-            if let saved { NSPasteboard.general.setString(saved, forType: .string) }
-        }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString("hi", forType: .string)
+        pasteboard.clearContents()
+        pasteboard.setString("hi", forType: .string)
 
         view.paste(nil)
 
