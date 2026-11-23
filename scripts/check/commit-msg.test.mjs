@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
 import "./test-env.mjs";
 
+import { scratchIn } from "./test-support.mjs";
+
 import { TYPES, judge } from "./commit-msg.mjs";
 
+const scratch = scratchIn("msg-test-");
 const ME = "me@example.invalid";
 const signed = (subject, email = ME) => `${subject}\n\nA body.\n\nSigned-off-by: Me <${email}>\n`;
 const firstLine = (report) => report.split("\n")[0];
@@ -70,8 +72,7 @@ test("S27: comment lines are not the message", () => {
 });
 
 test("the script reads the message file and the identity git would commit with", () => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "msg-test-")));
-  after(() => rmSync(dir, { recursive: true, force: true }));
+  const dir = scratch();
   execFileSync("git", ["init", "-q"], { cwd: dir });
   const env = { ...process.env, GIT_AUTHOR_NAME: "Me", GIT_AUTHOR_EMAIL: ME, GIT_COMMITTER_NAME: "Me", GIT_COMMITTER_EMAIL: ME };
   const run = (message) => {

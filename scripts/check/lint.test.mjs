@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { after, test } from "node:test";
+import { chmodSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
 import "./test-env.mjs";
+
+import { runScript, scratchIn, tracked } from "./test-support.mjs";
 
 import { diagnostics, unmatched } from "./lint-swiftc.mjs";
 
@@ -13,32 +14,14 @@ const SCRIPT = join(import.meta.dirname, "lint.mjs");
 const TOOLCHAIN = readFileSync(join(import.meta.dirname, "../../rust-toolchain.toml"), "utf8");
 const MANIFEST = '[package]\nname = "probe"\nversion = "0.1.0"\nedition = "2024"\n\n[lints.clippy]\ntodo = "warn"\n';
 const CLEAN = { code: 0, err: [""] };
-const dirs = [];
-after(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
-
-function scratch() {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "lint-test-")));
-  dirs.push(dir);
-  return dir;
-}
+const scratch = scratchIn("lint-test-");
 
 /** A git repository with a one-crate workspace under `core/`. */
-function repo(files) {
-  const dir = scratch();
-  const all = { "rust-toolchain.toml": TOOLCHAIN, "core/Cargo.toml": MANIFEST, ...files };
-  for (const [path, text] of Object.entries(all)) {
-    if (text === null) continue;
-    mkdirSync(dirname(join(dir, path)), { recursive: true });
-    writeFileSync(join(dir, path), text);
-  }
-  execFileSync("git", ["init", "-q"], { cwd: dir });
-  execFileSync("git", ["add", "-A"], { cwd: dir });
-  return dir;
-}
+const repo = (files) => tracked(scratch(), { "rust-toolchain.toml": TOOLCHAIN, "core/Cargo.toml": MANIFEST, ...files });
 
 function lint(dir, env = process.env, only = "rust") {
-  const run = spawnSync(process.execPath, [SCRIPT, ...(only ? [only] : [])], { cwd: dir, encoding: "utf8", env });
-  return { code: run.status, out: run.stdout, err: run.stderr.split("\n") };
+  const run = runScript(SCRIPT, only ? [only] : [], { cwd: dir, env });
+  return { ...run, err: run.err.split("\n") };
 }
 
 /** The reporter block: the lines from the `✗` line on. */
@@ -632,8 +615,8 @@ test("swiftc: a build that fails with no place named has not run the check", () 
 // ------------------------------------------------------------ named files
 
 const lintNamed = (dir, paths, cwd = dir) => {
-  const run = spawnSync(process.execPath, [SCRIPT, "--paths", ...paths], { cwd, encoding: "utf8" });
-  return { code: run.status, out: run.stdout, err: run.stderr.split("\n") };
+  const run = runScript(SCRIPT, ["--paths", ...paths], { cwd });
+  return { ...run, err: run.err.split("\n") };
 };
 
 test("named files: a new Swift file is linted, also from another directory", () => {

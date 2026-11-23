@@ -1,20 +1,19 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
 import { REPOSITORY_VARIABLES } from "./test-env.mjs";
 
+import { scratchIn } from "./test-support.mjs";
+
 const HERE = import.meta.dirname;
-const dirs = [];
-after(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+const scratch = scratchIn("test-env-");
 
 /** A repository that stands in for the one a hook runs in, and what a stray git command would change in it. */
 function bystander() {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "test-env-")));
-  dirs.push(dir);
+  const dir = scratch();
   const git = (...args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
   git("init", "-q", "-b", "main");
   writeFileSync(join(dir, "kept.txt"), "kept\n");
