@@ -36,7 +36,11 @@ chore/41-cask-bump
 ```
 
 - `type` and `slug` come from the issue title; `N` is the issue number.
-- Never work directly on `main`. One branch per issue.
+- Never work directly on `main`. One branch per issue. The `commit-msg` hook
+  refuses a commit on `main`; a merge, a cherry-pick or revert that git
+  finishes, a rebase and the first commit of a repository are not refused. A
+  release is run from `main`, but `scripts/release.sh` commits the version bump
+  on a `release-x.y.z` branch and lands it by PR.
 
 ## Worktrees
 
@@ -64,13 +68,14 @@ requires (`git commit -s`), and the `Co-Authored-By:` the repo uses for
 attribution.
 
 Checks hold the form, so it is not reviewed by reading. The `commit-msg` hook
-(`make setup` installs it) refuses a subject of another form and a message with
-no sign-off of its author or committer; `.github/workflows/dco.yml` refuses an
+(`make setup` installs it) refuses a subject of another form, a commit on
+`main`, and a message with no sign-off of its author or committer; `.github/workflows/dco.yml` refuses an
 unsigned commit on a PR (`make dco-check` locally). `pre-commit` runs the format
 check, the lints and the tree checks on what is staged, and `pre-push` runs
 `make test`. A hook can be skipped (`git commit --no-verify`, a clone with no
-`make setup`); CI cannot, but CI does not check the subject's form, which the
-squash merge sets. An agent in Claude Code gets most of them sooner, after
+`make setup`); CI cannot. The squash merge makes the PR title the subject (the
+repository setting is `PR_TITLE`, for a PR of one commit too), so CI holds the
+title to the same subject rule (`.github/workflows/pr.yml`). An agent in Claude Code gets most of them sooner, after
 each edit and at the end of a turn (not clippy, which needs the whole build). `CLAUDE.md` (*Build, run, test*) is the one
 description of what each hook runs.
 
@@ -83,7 +88,15 @@ command on every PR. No hook runs it, because it takes minutes.
 ## PRs
 
 - Open with `gh pr create`; body includes `Closes #N` so the merge closes the
-  issue automatically.
+  issue automatically, or `Refs #N` when the PR is one part of the issue.
 - **Squash-merge**, keeping the `(#N)` suffix GitHub appends. The squashed
   commit subject should itself be a valid Conventional Commit.
+- `.github/workflows/pr.yml` (job `pr-check`, `scripts/check/pr.mjs`) refuses
+  a title that is not `type(scope): summary` or that ends in its own `(#N)`, a
+  body with no `Closes #N` or `Refs #N` (GitHub's other closing keywords count;
+  text in an HTML comment does not), and a branch that is not `type/N-slug`. The
+  release PR of `scripts/release.sh` (branch `release-x.y.z`, title
+  `release: …`) needs no issue line and no such branch.
+- A GitHub "Revert" PR (branch `revert-N-…`, title `Revert "…"`) does not pass:
+  open the revert as `fix: revert …` from a `type/N-slug` branch.
 - After merge: delete the branch and `git worktree remove` the worktree.

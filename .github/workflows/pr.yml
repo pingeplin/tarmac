@@ -1,0 +1,27 @@
+# The pull request itself: the title the squash merge makes the subject on
+# main, the issue line of the body, and the branch name (scripts/check/pr.mjs).
+# Its own workflow, so that `edited` (a new title or body) runs only this
+# sub-second job and it never queues behind a build.
+name: pr
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  pr-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The script reads the event file GitHub writes (GITHUB_EVENT_PATH), so
+      # no text of the pull request passes through this step or its env.
+      - name: check the title, body and branch
+        run: node scripts/check/pr.mjs

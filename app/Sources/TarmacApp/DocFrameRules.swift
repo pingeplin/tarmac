@@ -8,7 +8,7 @@ import WebKit
 /// it is known there will be none.
 @MainActor
 final class DocFrameRules {
-    // predates the lint; decided in #476
+    // installed at launch before AppDelegate builds any view; only a board's CardView makes a DocWebView
     // swift-format-ignore: NeverUseImplicitlyUnwrappedOptionals
     private(set) static var shared: DocFrameRules!
 

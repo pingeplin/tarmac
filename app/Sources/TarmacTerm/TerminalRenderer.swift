@@ -204,7 +204,7 @@ final class TerminalRenderer {
                 kCTFontAttributeName: font,
                 kCTForegroundColorFromContextAttributeName: true,
             ]
-            // predates the lint; decided in #476
+            // NULL means CF could not create the object from a valid string and dictionary: stopping is the intent
             // swift-format-ignore: NeverForceUnwrap
             let string = CFAttributedStringCreate(nil, text as CFString, attributes as CFDictionary)!
             shape = .line(CTLineCreateWithAttributedString(string))
@@ -347,7 +347,7 @@ final class TerminalRenderer {
             kCTFontAttributeName: fonts.regular,
             kCTForegroundColorFromContextAttributeName: true,
         ]
-        // predates the lint; decided in #476
+        // NULL means CF could not create the object from a valid string and dictionary: stopping is the intent
         // swift-format-ignore: NeverForceUnwrap
         return CTLineCreateWithAttributedString(
             CFAttributedStringCreate(nil, text as CFString, attributes as CFDictionary)!

@@ -297,8 +297,9 @@ back from a rendered bitmap.
 - **A wrong `cargo test -p` or `--filter` is green.** Both report zero tests run
   as a pass. Read the count.
 - **Docs are gated.** `make docs-check` enforces the banner, link integrity, and
-  that an ACTIVE doc names no path that does not exist; adding the doc's row to
-  the index is convention, not enforced. See [`README.md`](README.md).
+  that an ACTIVE doc or a project skill names no path that does not exist, and
+  that an ACTIVE or PROPOSED doc is linked from the index. See
+  [`README.md`](README.md).
 
 ## 6. Before the PR
 
