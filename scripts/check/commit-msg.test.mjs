@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
+import "./test-env.mjs";
+
 import { TYPES, judge } from "./commit-msg.mjs";
 
 const ME = "me@example.invalid";

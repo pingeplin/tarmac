@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import "./test-env.mjs";
+
 import { killsTarmacByName } from "./kill-guard.mjs";
 
 // The guard's contract is this list and the cases in hook.test.mjs: a form is

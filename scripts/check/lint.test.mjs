@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 
+import "./test-env.mjs";
+
 import { diagnostics, unmatched } from "./lint-swiftc.mjs";
 
 const SCRIPT = join(import.meta.dirname, "lint.mjs");

@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 
+import "./test-env.mjs";
+
 const HERE = import.meta.dirname;
 const HOOK = join(HERE, "hook.mjs");
 // What Claude Code 2.1.330 sent to each hook in a real run, with its paths and ids replaced.
