@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The adapter between Claude Code's hooks and the checks. It holds no rule of
-// its own (the Bash rule is kill-guard.mjs): it finds the repository an event is about, runs that repository's
+// its own (the Bash rules are bash-guards.mjs): it finds the repository an event is about, runs that repository's
 // own check scripts, and maps their exit codes to what a hook may say.
 //
 //   node scripts/check/hook.mjs edit|stop|bash   < the hook's JSON
@@ -16,10 +16,9 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { refusalOf } from "./bash-guards.mjs";
 import { repoRoot, startedAs } from "./git.mjs";
-import { killsTarmacByName } from "./kill-guard.mjs";
 import { languageOf } from "./languages.mjs";
-import { failure } from "./report.mjs";
 
 const git = (cwd, ...args) => spawnSync("git", args, { cwd, encoding: "utf8" });
 
@@ -126,20 +125,11 @@ function docs(root) {
 
 // ------------------------------------------------------------------ bash
 
-/** Before a Bash call. A kill by name can end the installed app and every terminal it owns. */
+/** Before a Bash call: a command that a rule of bash-guards.mjs refuses does not run. */
 function bash(input) {
   const command = input.tool_input?.command;
-  if (typeof command !== "string" || !killsTarmacByName(command)) return pass;
-  return {
-    code: 2,
-    text: failure({
-      rule: "bash",
-      summary: "a Tarmac process is not killed by name",
-      why: ["a dev build and the installed app share process names; a kill by name can end the installed app and every terminal it owns"],
-      fix: "make kill-daemon   (it finds this worktree's daemon by its socket), or kill one pid you have checked",
-      then: "run the command again without pkill or killall",
-    }),
-  };
+  const refusal = typeof command === "string" ? refusalOf(command) : null;
+  return refusal ? { code: 2, text: refusal } : pass;
 }
 
 // ------------------------------------------------------------------ main

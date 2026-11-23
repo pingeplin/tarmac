@@ -450,6 +450,78 @@ for (const command of [
   });
 }
 
+const MUTANTS_REFUSAL = [
+  "✗ bash: cargo mutants does not run bare",
+  "  why  scripts/check/mutants.mjs gives cargo-mutants an empty HOME and a short fixed list of variables; that keeps a mutated path away from the real home",
+  "  fix  make mutants   (FILE=<path> for every mutant of one file, ALL=1 for the whole workspace)",
+  "  then run make mutants in place of the command; cargo mutants --list runs nothing and is not refused",
+  "",
+].join("\n");
+const LAUNCH_REFUSAL = [
+  "✗ bash: a built app or a release binary does not launch with its channel unpinned",
+  "  why  a release build resolves the installed channel: it attaches to the user's daemon and, on a version mismatch, SIGTERMs and replaces it, with every terminal that daemon owns",
+  "  fix  make run   (it pins the channel for you), or set TARMAC_SOCKET, TARMAC_STATE and TARMAC_CONFIG_DIR to paths of your own in the same command",
+  "  then TARMAC_SOCKET=$PWD/.dev/rel/tarmacd.sock TARMAC_STATE=$PWD/.dev/rel/state.json TARMAC_CONFIG_DIR=$PWD/.dev/rel/config <the command>",
+  "",
+].join("\n");
+
+for (const [command, err] of [
+  ["cargo mutants", MUTANTS_REFUSAL],
+  ["cd core && cargo mutants --in-diff d.diff", MUTANTS_REFUSAL],
+  ["sudo sh -c 'cargo-mutants mutants'", MUTANTS_REFUSAL],
+  ["rustup run stable cargo mutants", MUTANTS_REFUSAL],
+  ["open dist/Tarmac.app", LAUNCH_REFUSAL],
+  ["make bundle && open dist/Tarmac.app", LAUNCH_REFUSAL],
+  ["TARMAC_SOCKET=a TARMAC_STATE=b core/target/release/tarmacd", LAUNCH_REFUSAL],
+  ["bash -c 'app/.build/release/TarmacApp' | cat", LAUNCH_REFUSAL],
+]) {
+  test(`#496: \`${command}\` is refused with its own reason and next step`, () => {
+    assert.deepEqual(hook("bash", bashOf(command)), { code: 2, out: "", err });
+  });
+}
+
+for (const command of [
+  "make mutants FILE=core/crates/tarmacd/src/main.rs",
+  "cargo mutants --list",
+  "cargo install cargo-mutants --version 27.1.0 --locked",
+  'grep -rn "cargo mutants" CLAUDE.md',
+  "make run",
+  "make bundle",
+  "codesign --verify --deep --strict dist/Tarmac.app",
+  "open /Applications/Tarmac.app",
+  "TARMAC_SOCKET=a TARMAC_STATE=b TARMAC_CONFIG_DIR=c open dist/Tarmac.app",
+  "core/target/debug/tarmacd",
+]) {
+  test(`#496: \`${command}\` passes`, () => {
+    assert.deepEqual(hook("bash", bashOf(command)), QUIET);
+  });
+}
+
+test("#496: text too deep to read is refused by each new rule's words, in its own reason", () => {
+  const deep = (tail) => `${"eval ".repeat(25)}${tail}`;
+
+  assert.deepEqual(hook("bash", bashOf(deep("cargo mutants"))), { code: 2, out: "", err: MUTANTS_REFUSAL });
+  assert.deepEqual(hook("bash", bashOf(deep("open dist/Tarmac.app"))), { code: 2, out: "", err: LAUNCH_REFUSAL });
+  assert.deepEqual(hook("bash", bashOf(deep("cargo mutants --list"))), QUIET);
+});
+
+test("#496: twenty thousand exports before an unpinned launch are read well inside the hook's ten seconds", () => {
+  const started = Date.now();
+  const exports = Array.from({ length: 20000 }, (_, i) => `export V${i}=1;`).join(" ");
+
+  const run = hook("bash", bashOf(`${exports} open dist/Tarmac.app`));
+
+  assert.deepEqual(run, { code: 2, out: "", err: LAUNCH_REFUSAL });
+  assert.ok(Date.now() - started < 5000);
+});
+
+test("#496: a line that two rules refuse is refused once, by the kill rule first", () => {
+  const run = hook("bash", bashOf("cargo mutants; open dist/Tarmac.app; pkill tarmacd"));
+
+  assert.equal(run.code, 2);
+  assert.deepEqual(run.err.match(/^✗ .*$/gm), ["✗ bash: a Tarmac process is not killed by name"]);
+});
+
 test("a megabyte of piped commands is read well inside the hook's ten seconds", () => {
   const started = Date.now();
 
