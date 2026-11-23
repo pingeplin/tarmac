@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tarmac_protocol::{BoardMeta, BoardViewport, DocEntry, Msg, TermRecord, Tile};
 
-pub struct DocInfo {
+pub(crate) struct DocInfo {
     pub via: String,
     pub read: bool,
     pub repo: Option<String>,
@@ -34,7 +34,7 @@ pub struct DocInfo {
 }
 
 /// A doc's data registration: the file it reads, and what that counts.
-pub struct DataRead {
+pub(crate) struct DataRead {
     pub file: PathBuf,
     pub dir: DataDir,
 }
@@ -42,7 +42,7 @@ pub struct DataRead {
 /// What a doc's data registration counts (2611.0005), so that the count is
 /// given back for the directory it was taken for.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum DataDir {
+pub(crate) enum DataDir {
     /// Nothing: no file, a file in the doc's own directory, which the doc
     /// counts, or a directory that leads out of the doc's tree.
     Uncounted,
@@ -60,7 +60,7 @@ pub enum DataDir {
 /// puts the mtime back, two writes in one tick of a coarse clock, a save that
 /// replaces the file by one of the same length.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct FileStamp {
+pub(crate) struct FileStamp {
     pub mtime: SystemTime,
     pub len: u64,
     pub inode: u64,
@@ -101,15 +101,15 @@ fn counted(data: Option<DataRead>) -> DataDir {
 }
 
 #[expect(clippy::cast_possible_truncation, reason = "predates the lint; decided in #470")]
-pub fn epoch_ms(t: SystemTime) -> u64 {
+pub(crate) fn epoch_ms(t: SystemTime) -> u64 {
     t.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
 }
 
-pub fn term_tile() -> Tile {
+pub(crate) fn term_tile() -> Tile {
     Tile { kind: "term".into(), ..Default::default() }
 }
 
-pub struct Registry {
+pub(crate) struct Registry {
     pub docs: HashMap<PathBuf, DocInfo>,
     /// A new doc appends and a re-open never moves one; a layout snapshot reorders.
     pub dock: Vec<PathBuf>,
@@ -126,7 +126,7 @@ pub struct Registry {
 }
 
 impl Registry {
-    pub fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Registry {
             docs: HashMap::new(),
             dock: Vec::new(),
@@ -137,7 +137,7 @@ impl Registry {
         }
     }
 
-    pub fn entry(&self, path: &Path) -> Option<DocEntry> {
+    pub(crate) fn entry(&self, path: &Path) -> Option<DocEntry> {
         let info = self.docs.get(path)?;
         Some(DocEntry {
             path: path.to_string_lossy().into_owned(),
@@ -152,12 +152,12 @@ impl Registry {
         })
     }
 
-    pub fn dock_entries(&self) -> Vec<DocEntry> {
+    pub(crate) fn dock_entries(&self) -> Vec<DocEntry> {
         self.dock.iter().filter_map(|p| self.entry(p)).collect()
     }
 
     /// Marks a known doc read; false when the path is unknown.
-    pub fn mark_read(&mut self, path: &Path) -> bool {
+    pub(crate) fn mark_read(&mut self, path: &Path) -> bool {
         self.docs.get_mut(path).map(|info| info.read = true).is_some()
     }
 
@@ -165,7 +165,7 @@ impl Registry {
     /// dropped; registered docs missing from the snapshot keep their previous
     /// relative order, appended at the end. The board viewport is last-writer-wins:
     /// a snapshot omitting it leaves the stored one untouched.
-    pub fn apply_layout(&mut self, dock: Vec<String>, tiles: Vec<Tile>, board: Option<BoardViewport>) {
+    pub(crate) fn apply_layout(&mut self, dock: Vec<String>, tiles: Vec<Tile>, board: Option<BoardViewport>) {
         let mut seen: HashSet<PathBuf> = HashSet::new();
         let mut order: Vec<PathBuf> = Vec::new();
         for p in dock {
@@ -192,7 +192,7 @@ impl Registry {
     /// mtime in the future is not. A file that is gone is taken and not
     /// returned, so it is a change when it is back. The first reading of an
     /// unread doc is taken and not returned.
-    pub fn take_changes(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) -> Vec<(PathBuf, u64)> {
+    pub(crate) fn take_changes(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) -> Vec<(PathBuf, u64)> {
         self.take_first_readings(now);
         let mut changes = Vec::new();
         for (path, stamp) in now {
@@ -213,7 +213,7 @@ impl Registry {
     }
 
     /// The first reading of each unread doc in `now`, with no change.
-    pub fn take_first_readings(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) {
+    pub(crate) fn take_first_readings(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) {
         for (path, stamp) in now {
             if let Some(info) = self.docs.get_mut(path) {
                 info.take_first_reading(*stamp);
@@ -224,7 +224,7 @@ impl Registry {
     /// `doc_refresh`: takes the file as seen whether or not it differs, and
     /// returns its mtime in ms. `None`, with nothing taken, for an unknown
     /// path or no file: a file that is gone emits nothing until it is back.
-    pub fn refresh(&mut self, path: &Path, stamp: Option<FileStamp>) -> Option<u64> {
+    pub(crate) fn refresh(&mut self, path: &Path, stamp: Option<FileStamp>) -> Option<u64> {
         Some(self.docs.get_mut(path)?.see(stamp?))
     }
 
@@ -234,7 +234,7 @@ impl Registry {
     /// for its count to be given back: the registration's before, or what
     /// `data` counts for a file named again. `Err` with what `data` counts,
     /// and nothing recorded, for an unknown doc.
-    pub fn set_data(&mut self, doc: &Path, data: Option<DataRead>) -> Result<DataDir, DataDir> {
+    pub(crate) fn set_data(&mut self, doc: &Path, data: Option<DataRead>) -> Result<DataDir, DataDir> {
         let Some(info) = self.docs.get_mut(doc) else { return Err(counted(data)) };
         if let Some(read) = &data {
             self.data_seen.remove(&read.file);
@@ -250,7 +250,7 @@ impl Registry {
     /// Takes `dir` for the data file `data` of `doc` when that registration
     /// still wants its directory, and returns what is not held: `dir` when
     /// the registration was replaced, cleared or dropped meanwhile.
-    pub fn settle_wanted(&mut self, doc: &Path, data: &Path, dir: DataDir) -> DataDir {
+    pub(crate) fn settle_wanted(&mut self, doc: &Path, data: &Path, dir: DataDir) -> DataDir {
         match self.docs.get_mut(doc).and_then(|info| info.data.as_mut()) {
             Some(read) if read.file == data && read.dir == DataDir::Wanted => {
                 read.dir = dir;
@@ -272,13 +272,13 @@ impl Registry {
     }
 
     /// The paths a look reads for this board: each doc's file and each data file.
-    pub fn watched_paths(&self) -> impl Iterator<Item = &PathBuf> {
+    pub(crate) fn watched_paths(&self) -> impl Iterator<Item = &PathBuf> {
         self.docs.keys().chain(self.data_paths())
     }
 
     /// Takes `stamp` as the data file `path`, for each doc that reads it, and
     /// returns its mtime in ms. `None` for no file.
-    pub fn see_data(&mut self, path: &Path, stamp: Option<FileStamp>) -> Option<u64> {
+    pub(crate) fn see_data(&mut self, path: &Path, stamp: Option<FileStamp>) -> Option<u64> {
         self.data_seen.insert(path.to_owned(), stamp);
         stamp.map(|stamp| epoch_ms(stamp.mtime))
     }
@@ -286,7 +286,7 @@ impl Registry {
     /// The data files in `now` that differ from what was seen, one for each
     /// path, with the file's mtime in ms. Each is taken as seen. A file that is
     /// gone is taken and not returned, as in `take_changes`.
-    pub fn take_data_changes(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) -> Vec<(PathBuf, u64)> {
+    pub(crate) fn take_data_changes(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) -> Vec<(PathBuf, u64)> {
         let mut changes = Vec::new();
         for path in self.docs.values().filter_map(|info| Some(&info.data.as_ref()?.file)) {
             let Some(&stamp) = now.get(path) else { continue };
@@ -310,7 +310,7 @@ impl Registry {
 
     /// The docs whose last change reached no app, with its time. They count as
     /// told from here on; the caller holds one again when it cannot send it.
-    pub fn take_untold(&mut self) -> Vec<(PathBuf, u64)> {
+    pub(crate) fn take_untold(&mut self) -> Vec<(PathBuf, u64)> {
         let mut untold = Vec::new();
         for (path, info) in &mut self.docs {
             if let (true, Some(ms)) = (std::mem::take(&mut info.untold), info.last_changed_ms) {
@@ -328,14 +328,14 @@ impl Registry {
     }
 
     /// The doc that was closed; `None` when the path is unknown.
-    pub fn close_doc(&mut self, path: &Path) -> Option<DocInfo> {
+    pub(crate) fn close_doc(&mut self, path: &Path) -> Option<DocInfo> {
         let closed = self.docs.remove(path)?;
         self.dock.retain(|p| p != path);
         self.forget_unread_data();
         Some(closed)
     }
 
-    pub fn set_tiles(&mut self, tiles: Vec<Tile>) {
+    pub(crate) fn set_tiles(&mut self, tiles: Vec<Tile>) {
         let mut kept: Vec<Tile> = Vec::new();
         // Each terminal tile keeps a distinct term_id so N terminal cards persist
         // distinct positions; a `None` term_id is the legacy single-terminal slot,
@@ -363,10 +363,10 @@ impl Registry {
     }
 }
 
-pub type BoardId = String;
-pub const DEFAULT_BOARD_ID: &str = "board-0";
+pub(crate) type BoardId = String;
+pub(crate) const DEFAULT_BOARD_ID: &str = "board-0";
 
-pub struct Board {
+pub(crate) struct Board {
     pub id: BoardId,
     /// User-given display name; the switcher falls back to the id.
     pub name: Option<String>,
@@ -374,14 +374,14 @@ pub struct Board {
 }
 
 impl Board {
-    pub fn new(id: impl Into<BoardId>, registry: Registry) -> Self {
+    pub(crate) fn new(id: impl Into<BoardId>, registry: Registry) -> Self {
         Board { id: id.into(), name: None, registry }
     }
 }
 
 /// A data registration whose directory is wanted: its board, its doc and its
 /// file.
-pub struct WantedData {
+pub(crate) struct WantedData {
     pub board: BoardId,
     pub doc: PathBuf,
     pub file: PathBuf,
@@ -389,18 +389,18 @@ pub struct WantedData {
 
 /// The boards in display order plus the active one — never empty, and `active`
 /// always names a live board.
-pub struct Boards {
+pub(crate) struct Boards {
     boards: Vec<Board>,
     active: BoardId,
 }
 
 impl Boards {
-    pub fn single() -> Self {
+    pub(crate) fn single() -> Self {
         Boards { boards: vec![Board::new(DEFAULT_BOARD_ID, Registry::empty())], active: DEFAULT_BOARD_ID.into() }
     }
 
     /// An `active` that names no board falls back to the first board.
-    pub fn from_boards(boards: Vec<Board>, active: BoardId) -> Self {
+    pub(crate) fn from_boards(boards: Vec<Board>, active: BoardId) -> Self {
         if boards.is_empty() {
             return Boards::single();
         }
@@ -412,7 +412,7 @@ impl Boards {
         self.boards.iter().position(|b| b.id == id)
     }
 
-    pub fn active_id(&self) -> &str {
+    pub(crate) fn active_id(&self) -> &str {
         &self.active
     }
 
@@ -420,16 +420,16 @@ impl Boards {
         &self.boards[self.index_of(&self.active).expect("active board present")]
     }
 
-    pub fn active_registry(&self) -> &Registry {
+    pub(crate) fn active_registry(&self) -> &Registry {
         &self.active_board().registry
     }
 
-    pub fn active_registry_mut(&mut self) -> &mut Registry {
+    pub(crate) fn active_registry_mut(&mut self) -> &mut Registry {
         self.registry_mut(None)
     }
 
     /// The registry of board `id`; `None` or an unknown id falls back to the active board.
-    pub fn registry_mut(&mut self, id: Option<&str>) -> &mut Registry {
+    pub(crate) fn registry_mut(&mut self, id: Option<&str>) -> &mut Registry {
         let idx =
             id.and_then(|id| self.index_of(id)).or_else(|| self.index_of(&self.active)).expect("active board present");
         &mut self.boards[idx].registry
@@ -438,7 +438,7 @@ impl Boards {
     /// `Registry::apply_layout` on board `id`, or on the active board when the
     /// frame names none. False, with nothing changed, for an unknown id: the
     /// active board is not the one that layout describes (#383).
-    pub fn apply_layout(
+    pub(crate) fn apply_layout(
         &mut self,
         id: Option<&str>,
         dock: Vec<String>,
@@ -453,26 +453,26 @@ impl Boards {
     }
 
     /// The registry of board `id`, with no fall-back: `None` for an unknown id.
-    pub fn known_registry(&self, id: &str) -> Option<&Registry> {
+    pub(crate) fn known_registry(&self, id: &str) -> Option<&Registry> {
         Some(&self.boards[self.index_of(id)?].registry)
     }
 
     /// `known_registry`, to change.
-    pub fn known_registry_mut(&mut self, id: &str) -> Option<&mut Registry> {
+    pub(crate) fn known_registry_mut(&mut self, id: &str) -> Option<&mut Registry> {
         let idx = self.index_of(id)?;
         Some(&mut self.boards[idx].registry)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Board> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &Board> {
         self.boards.iter()
     }
 
-    pub fn registries_mut(&mut self) -> impl Iterator<Item = &mut Registry> {
+    pub(crate) fn registries_mut(&mut self) -> impl Iterator<Item = &mut Registry> {
         self.boards.iter_mut().map(|b| &mut b.registry)
     }
 
     /// `Registry::take_first_readings` on every board.
-    pub fn take_first_readings(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) {
+    pub(crate) fn take_first_readings(&mut self, now: &HashMap<PathBuf, Option<FileStamp>>) {
         for reg in self.registries_mut() {
             reg.take_first_readings(now);
         }
@@ -480,34 +480,34 @@ impl Boards {
 
     /// Holds the doc of board `id` (`Registry::hold`). Nothing for a board that
     /// is gone: the change was that board's, and not the active board's.
-    pub fn hold(&mut self, id: &str, path: &Path) {
+    pub(crate) fn hold(&mut self, id: &str, path: &Path) {
         if let Some(idx) = self.index_of(id) {
             self.boards[idx].registry.hold(path);
         }
     }
 
     /// The path of each unread doc, of every board.
-    pub fn unread_doc_paths(&self) -> impl Iterator<Item = &PathBuf> {
+    pub(crate) fn unread_doc_paths(&self) -> impl Iterator<Item = &PathBuf> {
         self.boards.iter().flat_map(|b| b.registry.docs.iter().filter(|(_, info)| info.unread).map(|(path, _)| path))
     }
 
     /// The path of each registered doc, of every board.
-    pub fn doc_paths(&self) -> HashSet<PathBuf> {
+    pub(crate) fn doc_paths(&self) -> HashSet<PathBuf> {
         self.boards.iter().flat_map(|b| b.registry.docs.keys().cloned()).collect()
     }
 
     /// The key of the doc `path` on any board, as the key is written.
-    pub fn doc_key(&self, path: &Path) -> Option<&PathBuf> {
+    pub(crate) fn doc_key(&self, path: &Path) -> Option<&PathBuf> {
         self.boards.iter().find_map(|b| b.registry.docs.get_key_value(path)).map(|(key, _)| key)
     }
 
     /// `Registry::drop_data` on every board.
-    pub fn drop_data(&mut self) -> Vec<DataDir> {
+    pub(crate) fn drop_data(&mut self) -> Vec<DataDir> {
         self.registries_mut().flat_map(Registry::drop_data).collect()
     }
 
     /// Each data registration of every board whose directory is wanted.
-    pub fn wanted_data(&self) -> Vec<WantedData> {
+    pub(crate) fn wanted_data(&self) -> Vec<WantedData> {
         let mut wanted = Vec::new();
         for board in &self.boards {
             for (doc, info) in &board.registry.docs {
@@ -520,17 +520,17 @@ impl Boards {
     }
 
     /// `Registry::watched_paths` of every board.
-    pub fn watched_paths(&self) -> HashSet<PathBuf> {
+    pub(crate) fn watched_paths(&self) -> HashSet<PathBuf> {
         self.boards.iter().flat_map(|b| b.registry.watched_paths().cloned()).collect()
     }
 
-    pub fn contains(&self, id: &str) -> bool {
+    pub(crate) fn contains(&self, id: &str) -> bool {
         self.index_of(id).is_some()
     }
 
     /// Each board's identity plus its live-pty count, taken from `live` (the
     /// terms live on `Daemon`, not here); a board missing from the map has none.
-    pub fn board_list_msg(&self, live: &HashMap<BoardId, Vec<String>>) -> Msg {
+    pub(crate) fn board_list_msg(&self, live: &HashMap<BoardId, Vec<String>>) -> Msg {
         Msg::BoardList {
             boards: self
                 .boards
@@ -549,7 +549,7 @@ impl Boards {
     /// The active board's restore, stamped with its id so the app binds it
     /// unambiguously across rapid switches, and with the daemon-owned shells the
     /// app re-binds to instead of cold-spawning.
-    pub fn active_restore_msg(&self, live_terms: Vec<String>) -> Msg {
+    pub(crate) fn active_restore_msg(&self, live_terms: Vec<String>) -> Msg {
         let board = self.active_board();
         Msg::Restore {
             docs: board.registry.dock_entries(),
@@ -563,7 +563,7 @@ impl Boards {
 
     /// Deletes the record of `term_id` from whichever board holds it. False
     /// when none does.
-    pub fn forget_term(&mut self, term_id: &str) -> bool {
+    pub(crate) fn forget_term(&mut self, term_id: &str) -> bool {
         for reg in self.registries_mut() {
             if reg.term_records.remove(term_id).is_some() {
                 return true;
@@ -573,12 +573,12 @@ impl Boards {
     }
 
     /// The record of `term_id` on whichever board holds it.
-    pub fn record_mut(&mut self, term_id: &str) -> Option<&mut TermRecord> {
+    pub(crate) fn record_mut(&mut self, term_id: &str) -> Option<&mut TermRecord> {
         self.registries_mut().find_map(|reg| reg.term_records.get_mut(term_id))
     }
 
     /// False (no-op) if no such board.
-    pub fn set_active(&mut self, id: &str) -> bool {
+    pub(crate) fn set_active(&mut self, id: &str) -> bool {
         if self.contains(id) {
             self.active = id.to_string();
             true
@@ -589,7 +589,7 @@ impl Boards {
 
     /// Mint `board-N` (N one past the max existing index), make it active and
     /// return its id.
-    pub fn create(&mut self) -> BoardId {
+    pub(crate) fn create(&mut self) -> BoardId {
         let next = self
             .boards
             .iter()
@@ -603,7 +603,7 @@ impl Boards {
     }
 
     /// `None` clears the name back to the id fallback. False (no-op) if no such board.
-    pub fn rename(&mut self, id: &str, name: Option<String>) -> bool {
+    pub(crate) fn rename(&mut self, id: &str, name: Option<String>) -> bool {
         match self.boards.iter_mut().find(|b| b.id == id) {
             Some(b) => {
                 b.name = name;
@@ -616,7 +616,7 @@ impl Boards {
     /// Returns the removed board. Refused (`None`) for the last board or an
     /// unknown id. Deleting the active board activates the board now at its
     /// index (clamped to the new last).
-    pub fn delete(&mut self, id: &str) -> Option<Board> {
+    pub(crate) fn delete(&mut self, id: &str) -> Option<Board> {
         if self.boards.len() <= 1 {
             return None;
         }

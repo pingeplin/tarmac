@@ -229,7 +229,7 @@ fn dev_forms() -> String {
     String::new()
 }
 
-pub fn text() -> String {
+pub(crate) fn text() -> String {
     let head = HELP_HEAD_FMT
         .replace("{DEV_USAGE}", DEV_USAGE)
         .replace("{DEV_HELP}", DEV_HELP)

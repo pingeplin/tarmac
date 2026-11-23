@@ -8,7 +8,7 @@ use tarmac_protocol::{Msg, TermInfo};
 
 const USAGE: &str = "usage: tarmac terms";
 
-pub fn run(args: &[String]) -> i32 {
+pub(crate) fn run(args: &[String]) -> i32 {
     if !args.is_empty() {
         eprintln!("tarmac: {USAGE}");
         return 2;

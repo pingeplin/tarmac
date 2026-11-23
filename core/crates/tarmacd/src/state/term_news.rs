@@ -15,20 +15,20 @@ use super::Daemon;
 
 /// How long the daemon waits for the app, inside the cli's own 5 s, so that
 /// only a daemon that predates `term_new` leaves the cli unanswered (D10).
-pub const TERM_NEW_APP_WAIT: Duration = Duration::from_secs(4);
+pub(crate) const TERM_NEW_APP_WAIT: Duration = Duration::from_secs(4);
 const _: () = assert!(TERM_NEW_APP_WAIT.as_millis() < tarmac_protocol::DAEMON_WAIT.as_millis());
 
-pub const NO_APP: &str = "no app connected";
-pub const APP_WENT_AWAY: &str = "the app went away";
-pub const APP_DID_NOT_ANSWER: &str = "the app did not answer";
-pub const TERM_DID_NOT_START: &str = "the terminal did not start";
+pub(super) const NO_APP: &str = "no app connected";
+pub(super) const APP_WENT_AWAY: &str = "the app went away";
+pub(super) const APP_DID_NOT_ANSWER: &str = "the app did not answer";
+pub(super) const TERM_DID_NOT_START: &str = "the terminal did not start";
 
 type Answer = Result<String, String>;
 
 /// The requests forwarded to the app, by `req_id`. The lock is held for a map
 /// update only.
 #[derive(Default)]
-pub struct TermNews {
+pub(crate) struct TermNews {
     next: AtomicU64,
     waiting: std::sync::Mutex<HashMap<u64, Waiting>>,
 }
@@ -52,7 +52,7 @@ impl TermNews {
     }
 
     /// Ends each request pushed to the connection `generation`.
-    pub fn app_gone(&self, generation: u64) {
+    pub(crate) fn app_gone(&self, generation: u64) {
         let gone: Vec<Waiting> = self
             .waiting
             .lock()
@@ -70,7 +70,7 @@ impl Daemon {
     /// The answer to a cli `term_new`: the new terminal's id, or the line the
     /// cli prints. One bound, `wait`, covers the whole request from its
     /// arrival: the folder's read, the push and the app's answer (D10).
-    pub async fn term_new(&self, cmd: String, cwd: String, term_id: Option<String>, wait: Duration) -> Answer {
+    pub(crate) async fn term_new(&self, cmd: String, cwd: String, term_id: Option<String>, wait: Duration) -> Answer {
         let deadline = tokio::time::Instant::now() + wait;
         refuse_term_new_cmd(&cmd)?;
         // Before the folder's read, which can take the bound: no app, no wait.
@@ -104,7 +104,7 @@ impl Daemon {
     /// The app's answer to request `req_id`. An `Ok` names a terminal the
     /// daemon must hold, live or ended (D9): a spawn that failed told only
     /// the app. One with no request waiting is dropped.
-    pub async fn term_new_answered(&self, req_id: u64, answer: Answer) {
+    pub(crate) async fn term_new_answered(&self, req_id: u64, answer: Answer) {
         let Some(tx) = self.term_news.take(req_id) else {
             tracing::debug!("term_new answer {req_id} has no request waiting");
             return;

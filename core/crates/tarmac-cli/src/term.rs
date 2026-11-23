@@ -9,7 +9,7 @@ use tarmac_protocol::{Msg, refuse_term_new_cmd};
 
 const USAGE: &str = "usage: tarmac term new [--cwd DIR] \"<command>\"";
 
-pub fn run(args: &[String]) -> i32 {
+pub(crate) fn run(args: &[String]) -> i32 {
     let (cmd, cwd) = match parse(args) {
         Ok(parsed) => parsed,
         Err(why) => {

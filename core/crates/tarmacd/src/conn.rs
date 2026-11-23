@@ -14,7 +14,7 @@ use crate::state::{Daemon, TERM_NEW_APP_WAIT};
 use crate::{docs, events, term};
 
 /// `peer_pid` is the client's pid, read at accept; only a cli session uses it.
-pub async fn handle(daemon: Arc<Daemon>, stream: UnixStream, peer_pid: Option<Pid>) {
+pub(crate) async fn handle(daemon: Arc<Daemon>, stream: UnixStream, peer_pid: Option<Pid>) {
     if let Err(e) = handshake(daemon, stream, peer_pid).await {
         debug!("connection ended: {e}");
     }

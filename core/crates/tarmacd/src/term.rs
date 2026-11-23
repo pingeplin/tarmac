@@ -17,7 +17,7 @@ use crate::reader::PathGate;
 use crate::resume::Flag;
 use crate::state::Daemon;
 
-pub const OUTPUT_CHUNK: usize = 64 * 1024; // protocol: output chunks <= 64 KiB
+pub(crate) const OUTPUT_CHUNK: usize = 64 * 1024; // protocol: output chunks <= 64 KiB
 pub(crate) const PROC_POLL_INTERVAL: Duration = Duration::from_millis(750);
 /// How often a held input reads the pty's termios (spec 2611.0016, D11).
 const HOLD_POLL: Duration = Duration::from_millis(20);
@@ -60,7 +60,7 @@ impl ScrollbackRing {
 }
 
 /// One write to a terminal's pty, in the order the app sent it.
-pub struct Input {
+pub(crate) struct Input {
     pub bytes: Vec<u8>,
     /// Written once the shell takes keys (`hold`).
     pub hold: bool,
@@ -129,7 +129,7 @@ fn write_inputs(
     }
 }
 
-pub struct TermHandle {
+pub(crate) struct TermHandle {
     pub input_tx: mpsc::Sender<Input>,
     master: std::sync::Mutex<Box<dyn MasterPty + Send>>,
     // A std::sync::Mutex (not tokio): it is only ever locked for a synchronous
@@ -179,19 +179,19 @@ impl TermHandle {
     }
 
     /// The process a `report` or a `resume` from `peer` is tied to.
-    pub fn resolve_holder(&self, peer: Option<proc::Pid>) -> Option<Holder> {
+    pub(crate) fn resolve_holder(&self, peer: Option<proc::Pid>) -> Option<Holder> {
         Holder::resolve(peer, self.pid, self.spawned_with_cmd, proc::proc_facts, || self.foreground_pid())
     }
 
-    pub fn has_report(&self) -> bool {
+    pub(crate) fn has_report(&self) -> bool {
         self.report.load(Ordering::Relaxed) != NO_REPORT
     }
 
-    pub fn unread_report(&self) -> bool {
+    pub(crate) fn unread_report(&self) -> bool {
         self.report.load(Ordering::Relaxed) == UNREAD_REPORT
     }
 
-    pub fn set_report(&self, has: bool, unread: bool) {
+    pub(crate) fn set_report(&self, has: bool, unread: bool) {
         let state = match (has, unread) {
             (false, _) => NO_REPORT,
             (true, false) => READ_REPORT,
@@ -200,27 +200,27 @@ impl TermHandle {
         self.report.store(state, Ordering::Relaxed);
     }
 
-    pub fn resume_flag(&self) -> Flag {
+    pub(crate) fn resume_flag(&self) -> Flag {
         Flag::from_u8(self.resume.load(Ordering::Relaxed))
     }
 
-    pub fn resume_holder(&self) -> Option<StartedPid> {
+    pub(crate) fn resume_holder(&self) -> Option<StartedPid> {
         *self.resume_holder.lock().expect("resume holder lock")
     }
 
     /// A command with `holder`.
-    pub fn hold_resume(&self, holder: StartedPid) {
+    pub(crate) fn hold_resume(&self, holder: StartedPid) {
         *self.resume_holder.lock().expect("resume holder lock") = Some(holder);
         self.resume.store(Flag::Held as u8, Ordering::Relaxed);
     }
 
     /// A command with no holder.
-    pub fn unclaim_resume(&self) {
+    pub(crate) fn unclaim_resume(&self) {
         *self.resume_holder.lock().expect("resume holder lock") = None;
         self.resume.store(Flag::Unclaimed as u8, Ordering::Relaxed);
     }
 
-    pub fn forget_resume(&self) {
+    pub(crate) fn forget_resume(&self) {
         *self.resume_holder.lock().expect("resume holder lock") = None;
         self.resume.store(Flag::None as u8, Ordering::Relaxed);
     }
@@ -236,7 +236,7 @@ impl TermHandle {
         )
     }
 
-    pub fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
+    pub(crate) fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
         self.master
             .lock()
             .expect("master lock")
@@ -249,14 +249,14 @@ impl TermHandle {
         self.master.lock().map_or(Keys::Canonical, |m| keys_of(&**m))
     }
 
-    pub fn scrollback_snapshot(&self) -> Vec<u8> {
+    pub(crate) fn scrollback_snapshot(&self) -> Vec<u8> {
         self.scrollback.lock().expect("scrollback lock").snapshot()
     }
 
     // SIGHUP lets a shell exit cleanly, as on a terminal close. The wait thread
     // and pump then run the normal exit cleanup; kill never touches the daemon's
     // maps itself. A no-op when the pid is unknown.
-    pub fn kill(&self) {
+    pub(crate) fn kill(&self) {
         if let Some(pid) = self.pid {
             // SAFETY: kill(2) with a negative pid signals the process group; the
             // only failures (ESRCH for a dead group, EPERM) are benign here.
@@ -269,14 +269,14 @@ impl TermHandle {
     /// The foreground process-group leader: at a bare prompt the shell, and
     /// while a job runs the job — the pid whose name the card title shows and
     /// whose cwd a new terminal inherits. A poisoned lock yields `None`.
-    pub fn foreground_pid(&self) -> Option<libc::pid_t> {
+    pub(crate) fn foreground_pid(&self) -> Option<libc::pid_t> {
         self.master.lock().ok()?.process_group_leader()
     }
 
     /// The foreground pid and its cwd, read on `gate`: a cwd on a volume
     /// that is gone does not answer. The cwd is `None` when the read is out
     /// or gives nothing.
-    pub async fn foreground_read(&self, gate: &PathGate) -> Option<(proc::Pid, Option<String>)> {
+    pub(crate) async fn foreground_read(&self, gate: &PathGate) -> Option<(proc::Pid, Option<String>)> {
         let pid = self.foreground_pid()?;
         Some((pid, gate.pid_cwd(pid).await.ok().flatten()))
     }
@@ -306,7 +306,7 @@ fn force_utf8_ctype_decision(lookup: impl Fn(&str) -> Option<String>) -> bool {
     true
 }
 
-pub async fn check_free(daemon: &Daemon, term_id: &str) -> Result<(), String> {
+pub(crate) async fn check_free(daemon: &Daemon, term_id: &str) -> Result<(), String> {
     if daemon.terms.lock().await.contains_key(term_id) {
         return Err(format!("term_id already in use: {term_id}"));
     }
@@ -314,7 +314,7 @@ pub async fn check_free(daemon: &Daemon, term_id: &str) -> Result<(), String> {
 }
 
 /// One terminal to spawn, with its cwd already checked.
-pub struct SpawnPlan {
+pub(crate) struct SpawnPlan {
     pub term_id: String,
     pub size: (u16, u16),
     pub cwd: Option<String>,
@@ -324,7 +324,7 @@ pub struct SpawnPlan {
     pub succeeds: Option<String>,
 }
 
-pub async fn spawn(daemon: Arc<Daemon>, plan: SpawnPlan) -> Result<(), String> {
+pub(crate) async fn spawn(daemon: Arc<Daemon>, plan: SpawnPlan) -> Result<(), String> {
     spawn_holding(daemon, plan, HOLD_DEADLINE).await
 }
 

@@ -3,7 +3,7 @@
 //! failed read; the daemon ships on macOS and the other targets only keep the
 //! crate buildable.
 
-pub type Pid = libc::pid_t;
+pub(crate) type Pid = libc::pid_t;
 
 /// argv[0] in a `KERN_PROCARGS2` buffer: a native-endian argc, the exec path
 /// and its NUL padding, then argv. `None` for no argument or a cut buffer.
@@ -33,7 +33,7 @@ fn basename(path: &[u8]) -> Option<String> {
 /// it: not resolved through a symlink, a login shell's `-` dropped. When argv
 /// is unreadable (`EINVAL` on another user's process), the executable's basename.
 #[cfg(target_os = "macos")]
-pub fn process_name(pid: libc::pid_t) -> Option<String> {
+pub(crate) fn process_name(pid: libc::pid_t) -> Option<String> {
     argv0_name(pid).or_else(|| path_name(pid))
 }
 
@@ -112,7 +112,7 @@ pub fn process_name(_pid: libc::pid_t) -> Option<String> {
 /// The CURRENT working directory, via `proc_pidinfo(PROC_PIDVNODEPATHINFO)` —
 /// the same fact `lsof -p <pid> -d cwd` reports.
 #[cfg(target_os = "macos")]
-pub fn pid_cwd(pid: libc::pid_t) -> Option<String> {
+pub(crate) fn pid_cwd(pid: libc::pid_t) -> Option<String> {
     // SAFETY: proc_vnodepathinfo holds only integers and integer arrays (libc),
     // for which all-zero bytes is a valid value.
     let mut info: libc::proc_vnodepathinfo = unsafe { std::mem::zeroed() };
@@ -148,7 +148,7 @@ pub fn pid_cwd(_pid: libc::pid_t) -> Option<String> {
 
 /// What `sysctl(KERN_PROC_PID)` says of a pid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Facts {
+pub(crate) enum Facts {
     /// `started` is the start time in microseconds since the epoch: with the
     /// pid it names one process, since a pid can be reused.
     Live { ppid: Pid, started: u64 },
@@ -173,7 +173,7 @@ const SZOMB: i8 = 5;
 /// One `sysctl` read; never `proc_pidinfo`, which fails on pid 1, on
 /// root-owned pids and on zombies.
 #[cfg(target_os = "macos")]
-pub fn proc_facts(pid: Pid) -> Facts {
+pub(crate) fn proc_facts(pid: Pid) -> Facts {
     let mut buf = [0u8; KINFO_PROC_SIZE];
     let Some(size) = sysctl(&mut [libc::CTL_KERN, libc::KERN_PROC, libc::KERN_PROC_PID, pid], &mut buf) else {
         return Facts::Unread;

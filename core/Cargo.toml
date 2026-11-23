@@ -25,6 +25,9 @@ edition = "2024"
 unused_qualifications = "warn"
 trivial_casts = "warn"
 unsafe_op_in_unsafe_fn = "warn"
+# In a binary crate a `pub` item is reachable only inside the crate: `pub` then
+# marks nothing. With this on, `pub` is the interface of tarmac-protocol.
+unreachable_pub = "warn"
 
 [workspace.lints.clippy]
 # Lock discipline. It sees a guard bound to a local, not one stored in a field.

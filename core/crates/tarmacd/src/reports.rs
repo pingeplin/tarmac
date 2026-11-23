@@ -11,7 +11,7 @@ use crate::holder::Holder;
 /// Where the terminal was when it reported (spec 2611.0013): the board it is
 /// filed under and its `last_cwd` record.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct Place {
+pub(crate) struct Place {
     pub board_id: Option<String>,
     pub cwd: Option<String>,
 }
@@ -30,13 +30,13 @@ struct CurrentReport {
 /// Each method returns the `term_report` to push, or `None` when the app
 /// needs nothing.
 #[derive(Default)]
-pub struct Reports {
+pub(crate) struct Reports {
     by_term: HashMap<String, CurrentReport>,
 }
 
 impl Reports {
     #[expect(clippy::too_many_arguments, reason = "predates the lint; a design change, not part of #468")]
-    pub fn report(
+    pub(crate) fn report(
         &mut self,
         term: &str,
         kind: ReportKind,
@@ -52,17 +52,17 @@ impl Reports {
         msg
     }
 
-    pub fn clear(&mut self, term: &str) -> Option<Msg> {
+    pub(crate) fn clear(&mut self, term: &str) -> Option<Msg> {
         self.by_term.remove(term).map(|_| frame(term, None))
     }
 
-    pub fn mark_read(&mut self, term: &str) -> Option<Msg> {
+    pub(crate) fn mark_read(&mut self, term: &str) -> Option<Msg> {
         let current = self.by_term.get_mut(term).filter(|r| !r.read)?;
         current.read = true;
         Some(frame(term, Some(current)))
     }
 
-    pub fn check(&mut self, term: &str, alive: impl FnOnce(&Holder) -> bool) -> Option<Msg> {
+    pub(crate) fn check(&mut self, term: &str, alive: impl FnOnce(&Holder) -> bool) -> Option<Msg> {
         if alive(&self.by_term.get(term)?.holder) {
             return None;
         }
@@ -70,18 +70,18 @@ impl Reports {
     }
 
     /// At the terminal's exit; the app ends the report on its `exit` frame.
-    pub fn forget(&mut self, term: &str) {
+    pub(crate) fn forget(&mut self, term: &str) {
         self.by_term.remove(term);
     }
 
     /// One frame for each of `terms`: its report, or one with no `kind`.
-    pub fn snapshot(&self, terms: &[String]) -> Vec<Msg> {
+    pub(crate) fn snapshot(&self, terms: &[String]) -> Vec<Msg> {
         terms.iter().map(|term| frame(term, self.by_term.get(term))).collect()
     }
 
     /// The connect replay (2611.0013): one frame for each term that has a
     /// report and is not in `shown`, sorted by term id.
-    pub fn elsewhere(&self, shown: &[String]) -> Vec<Msg> {
+    pub(crate) fn elsewhere(&self, shown: &[String]) -> Vec<Msg> {
         let mut terms: Vec<&String> = self.by_term.keys().filter(|t| !shown.contains(t)).collect();
         terms.sort();
         terms.into_iter().map(|term| frame(term, self.by_term.get(term))).collect()
@@ -89,7 +89,7 @@ impl Reports {
 
     /// A restore's replay: the `snapshot` of the `shown` terms and, when
     /// `elsewhere`, the `elsewhere` frames after it.
-    pub fn restore_frames(&self, shown: &[String], elsewhere: bool) -> Vec<Msg> {
+    pub(crate) fn restore_frames(&self, shown: &[String], elsewhere: bool) -> Vec<Msg> {
         let mut frames = self.snapshot(shown);
         if elsewhere {
             frames.extend(self.elsewhere(shown));
@@ -97,11 +97,11 @@ impl Reports {
         frames
     }
 
-    pub fn has(&self, term: &str) -> bool {
+    pub(crate) fn has(&self, term: &str) -> bool {
         self.by_term.contains_key(term)
     }
 
-    pub fn unread(&self, term: &str) -> bool {
+    pub(crate) fn unread(&self, term: &str) -> bool {
         self.by_term.get(term).is_some_and(|r| !r.read)
     }
 }

@@ -20,7 +20,7 @@ const WAIT: Duration = Duration::from_secs(30);
 const LINGER: Duration = Duration::from_secs(2);
 const POLL: Duration = Duration::from_millis(10);
 
-pub struct Double {
+pub(crate) struct Double {
     pub dir: PathBuf,
     pub sock: PathBuf,
     /// Raw payloads received, in order. Raw (not decoded) so a test can assert
@@ -31,7 +31,7 @@ pub struct Double {
 }
 
 impl Double {
-    pub fn start(name: &str, handler: impl FnOnce(&mut Peer) + Send + 'static) -> Self {
+    pub(crate) fn start(name: &str, handler: impl FnOnce(&mut Peer) + Send + 'static) -> Self {
         let dir = scratch();
         let sock = dir.join(name);
         let listener = UnixListener::bind(&sock).unwrap();
@@ -49,7 +49,7 @@ impl Double {
 
     /// Wait for the handler to finish, so the list is complete rather than
     /// whatever had arrived by the time the client exited.
-    pub fn frames(&self) -> Vec<Vec<u8>> {
+    pub(crate) fn frames(&self) -> Vec<Vec<u8>> {
         if let Some(handle) = self.server.lock().unwrap().take() {
             handle.join().unwrap();
         }
@@ -95,7 +95,7 @@ fn limit_reads(stream: &UnixStream, wait: Duration) {
 }
 
 /// The accepted connection, as a handler sees it.
-pub struct Peer {
+pub(crate) struct Peer {
     stream: UnixStream,
     received: Arc<Mutex<Vec<Vec<u8>>>>,
     stopped: Receiver<()>,
@@ -103,33 +103,33 @@ pub struct Peer {
 
 impl Peer {
     /// One frame, recorded.
-    pub fn read(&mut self) -> Option<Vec<u8>> {
+    pub(crate) fn read(&mut self) -> Option<Vec<u8>> {
         let payload = frame::read_sync(&mut self.stream).ok()?;
         self.received.lock().unwrap().push(payload.clone());
         Some(payload)
     }
 
     /// A frame that comes within `wait`, recorded; `None` when none does.
-    pub fn read_within(&mut self, wait: Duration) -> Option<Vec<u8>> {
+    pub(crate) fn read_within(&mut self, wait: Duration) -> Option<Vec<u8>> {
         limit_reads(&self.stream, wait);
         let payload = self.read();
         limit_reads(&self.stream, WAIT);
         payload
     }
 
-    pub fn write(&mut self, payload: &[u8]) -> bool {
+    pub(crate) fn write(&mut self, payload: &[u8]) -> bool {
         frame::write_sync(&mut self.stream, payload).is_ok()
     }
 
     /// Keep reading so the test can observe whether the client sends anything
     /// after its request. EOF (the client exiting) ends it.
-    pub fn drain(&mut self) {
+    pub(crate) fn drain(&mut self) {
         limit_reads(&self.stream, LINGER);
         while self.read().is_some() {}
     }
 
     /// `drain`, but whatever bytes arrive are recorded as one entry, framed or not.
-    pub fn drain_bytes(&mut self) {
+    pub(crate) fn drain_bytes(&mut self) {
         limit_reads(&self.stream, LINGER);
         let mut sink = Vec::new();
         let _ = self.stream.read_to_end(&mut sink);
@@ -140,12 +140,12 @@ impl Peer {
 
     /// Hold the connection open, never replying, until the double is dropped —
     /// the only way to exercise the client's read timeout.
-    pub fn hold(&self) {
+    pub(crate) fn hold(&self) {
         self.pause(WAIT);
     }
 
     /// Wait `wait`, or less when the double is dropped first.
-    pub fn pause(&self, wait: Duration) {
+    pub(crate) fn pause(&self, wait: Duration) {
         let _ = self.stopped.recv_timeout(wait);
     }
 }

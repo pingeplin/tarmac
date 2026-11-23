@@ -11,7 +11,7 @@ const BELL_DEBOUNCE: Duration = Duration::from_millis(250);
 /// 0x80–0x9F are not taken as C1 introducers: in UTF-8 output they are
 /// continuation bytes.
 #[derive(Default)]
-pub struct BellScan {
+pub(crate) struct BellScan {
     state: State,
 }
 
@@ -25,7 +25,7 @@ enum State {
 }
 
 impl BellScan {
-    pub fn feed(&mut self, chunk: &[u8]) -> bool {
+    pub(crate) fn feed(&mut self, chunk: &[u8]) -> bool {
         if matches!(self.state, State::Ground) && !chunk.contains(&BEL) && !chunk.contains(&ESC) {
             return false;
         }
@@ -51,7 +51,7 @@ impl BellScan {
 /// The bells to push: a BEL that `BellScan` finds, at most one per
 /// `BELL_DEBOUNCE` window.
 #[derive(Default)]
-pub struct Bells {
+pub(crate) struct Bells {
     scan: BellScan,
     debounce: BellDebounce,
 }
@@ -59,7 +59,7 @@ pub struct Bells {
 impl Bells {
     /// The scan reads every chunk, so its state follows the stream; the
     /// debounce is asked only of a chunk that rang.
-    pub fn rings(&mut self, chunk: &[u8], now: Instant) -> bool {
+    pub(crate) fn rings(&mut self, chunk: &[u8], now: Instant) -> bool {
         self.scan.feed(chunk) && self.debounce.allow(now)
     }
 }

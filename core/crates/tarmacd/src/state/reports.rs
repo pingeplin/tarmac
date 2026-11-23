@@ -9,7 +9,7 @@ use super::Daemon;
 impl Daemon {
     /// The answer to a cli `report` (spec 2611.0009): `Err` is the `err` text.
     /// `peer` is the client's pid, read at accept.
-    pub async fn report(
+    pub(crate) async fn report(
         &self,
         peer: Option<Pid>,
         term_id: &str,
@@ -53,7 +53,7 @@ impl Daemon {
 
     /// The poll's check: removes the report when its holder is gone. `leader`
     /// is the tick's foreground-leader read.
-    pub async fn check_report(&self, term_id: &str, handle: &TermHandle, leader: Option<Pid>) {
+    pub(crate) async fn check_report(&self, term_id: &str, handle: &TermHandle, leader: Option<Pid>) {
         if handle.has_report() {
             self.change_report(term_id, handle, |reports| {
                 reports.check(term_id, |holder| holder.alive(proc::proc_facts, leader))

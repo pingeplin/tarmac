@@ -12,7 +12,7 @@ use crate::boards::{Boards, DataDir, DataRead, DocInfo, FileStamp, Registry, epo
 use crate::reader::{Out, PathFs, PathGate};
 use crate::state::Daemon;
 
-pub struct RepoInfo {
+pub(crate) struct RepoInfo {
     pub name: String,
     pub root: String,
     pub color: u8,
@@ -20,7 +20,7 @@ pub struct RepoInfo {
 
 // Walk parents toward / looking for a .git entry; a plain file counts too
 // (worktrees and submodules use a gitfile). None means not in a repo.
-pub fn derive_repo(doc: &Path) -> Option<RepoInfo> {
+pub(crate) fn derive_repo(doc: &Path) -> Option<RepoInfo> {
     let mut dir = doc.parent();
     while let Some(d) = dir {
         if d.join(".git").exists() {
@@ -39,7 +39,7 @@ pub fn derive_repo(doc: &Path) -> Option<RepoInfo> {
 // Single code path for CLI ("cli") and app ("user") opens. `term_id` is the
 // calling terminal card, None when unknown or not live. The doc lands on
 // `board_id`, else the board owning the calling term, else the active board.
-pub async fn handle_open(
+pub(crate) async fn handle_open(
     daemon: &Arc<Daemon>,
     raw_path: &str,
     via: &str,
@@ -81,7 +81,7 @@ pub async fn handle_open(
 /// `raw_path`, as one `doc_event` with the registry's key whatever boards
 /// hold the doc. The JSON check comes first, as it costs no file-system call.
 /// The registry is asked on every push, so a doc closed since is refused.
-pub async fn handle_push(
+pub(crate) async fn handle_push(
     daemon: &Daemon,
     resolved: &mut HashMap<PathBuf, PathBuf>,
     raw_path: &str,
@@ -142,7 +142,7 @@ async fn resolve(gate: &PathGate, raw_path: &str) -> Result<(PathBuf, FileStamp)
 /// Registers `path` in `reg`, or refreshes the doc already there. True when
 /// the doc is new to `reg`; `seen` is then its file as it is now, and `repo`
 /// its repo. A doc already there keeps its own.
-pub fn upsert_doc(
+pub(crate) fn upsert_doc(
     reg: &mut Registry,
     path: &Path,
     via: &str,
@@ -191,7 +191,7 @@ pub fn upsert_doc(
 /// and made from one of its docs (`derive_repo` starts at the doc's parent).
 /// It waits at most two limits in all. A doc whose file is not read in time
 /// stays unread, and a dir whose walk is out leaves its docs with no repo.
-pub async fn read_restored(gate: &Arc<PathGate>, boards: &mut Boards) {
+pub(crate) async fn read_restored(gate: &Arc<PathGate>, boards: &mut Boards) {
     let docs = boards.doc_paths();
     let dirs: HashMap<&Path, &Path> = docs.iter().filter_map(|doc| Some((doc.parent()?, doc.as_path()))).collect();
     let mut walks = JoinSet::new();
@@ -218,7 +218,7 @@ pub async fn read_restored(gate: &Arc<PathGate>, boards: &mut Boards) {
 /// One look for each wake, `BURST` after it (#258, docs/architecture.md). A
 /// wake of the file system first tries again each data file's directory that
 /// is not watched, so that the look reports what a new watch missed.
-pub async fn watch_loop(daemon: Arc<Daemon>) {
+pub(crate) async fn watch_loop(daemon: Arc<Daemon>) {
     loop {
         let from_fs = daemon.woken().await;
         tokio::time::sleep(crate::watch::BURST).await;
@@ -235,7 +235,7 @@ pub async fn watch_loop(daemon: Arc<Daemon>) {
 /// `file_event` for a path that is both. It asks for the save of what it
 /// recorded: before any push, so a crash between the two never loses the
 /// fact. A data file records nothing to save.
-pub fn take_to_tell(
+pub(crate) fn take_to_tell(
     daemon: &Daemon,
     reg: &mut Registry,
     now: &HashMap<PathBuf, Option<FileStamp>>,
@@ -258,7 +258,7 @@ pub fn take_to_tell(
 /// compared when its board is sent (`conn::change_and_send_active_board`). An
 /// unread doc of any board is read too, and its first reading taken with no
 /// change: a change after its volume answers is then told at its switch.
-pub async fn report_changes(daemon: &Daemon) {
+pub(crate) async fn report_changes(daemon: &Daemon) {
     let (board, tell) = daemon
         .look(
             |boards| {
@@ -277,13 +277,13 @@ pub async fn report_changes(daemon: &Daemon) {
     }
 }
 
-pub fn file_event(path: &Path, mtime_ms: u64) -> Msg {
+pub(crate) fn file_event(path: &Path, mtime_ms: u64) -> Msg {
     Msg::FileEvent { path: path.to_string_lossy().into_owned(), mtime_ms }
 }
 
 /// Pushes the `file_event`, and holds the doc when it reached no app. `board`
 /// is the board the change was taken for, which need not be active any more.
-pub async fn push_file_event(daemon: &Daemon, board: &str, path: &Path, mtime_ms: u64) {
+pub(crate) async fn push_file_event(daemon: &Daemon, board: &str, path: &Path, mtime_ms: u64) {
     if !daemon.emit(file_event(path, mtime_ms)).await {
         daemon.boards.lock().await.hold(board, path);
     }
@@ -296,7 +296,7 @@ pub async fn push_file_event(daemon: &Daemon, board: &str, path: &Path, mtime_ms
 /// answered app-side by value); `report_changes` pushes only for a file that
 /// differs from what was seen. The registry lookup is also the active-board
 /// check, which is why an unknown path costs one lock and no push.
-pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
+pub(crate) async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
     let recorded = daemon
         .look(
             |_| vec![path.to_owned()],
@@ -326,7 +326,7 @@ pub async fn stat_and_push(daemon: &Arc<Daemon>, path: &Path) -> bool {
 ///
 /// False, with nothing recorded, for an unknown board (no fall-back to the
 /// active one), an unknown doc on it, or a `data` that `is_under` refuses.
-pub async fn record_data(daemon: &Daemon, board: &str, doc: &Path, data: Option<PathBuf>) -> bool {
+pub(crate) async fn record_data(daemon: &Daemon, board: &str, doc: &Path, data: Option<PathBuf>) -> bool {
     // The doc as its registry key writes it: `Path` finds `<p>//d/dash.html`
     // under `<p>/d/dash.html`, but `data` is judged on its bytes.
     let known = daemon.boards.lock().await.known_registry(board).and_then(|reg| {
@@ -384,7 +384,7 @@ fn is_under(doc: &Path, data: &Path) -> bool {
 
 /// `path` is under `dir`, by whole components as bytes, with each component
 /// below `dir` there and not hidden. `dir` is a resolved path.
-pub fn is_below(dir: &Path, path: &Path) -> bool {
+pub(crate) fn is_below(dir: &Path, path: &Path) -> bool {
     let dir = dir.as_os_str().as_bytes();
     let Some(rest) = path.as_os_str().as_bytes().strip_prefix(dir) else { return false };
     let below = if dir.ends_with(b"/") { Some(rest) } else { rest.strip_prefix(b"/") };

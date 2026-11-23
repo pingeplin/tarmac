@@ -31,7 +31,7 @@ exclude_re = [
   # in the pty reader's buffer and in the replay of a scrollback (conn.rs).
   # The bytes and their order are the same, and docs/protocol.md bounds a
   # chunk only from above, at 64 KiB.
-  "term\\.rs:20:36: replace \\* with \\+",
+  "term\\.rs:20:43: replace \\* with \\+",
   # At a length of exactly SCROLLBACK_CAP the overflow drained is 0 bytes.
   "replace > with >= in ScrollbackRing::push",
   # `Keys::claim` adds a key's entry only when the key has none, and only the

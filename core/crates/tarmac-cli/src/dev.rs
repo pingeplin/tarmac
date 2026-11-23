@@ -20,7 +20,7 @@ use crate::{current_channel, env_override, home_or_root};
 /// the backend at `+2000`, the CLI at `+3000` — so the innermost one fires and
 /// an expired wait is reported by the side that observed it. A fixed 5 s would
 /// make `--timeout 10000` die client-side and blame a healthy app.
-pub fn read_deadline_ms(timeout_ms: Option<u32>) -> u64 {
+pub(crate) fn read_deadline_ms(timeout_ms: Option<u32>) -> u64 {
     u64::from(timeout_ms.unwrap_or(0)) + 3_000
 }
 
@@ -55,7 +55,7 @@ fn usage<T>(what: &str) -> Result<T, String> {
 
 /// Parse everything after `dev`. `Err` is a usage error (exit 2) that names
 /// `tarmac dev` via `USAGE`.
-pub fn parse_verb(args: &[String]) -> Result<DevRequest, String> {
+pub(crate) fn parse_verb(args: &[String]) -> Result<DevRequest, String> {
     let Some(verb) = args.first().map(String::as_str) else {
         return usage("tarmac dev: no verb");
     };
@@ -200,7 +200,7 @@ fn parse_size(size: &str) -> Result<(f64, f64), String> {
     }
 }
 
-pub fn dev_socket_path() -> PathBuf {
+pub(crate) fn dev_socket_path() -> PathBuf {
     proto::dev::resolve_dev_socket_path(env_override("TARMAC_DEV_SOCKET"), &home_or_root(), current_channel())
 }
 
@@ -209,7 +209,7 @@ pub fn dev_socket_path() -> PathBuf {
 /// The CLI's own errors are one-line plain text on stderr, like `tarmac open`.
 /// The app's arrive as a `body` and print verbatim — stdout when `ok`, stderr
 /// when not, so `tarmac dev snapshot | jq` is never fed an error object.
-pub fn run(args: &[String]) -> i32 {
+pub(crate) fn run(args: &[String]) -> i32 {
     let req = match parse_verb(args) {
         Ok(req) => req,
         Err(msg) => {

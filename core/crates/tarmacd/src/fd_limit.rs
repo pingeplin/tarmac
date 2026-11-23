@@ -23,7 +23,7 @@ fn max_files_per_proc() -> Option<u64> {
 }
 
 /// Raises the soft limit; called before the socket, the watcher and any terminal.
-pub fn raise() {
+pub(crate) fn raise() {
     let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
     // SAFETY: `limit` is a valid rlimit for getrlimit to fill.
     if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) } != 0 {

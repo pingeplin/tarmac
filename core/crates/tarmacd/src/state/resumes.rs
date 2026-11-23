@@ -41,7 +41,7 @@ impl Daemon {
     /// The answer to a cli `resume` (spec 2611.0011): `Err` is the `err` text.
     /// `cmd: None` clears. The command is checked before its holder is
     /// resolved, and no process is read while `boards` is held.
-    pub async fn set_resume(&self, peer: Option<Pid>, term_id: &str, cmd: Option<String>) -> Result<(), String> {
+    pub(crate) async fn set_resume(&self, peer: Option<Pid>, term_id: &str, cmd: Option<String>) -> Result<(), String> {
         let unknown = || format!("unknown terminal: {term_id}");
         let handle = self.term(term_id).await.ok_or_else(unknown)?;
         let Some(cmd) = cmd else {
@@ -89,7 +89,7 @@ impl Daemon {
     /// unless the shutdown has begun. The holder is read from the handle and
     /// checked with no lock held, and dropped only if it is still the one
     /// checked, so a `resume` set in between is never undone.
-    pub async fn check_resume(&self, term_id: &str, handle: &TermHandle, facts_of: impl Fn(Pid) -> Facts) {
+    pub(crate) async fn check_resume(&self, term_id: &str, handle: &TermHandle, facts_of: impl Fn(Pid) -> Facts) {
         if handle.resume_flag() != Flag::Held {
             return;
         }
@@ -119,7 +119,7 @@ impl Daemon {
     /// The app's skip (spec 2611.0015, D4): the same drop as typed input, so
     /// a command an agent set since the restore (`Held`) is never undone. An
     /// unknown terminal is a no-op: app-session frames have no reply.
-    pub async fn skip_resume(&self, term_id: &str) {
+    pub(crate) async fn skip_resume(&self, term_id: &str) {
         if let Some(handle) = self.term(term_id).await {
             self.claim_resume(term_id, &handle).await;
         } else {

@@ -7,7 +7,7 @@ use tarmac_protocol::{Msg, refuse_resume_cmd};
 const USAGE: &str = "usage: tarmac resume set \"<command>\"  |  tarmac resume clear";
 const NEEDS_TERM: &str = "resume needs TARMAC_TERM_ID (run it in a Tarmac terminal)";
 
-pub fn run(args: &[String]) -> i32 {
+pub(crate) fn run(args: &[String]) -> i32 {
     match parse(args) {
         Ok(cmd) => crate::daemon::for_terminal(NEEDS_TERM, |term_id| Msg::Resume { term_id, cmd }),
         Err(why) => {
