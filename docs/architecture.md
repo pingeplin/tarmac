@@ -241,6 +241,19 @@ connections on a `tokio::net::UnixListener`, spawning `conn::handle` per
 connection. A SIGHUP/SIGTERM/SIGINT handler removes the socket and `exit(0)`s (so live
 shells die with a full daemon restart — see [§6](#6--what-survives-what)).
 
+A debug build launched with `TARMAC_EXIT_ON_STDIN_EOF=1` takes the same path
+at EOF on its stdin (`stdin_eof.rs`; a read error counts as EOF). The
+integration harness (`core/crates/tarmacd/tests/common/daemon.rs`) sets it and
+keeps the write end of the pipe, so a test process that dies with no `Drop`
+run (SIGKILL, a `panic = "abort"` build) leaves no daemon behind (#531). It
+spawns its daemons one at a time: std on macOS marks a new pipe close-on-exec
+only after it made it, and a daemon forked in between would hold another's
+write end. The variable is opt-in because the app's daemon has `/dev/null`
+for stdin (`DaemonSpawner`), and a `make run` daemon must outlive its app; a
+shell that exports it would end that daemon at once. A terminal's shell gets
+the pty on fds 0–2 and no other descriptor of the daemon (portable-pty closes
+the rest), so it never holds the pipe.
+
 The accept loop reads each client's pid with `UnixStream::peer_cred()`
 (`LOCAL_PEEREPID`) before the connection's first `await`, since the pid can be
 read only while the client's end is open; only a cli session uses it (a
@@ -831,9 +844,9 @@ migrated once into a single `board-0` verbatim; writes always emit the nested
 shape — lossless and one-way.
 
 The save loop is the only writer of the file, and writes on a blocking
-thread. A SIGTERM, SIGHUP or SIGINT asks it for one last save before the
-socket goes (`Daemon::final_save`): it reads the cwd of every live terminal
-at once, within `SHUTDOWN_CWD_BUDGET` (500 ms, well inside the app's 2 s
+thread. A SIGTERM, SIGHUP or SIGINT (or EOF on a test daemon's stdin,
+*Process & connection model*) asks it for one last save before the socket
+goes (`Daemon::final_save`): it reads the cwd of every live terminal at once, within `SHUTDOWN_CWD_BUDGET` (500 ms, well inside the app's 2 s
 restart wait), writes the state, answers and stops, so no write follows. A
 SIGKILL (or `make kill-daemon`) skips it, and loses any `cd` since the last
 save.

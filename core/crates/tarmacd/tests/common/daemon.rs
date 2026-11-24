@@ -2,6 +2,7 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tarmac_protocol::{self as proto, Msg, frame};
@@ -11,6 +12,21 @@ use super::{Conn, FrameLog, LONG, Restore, Spawn};
 // Counter, not just a timestamp: parallel test threads can hit the same
 // nanosecond and would then share (and tear down) each other's socket dir.
 static DIR_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Asks a debug daemon to end at EOF on its stdin, whose write end the test
+/// holds in `Child::stdin`: a test process that dies in any way closes it.
+pub(crate) const EXIT_ON_STDIN_EOF: &str = "TARMAC_EXIT_ON_STDIN_EOF";
+
+// std on macOS makes a new pipe close-on-exec only after it has made it: a
+// child forked in between keeps the write end of another daemon's stdin, and
+// that daemon sees no EOF until the child ends.
+static SPAWN: Mutex<()> = Mutex::new(());
+
+/// Spawns `cmd` while no other spawn of the harness makes a pipe.
+pub(crate) fn spawn_alone(cmd: &mut Command) -> Child {
+    let _alone = SPAWN.lock().unwrap_or_else(PoisonError::into_inner);
+    cmd.spawn().expect("spawn")
+}
 
 pub(crate) fn temp_dir() -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -211,11 +227,12 @@ fn spawn_daemon_with(sock: &Path, configure: impl FnOnce(&mut Command)) -> Child
     cmd.env("TARMAC_SOCKET", sock)
         .env("TARMAC_STATE", state)
         .env("RUST_LOG", "debug")
-        .stdin(Stdio::null())
+        .env(EXIT_ON_STDIN_EOF, "1")
+        .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::inherit());
     configure(&mut cmd);
-    cmd.spawn().expect("spawn tarmacd")
+    spawn_alone(&mut cmd)
 }
 
 pub(crate) fn wait_for_socket(sock: &Path) {

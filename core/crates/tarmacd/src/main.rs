@@ -20,6 +20,9 @@ mod reader;
 mod reports;
 mod resume;
 mod state;
+// Compiled out of release builds: only a test harness asks for it.
+#[cfg(debug_assertions)]
+mod stdin_eof;
 mod term;
 mod watch;
 
@@ -46,6 +49,17 @@ type Env<'a> = &'a dyn Fn(&str) -> Option<OsString>;
 
 fn process_env(name: &str) -> Option<OsString> {
     std::env::var_os(name)
+}
+
+/// Resolves when the test harness that started this daemon is gone (`stdin_eof`).
+#[cfg(debug_assertions)]
+async fn harness_gone() {
+    stdin_eof::reached(&process_env).await;
+}
+
+#[cfg(not(debug_assertions))]
+async fn harness_gone() {
+    std::future::pending::<()>().await;
 }
 
 fn home_dir(env: Env) -> OsString {
@@ -140,6 +154,7 @@ async fn main() -> anyhow::Result<()> {
             _ = sighup.recv() => {}
             _ = sigterm.recv() => {}
             _ = sigint.recv() => {}
+            () = harness_gone() => {}
         }
         info!("shutting down");
         // Saved before the socket goes: an app that waits for the socket to
