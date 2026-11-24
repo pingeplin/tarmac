@@ -275,10 +275,8 @@ final class DocWebView: NSView, DocCardBody, FontFollowing, ThemeFollowing, DocS
     /// A link in the doc was clicked; the message is its `href` as written.
     /// Only an absolute http(s) one opens, and every other is inert.
     private func linkClicked(_ message: WKScriptMessage) {
-        guard message.frameInfo.isMainFrame, let href = message.body as? String,
-            let url = ExternalLink.destination(href: href)
-        else { return }
-        openExternal(url)
+        guard message.frameInfo.isMainFrame, let href = message.body as? String else { return }
+        ExternalLink.open(href: href, using: openExternal)
     }
 
     // MARK: - WKNavigationDelegate

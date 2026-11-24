@@ -37,10 +37,7 @@ extension AppController {
         view.onResize = { [weak self] _, _ in self?.terminalSizeChanged(termID: termID) }
         view.onTitleChanged = { [weak self] title in self?.handleTermTitle(termID: termID, title: title) }
         view.onScrollChanged = { [weak self] scrollbar in self?.terminalScrolled(termID: termID, scrollbar) }
-        view.onOpenLink = { link in
-            guard ExternalLink.isHTTP(href: link), let url = URL(string: link) else { return }
-            NSWorkspace.shared.open(url)
-        }
+        view.onOpenLink = { link in ExternalLink.open(href: link) { NSWorkspace.shared.open($0) } }
         view.keyOverride = { chord in
             TermKeyBinding.bytes(
                 keyCode: chord.keyCode,

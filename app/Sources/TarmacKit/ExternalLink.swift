@@ -12,16 +12,25 @@ public enum ExternalLink {
     }
 
     /// The URL a clicked link opens in the browser, or nil for a link that
-    /// opens nothing. `href` is the attribute as the doc wrote it, not the URL
-    /// the page resolved it to: a `<base href>` in the doc has no say.
+    /// opens nothing. `href` is the text as written: a doc's attribute (not the
+    /// URL the page resolved it to, so a `<base href>` has no say) or a
+    /// terminal's OSC 8 URI.
     public static func destination(href: String) -> URL? {
         guard let url = URL(string: urlStandardCleaned(href)), isHTTP(url) else { return nil }
         return url
     }
 
+    /// Hands the OS opener what a clicked link opens, and nothing for a link that
+    /// opens nothing. A card and a terminal both click through here, so they
+    /// open the same URL for the same text.
+    public static func open(href: String, using opener: (URL) -> Void) {
+        if let url = destination(href: href) { opener(url) }
+    }
+
     /// The host requirement is what rejects `https://` and `https:`, and the port
     /// range what rejects `:99999`, which `URL` parses happily but nothing could open.
-    /// Not public: every caller goes through `isHTTP(href:)` and its cleaning.
+    /// Not public: every caller goes through the cleaning of `isHTTP(href:)` or
+    /// `destination(href:)`.
     static func isHTTP(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
         if let port = url.port, !(0...65535).contains(port) { return false }
