@@ -190,6 +190,17 @@ impl Drop for TestDaemon {
     }
 }
 
+/// A daemon child with no dir of its own, killed and reaped on drop, so a test
+/// that panics leaves no daemon.
+pub(crate) struct DaemonChild(pub Child);
+
+impl Drop for DaemonChild {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 pub(crate) fn spawn_daemon(sock: &Path) -> Child {
     spawn_daemon_with(sock, |_| {})
 }

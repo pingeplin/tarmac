@@ -7,8 +7,7 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use common::{
-    Conn, LONG, Spawn, TestDaemon, append_to, contains, settle, signal_and_wait, spawn_daemon, temp_dir,
-    wait_for_socket,
+    Conn, DaemonChild, LONG, Spawn, TestDaemon, append_to, contains, settle, signal_and_wait, spawn_daemon, temp_dir,
 };
 use tarmac_protocol::{Channel, Msg, channel_dir};
 
@@ -145,17 +144,14 @@ fn bad_role_is_rejected() {
 
 #[test]
 fn socket_claiming() {
-    let dir = temp_dir();
-    let sock = dir.join("tarmacd.sock");
-
-    let mut first = spawn_daemon(&sock);
-    wait_for_socket(&sock);
+    let mut daemon = TestDaemon::start();
+    let sock = daemon.sock.clone();
 
     // Second daemon against a live socket exits 1.
-    let mut second = spawn_daemon(&sock);
+    let mut second = DaemonChild(spawn_daemon(&sock));
     let deadline = Instant::now() + LONG;
     let status = loop {
-        if let Some(status) = second.try_wait().unwrap() {
+        if let Some(status) = second.0.try_wait().unwrap() {
             break status;
         }
         assert!(Instant::now() < deadline, "second daemon did not exit");
@@ -166,18 +162,13 @@ fn socket_claiming() {
     let _ = Conn::hello(&sock, "cli");
 
     // SIGKILL the live daemon: the socket file goes stale on disk.
-    first.kill().unwrap();
-    first.wait().unwrap();
+    daemon.child.kill().unwrap();
+    daemon.child.wait().unwrap();
     assert!(sock.exists(), "socket file should remain after SIGKILL");
 
     // A new daemon must unlink the stale socket and bind.
-    let mut third = spawn_daemon(&sock);
-    wait_for_socket(&sock);
+    daemon.relaunch();
     let _ = Conn::hello(&sock, "cli");
-
-    let _ = third.kill();
-    let _ = third.wait();
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
