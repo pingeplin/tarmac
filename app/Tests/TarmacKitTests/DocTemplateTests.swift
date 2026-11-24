@@ -213,6 +213,14 @@ final class DocTemplateTests: XCTestCase {
         XCTAssertTrue(rule.contains("border-top: calc(1px * \(Self.k)) solid var(--line);"))
     }
 
+    /// #461 — a link underline, laid out at K like the prose, is one screen
+    /// pixel at zoom 1, not a third of one.
+    func test461ALinkUnderlineIsOneScreenPixel() throws {
+        XCTAssertTrue(
+            try rule(for: ".doc-prose a").contains("border-bottom: calc(1px * \(Self.k)) dashed var(--agent);")
+        )
+    }
+
     /// #455 — the grip's line is a border, never less than one device pixel.
     func test455TheGripDrawsItsLineAsABorder() throws {
         let grip = try rule(for: ".doc-side-grip")
