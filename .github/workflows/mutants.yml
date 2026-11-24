@@ -4,8 +4,10 @@
 # runs locally: the script behind it takes the diff and makes the run safe.
 #
 # No `paths` filter on purpose: once the pull-request job is a required check,
-# a pull request that it skipped would wait for it for ever. With no Rust
-# change the script passes in a second, before any tool is needed.
+# a pull request whose workflow never started would wait for it for ever.
+# Instead a Linux job asks the script whether there is a Rust change, and the
+# macOS job runs only when there is one. A job skipped by its `if` reports as
+# skipped, which a required check takes as passed (#546).
 name: mutants
 
 on:
@@ -24,13 +26,15 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  in-diff:
-    name: mutants (rust, in diff)
+  rust-changed:
+    name: mutants (is there a Rust change)
     if: github.event_name == 'pull_request'
-    # macOS for the reason test.yml gives: the daemon's tests need it.
-    runs-on: macos-latest
+    # The question needs node and git only, so it costs no macOS runner.
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.changed.outputs.rust }}
     steps:
-      # The whole history: the mutants are those in the lines changed since the
+      # The whole history: the answer is about the lines changed since the
       # branch left its base.
       - uses: actions/checkout@v4
         with:
@@ -40,15 +44,31 @@ jobs:
         with:
           node-version: '22'
 
-      # The script's own answer to "is there a Rust change", so that a pull
-      # request with none does not pay for a toolchain and a tool it never
-      # starts. The check below runs in both cases, and is what reports.
       - name: is there a Rust change
         id: changed
         run: echo "rust=$(node scripts/check/mutants.mjs --changed --base origin/${{ github.base_ref }})" >> "$GITHUB_OUTPUT"
 
+  in-diff:
+    name: mutants (rust, in diff)
+    needs: rust-changed
+    # Skipped only on a clear "no": when the question itself failed, the job
+    # runs and the script answers it again, so a broken gate never passes a
+    # Rust change unseen.
+    if: >-
+      !cancelled() && github.event_name == 'pull_request' &&
+      (needs.rust-changed.result != 'success' || needs.rust-changed.outputs.rust == 'true')
+    # macOS for the reason test.yml gives: the daemon's tests need it.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: install the pinned toolchain
-        if: steps.changed.outputs.rust == 'true'
         run: rustup toolchain install
 
       # No build cache: the tool builds in a copy of core/ of its own, so a saved
@@ -56,7 +76,6 @@ jobs:
 
       # The version scripts/check/mutants.mjs names; the script refuses another.
       - uses: taiki-e/install-action@v2
-        if: steps.changed.outputs.rust == 'true'
         with:
           tool: cargo-mutants@27.1.0
 
