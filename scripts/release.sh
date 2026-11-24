@@ -111,7 +111,7 @@ $verdict"
 # this run's tree.
 push_pr() {
   local dir="$1" repo="$2" title="$3" body="$4" pr url
-  ghgit -C "$dir" push --quiet --force "https://github.com/$repo" "$BRANCH" || return 1
+  ghgit -C "$dir" push --quiet --force "https://github.com/$repo" "$BRANCH" >&2 || return 1
   pr="$(gh pr list --repo "$repo" --head "$BRANCH" --state open --json number -q '.[0].number // empty')"
   if [ -z "$pr" ]; then
     url="$(gh pr create --repo "$repo" --base main --head "$BRANCH" --title "$title" --body "$body")" || return 1
