@@ -87,7 +87,7 @@
   .doc-prose a {
     color: var(--agent);
     text-decoration: none;
-    border-bottom: 1px dashed var(--agent);
+    border-bottom: calc(1px * var(--oversample-k)) dashed var(--agent);
   }
   .doc-prose ul,
   .doc-prose ol {
