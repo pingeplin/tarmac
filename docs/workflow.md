@@ -83,7 +83,7 @@ description of what each hook runs.
 workflow it gates. For a change to Rust, run `make mutants` before the review:
 it changes the lines you changed, one expression at a time, and names each
 change that no test saw. The `mutants (rust, in diff)` CI job runs the same
-command on every PR. No hook runs it, because it takes minutes.
+command on every PR that changes Rust. No hook runs it, because it takes minutes.
 
 ## PRs
 

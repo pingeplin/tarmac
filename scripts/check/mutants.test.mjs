@@ -662,18 +662,36 @@ test("S20: a weekly run is not cancelled by another event on the same branch", (
   assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
 });
 
-test("S48: a Linux job asks whether there is a Rust change; the macOS job runs for a yes, and when the question failed (#546)", () => {
+test("S48: --changed answers on stdout whether a run would start the tool, and starts nothing", () => {
+  const cargo = tool();
+  const said = (dir, args = ["--base", "main", "--changed"]) => {
+    const run = mutants(dir, cargo, args);
+    return [run.code, run.out, run.err];
+  };
+  const untracked = repo();
+  write(untracked, { "core/crates/x/src/new.rs": "fn one() {}\n" });
+
+  assert.deepEqual(said(repo()), [0, "false\n", ""]);
+  assert.deepEqual(said(changed()), [0, "true\n", ""]);
+  assert.deepEqual(said(untracked), [0, "true\n", ""]);
+  assert.deepEqual(said(repo(), ["--all", "--changed"]), [0, "true\n", ""]);
+  assert.deepEqual(said(changed(), ["--base", "no-such-ref", "--changed"]).slice(0, 2), [2, ""]);
+  assert.deepEqual(calls(cargo), []);
+});
+
+test("S48: a Linux job asks whether there is a Rust change; the macOS job is skipped only on a clear no (#546)", () => {
   const workflow = readFileSync(join(ROOT, ".github/workflows/mutants.yml"), "utf8");
   const [, gateJob, diffJob] = workflow.match(/^ {2}rust-changed:\n([\s\S]*?)^ {2}in-diff:\n([\s\S]*?)^ {2}all:\n/m);
   const check = diffJob.split(/^ {6}- /m).find((step) => /run: make mutants/.test(step));
 
   assert.match(gateJob, /runs-on: ubuntu-latest/);
   assert.match(gateJob, /rust: \$\{\{ steps\.changed\.outputs\.rust \}\}/);
-  assert.match(gateJob, /id: changed\n\s+run: echo "rust=\$\(node scripts\/check\/mutants\.mjs --changed --base origin\/\$\{\{ github\.base_ref \}\}\)" >> "\$GITHUB_OUTPUT"/);
+  assert.match(gateJob, /rust=\$\(node scripts\/check\/mutants\.mjs --changed --base origin\/\$\{\{ github\.base_ref \}\}\)\n\s+echo "rust=\$rust" >> "\$GITHUB_OUTPUT"/);
   assert.doesNotMatch(gateJob, /rustup|install-action/);
   assert.match(diffJob, /needs: rust-changed/);
   assert.match(diffJob, /!cancelled\(\)/);
-  assert.match(diffJob, /needs\.rust-changed\.result != 'success' \|\| needs\.rust-changed\.outputs\.rust == 'true'/);
+  assert.match(diffJob, /needs\.rust-changed\.outputs\.rust != 'false'/);
+  assert.doesNotMatch(gateJob, /echo "rust=\$\(/);
   assert.doesNotMatch(check, /\bif:/);
 });
 

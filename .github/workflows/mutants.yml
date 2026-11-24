@@ -1,6 +1,6 @@
 # Mutation testing for the Rust workspace (spec 2611.0032). cargo-mutants
 # changes one expression at a time and runs the tests; a change that no test
-# saw is a finding. Both jobs call `make mutants`, the target a contributor
+# saw is a finding. Both test jobs call `make mutants`, the target a contributor
 # runs locally: the script behind it takes the diff and makes the run safe.
 #
 # No `paths` filter on purpose: once the pull-request job is a required check,
@@ -44,19 +44,22 @@ jobs:
         with:
           node-version: '22'
 
+      # The answer is taken apart from the echo, so a failure of the script
+      # fails this step instead of writing an empty answer.
       - name: is there a Rust change
         id: changed
-        run: echo "rust=$(node scripts/check/mutants.mjs --changed --base origin/${{ github.base_ref }})" >> "$GITHUB_OUTPUT"
+        run: |
+          rust=$(node scripts/check/mutants.mjs --changed --base origin/${{ github.base_ref }})
+          echo "rust=$rust" >> "$GITHUB_OUTPUT"
 
   in-diff:
     name: mutants (rust, in diff)
     needs: rust-changed
-    # Skipped only on a clear "no": when the question itself failed, the job
-    # runs and the script answers it again, so a broken gate never passes a
-    # Rust change unseen.
+    # Skipped only on a clear "false": a failed question leaves no answer, the
+    # job runs, and the script answers it again.
     if: >-
       !cancelled() && github.event_name == 'pull_request' &&
-      (needs.rust-changed.result != 'success' || needs.rust-changed.outputs.rust == 'true')
+      needs.rust-changed.outputs.rust != 'false'
     # macOS for the reason test.yml gives: the daemon's tests need it.
     runs-on: macos-latest
     steps:

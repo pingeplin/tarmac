@@ -94,13 +94,19 @@ jobs:
       - name: make lint
         run: make lint ONLY=swift
 
-  lint-macos:
-    name: lint (swiftc, rust)
-    # The two lints that compile: swiftc builds the package, which needs the
-    # macOS 26 SDK (see test.yml), and the daemon's unsafe code is behind
-    # macOS-only syscalls, so clippy on another platform would not compile it.
-    # One job, so a push waits for one macOS runner, not two (#546). Each step
-    # runs even when the one before it failed.
+  macos:
+    name: macOS checks
+    # The checks that need macOS, in one job, so a push waits for one macOS
+    # runner, not three (#546):
+    # - lint (swiftc) builds the package, which needs the macOS 26 SDK (see
+    #   test.yml);
+    # - lint (rust): the daemon's unsafe code is behind macOS-only syscalls, so
+    #   clippy on another platform would not compile it;
+    # - check scripts (node --test) run the real formatters and clippy in small
+    #   temporary repositories. Some of them make a file unreadable and expect
+    #   the check to fail, which root in a Linux container can still read, and
+    #   some read `make -n` output, which GNU make 4 adds lines to.
+    # Each check runs even when the one before it failed.
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
@@ -134,6 +140,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: make lint ONLY=rust
 
+      - name: check scripts (node --test)
+        if: ${{ !cancelled() }}
+        run: make check-test
+
   arch-check:
     name: arch-check
     runs-on: ubuntu-latest
@@ -146,34 +156,3 @@ jobs:
 
       - name: make arch-check
         run: make arch-check
-
-  check-scripts:
-    name: check scripts (node --test)
-    # The tests run both formatters in small temporary repositories, and
-    # swift-format's version matters: the Linux toolchain of the same minor
-    # version serves, as for fmt (swift) (#546).
-    runs-on: ubuntu-latest
-    container: swift:6.3-noble
-    steps:
-      - name: install git, make and curl
-        run: apt-get update && apt-get install -y --no-install-recommends git make curl ca-certificates
-
-      - uses: actions/checkout@v4
-
-      # The container runs as root on a checkout it did not make.
-      - name: trust the checkout
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      # rustup, then the version rust-toolchain.toml pins.
-      - name: install the pinned toolchain
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          "$HOME/.cargo/bin/rustup" toolchain install
-
-      - name: make check-test
-        run: make check-test
