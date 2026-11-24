@@ -122,8 +122,8 @@ editor/IDE may show stale SourceKit diagnostics — `make` is the source of trut
    the place and the command to run next. CI does not read the subjects of
    your commits. It holds the pull request's title to the subject form, since
    the squash merge makes the title the subject on `main`. One CI job that no hook runs
-   is `mutants (rust, in diff)`: it changes the Rust lines of your pull
-   request, one expression at a time, and fails when the tests still pass. Run
+   is `mutants (rust, in diff)`: when your pull request changes Rust, it
+   changes those lines, one expression at a time, and fails when the tests still pass. Run
    it yourself with `make mutants` (it needs `cargo-mutants` 27.1.0).
    `CLAUDE.md` (*Build, run, test*) describes every check, and the hooks an
    agent in Claude Code gets.

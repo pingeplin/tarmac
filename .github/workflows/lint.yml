@@ -40,11 +40,20 @@ jobs:
 
   fmt-swift:
     name: fmt (swift)
-    # swift-format comes with the Swift toolchain, and the package needs the
-    # macOS 26 image's one (see test.yml).
-    runs-on: macos-26
+    # swift-format reads the source and compiles nothing, so the Linux
+    # toolchain of the same minor version serves, and macOS runners are kept
+    # for what needs AppKit (#546). The check refuses another minor version.
+    runs-on: ubuntu-latest
+    container: swift:6.3-noble
     steps:
+      - name: install git and make
+        run: apt-get update && apt-get install -y --no-install-recommends git make ca-certificates
+
       - uses: actions/checkout@v4
+
+      # The container runs as root on a checkout it did not make.
+      - name: trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - uses: actions/setup-node@v4
         with:
@@ -58,33 +67,20 @@ jobs:
       - name: make fmt-check
         run: make fmt-check ONLY=swift
 
-  lint-rust:
-    name: lint (rust)
-    # macOS: the daemon's unsafe code is behind macOS-only syscalls, so another
-    # platform would not compile it, or lint it.
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: install the pinned toolchain
-        run: rustup toolchain install
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: core
-
-      - name: make lint
-        run: make lint ONLY=rust
-
   lint-swift:
     name: lint (swift)
-    runs-on: macos-26
+    # On Linux for the reason fmt (swift) gives.
+    runs-on: ubuntu-latest
+    container: swift:6.3-noble
     steps:
+      - name: install git and make
+        run: apt-get update && apt-get install -y --no-install-recommends git make ca-certificates
+
       - uses: actions/checkout@v4
+
+      # The container runs as root on a checkout it did not make.
+      - name: trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - uses: actions/setup-node@v4
         with:
@@ -98,8 +94,19 @@ jobs:
       - name: make lint
         run: make lint ONLY=swift
 
-  lint-swiftc:
-    name: lint (swiftc)
+  macos:
+    name: macOS checks
+    # The checks that need macOS, in one job, so a push waits for one macOS
+    # runner, not three (#546):
+    # - lint (swiftc) builds the package, which needs the macOS 26 SDK (see
+    #   test.yml);
+    # - lint (rust): the daemon's unsafe code is behind macOS-only syscalls, so
+    #   clippy on another platform would not compile it;
+    # - check scripts (node --test) run the real formatters and clippy in small
+    #   temporary repositories. Some of them make a file unreadable and expect
+    #   the check to fail, which root in a Linux container can still read, and
+    #   some read `make -n` output, which GNU make 4 adds lines to.
+    # Each check runs even when the one before it failed.
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
@@ -113,13 +120,29 @@ jobs:
           path: app/Vendor
           key: ghostty-vt-${{ hashFiles('scripts/fetch-ghostty-vt.sh') }}
 
+      - name: install the pinned toolchain
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+
       # The known-warnings list must fit this compiler too, so the log shows
       # which one it is.
       - name: compiler version
         run: swift --version
 
-      - name: make lint
+      - name: lint (swiftc)
+        if: ${{ !cancelled() }}
         run: make lint ONLY=swiftc
+
+      - name: lint (rust)
+        if: ${{ !cancelled() }}
+        run: make lint ONLY=rust
+
+      - name: check scripts (node --test)
+        if: ${{ !cancelled() }}
+        run: make check-test
 
   arch-check:
     name: arch-check
@@ -133,21 +156,3 @@ jobs:
 
       - name: make arch-check
         run: make arch-check
-
-  check-scripts:
-    name: check scripts (node --test)
-    # macOS: the tests run both formatters, and swift-format's version matters.
-    runs-on: macos-26
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      # The tests run the real formatter in small temporary repositories.
-      - name: install the pinned toolchain
-        run: rustup toolchain install
-
-      - name: make check-test
-        run: make check-test

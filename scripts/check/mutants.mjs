@@ -192,7 +192,7 @@ function run(options, cwd, caller) {
   if (!existsSync(core)) throw new Blocked("this repository has no core/ directory", ["the Rust workspace is core/"], "cd to the Tarmac repository");
   const file = options.file && fileInCore(core, cwd, options.file);
   const diff = options.all || file ? null : rustDiff(core, options.base);
-  // `--changed` only answers whether a run would start the tool, so that CI can leave out the install when it would not.
+  // `--changed` only answers whether a run would start the tool, so that CI can skip the whole macOS job when it would not.
   if (options.changed) return { code: 0, text: "", out: `${diff !== ""}\n` };
   if (diff === "") return { code: 0, text: `mutants: no Rust change against ${options.base}\n` };
   const result = mutate(core, diff, file, options, caller);
