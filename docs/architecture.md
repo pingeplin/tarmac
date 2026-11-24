@@ -261,7 +261,15 @@ start-up file.
 The CLI gets a short-lived `cli_session`. The app gets a long-lived
 `app_session` that installs the single-app slot, creates the bounded
 `mpsc::channel::<Msg>(256)`, and spawns the one writer task that owns the socket
-write half. A monotonic generation guard ensures a late teardown of an evicted
+write half (`app_writer::write_frames`). One frame may take at most
+`APP_WRITE_LIMIT` (10 s) to write. An app that stops reading but keeps its
+socket open would fill the channel, and every sender would wait on it, some with
+the `reports` lock held (#524). At the limit, or when the session is cancelled,
+the writer ends: a waiting send returns an error, and the session ends, so the
+app reconnects and gets a full restore. A frame still in the channel is lost,
+as on any disconnect. The limit is for one frame, not for a send: an app that
+reads each frame within the limit is never cut off, and a sender can wait for
+each frame ahead of it. A monotonic generation guard ensures a late teardown of an evicted
 connection can't clobber the new app's slot.
 
 **Subscribers** (spec 2611.0012). A `cli` session that sends `Subscribe` stays

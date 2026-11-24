@@ -3,6 +3,7 @@
 // with `tracing`, never by printing (docs/coding-style.md §3).
 #![warn(clippy::unwrap_used, clippy::print_stdout, clippy::print_stderr)]
 
+mod app_writer;
 mod bell_scan;
 mod boards;
 mod conn;
