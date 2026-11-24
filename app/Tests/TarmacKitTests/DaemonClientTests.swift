@@ -12,6 +12,8 @@ private final class FakeDaemon: @unchecked Sendable {
     private var connections: [Int32] = []
     private var frames: [[Data]] = []
     private var ended: Set<Int> = []
+    /// What `shutdown` returned for each link `drop` hung up on.
+    private var hangUps: [Int: String] = [:]
     private var frameBudgets: [Int: Int] = [:]
     private var stopped = false
 
@@ -174,11 +176,15 @@ private final class FakeDaemon: @unchecked Sendable {
     }
 
     /// The links as the daemon sees them, for a failure message: how many it
-    /// accepted, which reached their end, and how many frames each one read.
+    /// accepted, which reached their end, how many frames each one read, and
+    /// how each hang-up went. A link `drop` hung up on reads as ended whatever
+    /// the client did: the daemon's own shutdown ends its read.
     var links: String {
         state.lock()
         defer { state.unlock() }
-        return "accepted \(connections.count), ended \(ended.sorted()), frames per link \(frames.map(\.count))"
+        let hungUp = hangUps.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value)" }
+        return
+            "accepted \(connections.count), ended \(ended.sorted()), frames per link \(frames.map(\.count)), hung up \(hungUp)"
     }
 
     /// Hang up on connection `index`, as a daemon that died does.
@@ -187,7 +193,10 @@ private final class FakeDaemon: @unchecked Sendable {
         state.lock()
         let fd = connections[index]
         state.unlock()
-        shutdown(fd, SHUT_RDWR)
+        let outcome = shutdown(fd, SHUT_RDWR) == 0 ? "ok" : String(cString: strerror(errno))
+        state.lock()
+        hangUps[index] = outcome
+        state.unlock()
     }
 
     /// Close connection `index`, which must have stopped reading. Unlike
@@ -690,15 +699,26 @@ final class DaemonClientTests: XCTestCase {
     /// The backoff counts attempts since the last success, not since launch.
     func testTheReconnectBudgetStartsOverAfterEachSuccessfulConnect() throws {
         let daemon = try makeDaemon()
-        let (client, statuses, _) = makeClient(daemon.path, timing: .fast.reconnecting { $0 <= 1 ? 0.01 : nil })
+        let timing = DaemonClient.Timing.fast.reconnecting { $0 <= 1 ? 0.01 : nil }
+        let (client, statuses, _) = makeClient(daemon.path, timing: timing)
         client.start()
         daemon.drop(0)
         daemon.drop(1)
+        let dropped = Date()
 
-        // A rare full-suite failure stops after the second `.connected` (#301).
-        // `accepted 2` with both links ended: the client had its end of stream
-        // and the status came late. More: the second drop missed the live link.
-        XCTAssertEqual(statuses.first(5), [.connected, .closed, .connected, .closed, .connected], daemon.links)
+        let expected: [ConnectionStatus] = [.connected, .closed, .connected, .closed, .connected]
+        let got = statuses.first(5)
+        guard got != expected else { return }
+        // A rare full-suite failure stops after the second `.connected` (#301),
+        // with both links accepted and `drop` called on them; `links` shows
+        // what each hang-up returned. When the rest arrives tells the cause: at
+        // most `handshakeTimeout` after the drop (the client's wait began
+        // before `drop(1)` returned), the client never saw the hang-up; well
+        // before it, it saw it and was held up; never, it is stuck. This wait
+        // only runs once the test has already failed.
+        let late = statuses.first(5, timeout: timing.handshakeTimeout + 3)
+        let after = String(format: "%.2f", Date().timeIntervalSince(dropped))
+        XCTFail("got \(got), expected \(expected); \(daemon.links); \(late) \(after) s after drop(1)")
     }
 
     /// A path too long for `sockaddr_un` fails the connect with a reason
