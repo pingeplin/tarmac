@@ -11,7 +11,7 @@ use tracing::{debug, info, warn};
 use crate::boards::{BoardId, Boards};
 use crate::proc::Pid;
 use crate::state::{Daemon, TERM_NEW_APP_WAIT};
-use crate::{docs, events, term};
+use crate::{app_writer, docs, events, term};
 
 /// `peer_pid` is the client's pid, read at accept; only a cli session uses it.
 pub(crate) async fn handle(daemon: Arc<Daemon>, stream: UnixStream, peer_pid: Option<Pid>) {
@@ -248,21 +248,12 @@ async fn change_and_send_active_board(
 }
 
 async fn app_session(daemon: Arc<Daemon>, stream: UnixStream, app_version: Option<String>) -> anyhow::Result<()> {
-    let (mut rd, mut wr) = stream.into_split();
-    let (tx, mut rx) = mpsc::channel::<Msg>(256);
+    let (mut rd, wr) = stream.into_split();
+    let (tx, rx) = mpsc::channel::<Msg>(256);
     let (generation, cancel) = daemon.install_app(tx.clone(), app_version).await;
     info!("app connected (generation {generation})");
 
-    let writer_cancel = cancel.clone();
-    tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
-            let Ok(payload) = proto::encode(&msg) else { continue };
-            if frame::write_async(&mut wr, &payload).await.is_err() {
-                writer_cancel.cancel();
-                break;
-            }
-        }
-    });
+    tokio::spawn(app_writer::write_frames(wr, rx, cancel.clone(), app_writer::APP_WRITE_LIMIT));
 
     let mut conn = AppConn { tx, replayed: HashSet::new(), told_elsewhere: false };
     send_active_board(&daemon, &mut conn).await;
