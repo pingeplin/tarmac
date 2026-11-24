@@ -14,6 +14,13 @@ use common::{Answer, Double, OneAnswer, Report};
 
 const NO_DAEMON: &str = "no tarmac daemon running";
 
+/// What a run that waits for nothing may take, for the fastest of five. A
+/// warm-up spawn in `fastest` takes the first start of a new binary (up to
+/// 630 ms, #505) out of the timed runs, which take 2 to 30 ms. The waits a
+/// run must not make are a connect retry until the hook's 500 ms deadline
+/// and the 1 s wait for stdin; the limit is under both.
+const NOT_WAITED: Duration = Duration::from_millis(250);
+
 fn stop_input(text: &str) -> Vec<u8> {
     serde_json::to_vec(&serde_json::json!({"hook_event_name": "Stop", "last_assistant_message": text})).unwrap()
 }
@@ -47,12 +54,15 @@ fn assert_no_connection(out: &Report, case: &str) {
     assert!(!out.stderr.contains(NO_DAEMON), "{case}: it tried to connect: {}", out.stderr);
 }
 
-/// The fastest of `runs` runs of `run`, with every result. A debug binary
-/// under a parallel `cargo test` can be slow to start, so a bound holds for
-/// the fastest run; every time is printed for the record. Only `run` is
+/// The fastest of `runs` runs of `run`, with every result. One untimed run
+/// of `--help` comes first: the first start of a binary that was just built
+/// takes about half a second, and no timed run should pay it. A debug binary
+/// under a parallel `cargo test` can still be slow to start, so a bound holds
+/// for the fastest run; every time is printed for the record. Only `run` is
 /// timed: what `setup` makes is made before the clock starts and dropped
 /// after it stops, so a double's teardown is not counted as the cli's time.
 fn fastest<S>(runs: usize, mut setup: impl FnMut() -> S, mut run: impl FnMut(&S) -> Report) -> (Duration, Vec<Report>) {
+    let _ = common::tarmac().arg("--help").output();
     let mut times = Vec::new();
     let mut outs = Vec::new();
     for _ in 0..runs {
@@ -122,7 +132,7 @@ fn s20_no_daemon_is_fast_silent_and_says_so_on_stderr() {
             let line = out.one_stderr_line();
             assert!(line.starts_with("tarmac: hooks run: ") && line.contains(NO_DAEMON), "{line}");
         }
-        assert!(best <= Duration::from_millis(200), "{}: the fastest run took {best:?}", sock.display());
+        assert!(best <= NOT_WAITED, "{}: the fastest run took {best:?}", sock.display());
     }
 }
 
@@ -189,7 +199,7 @@ fn s23_no_terminal_exits_at_once_without_reading_stdin() {
             assert_silent_success(out, "no terminal");
             assert_no_connection(out, "no terminal");
         }
-        assert!(best <= Duration::from_millis(200), "{term_id:?}: the fastest run took {best:?}");
+        assert!(best <= NOT_WAITED, "{term_id:?}: the fastest run took {best:?}");
     }
 }
 
