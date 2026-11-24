@@ -3,11 +3,12 @@
 
 mod common;
 
-use std::process::Stdio;
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use common::{
-    Conn, DaemonChild, LONG, Spawn, TestDaemon, append_to, contains, settle, signal_and_wait, spawn_daemon, temp_dir,
+    Conn, DaemonChild, EXIT_ON_STDIN_EOF, LONG, Spawn, TestDaemon, append_to, contains, settle, signal_and_wait,
+    spawn_alone, spawn_daemon, temp_dir, wait_exit,
 };
 use tarmac_protocol::{Channel, Msg, channel_dir};
 
@@ -184,6 +185,58 @@ fn sighup_shuts_down_cleanly() {
     );
 }
 
+// ── the end of the test that started a daemon (#531) ─────────────────────────
+//
+// A test process that dies without its `Drop` (SIGKILL, a `panic = "abort"`
+// build) closes the write end of its daemon's stdin all the same.
+
+#[test]
+fn a_daemon_asked_ends_at_eof_on_its_stdin() {
+    let mut daemon = TestDaemon::start();
+
+    drop(daemon.child.stdin.take());
+    let status = wait_exit(&mut daemon.child);
+
+    assert!(
+        status.code() == Some(0) && !daemon.sock.exists(),
+        "EOF on stdin must unlink the socket and exit 0; got status={status:?} socket_exists={}",
+        daemon.sock.exists()
+    );
+}
+
+#[test]
+fn a_daemon_ends_when_the_process_that_holds_its_stdin_is_killed() {
+    let mut holder = spawn_alone(Command::new("/bin/cat").stdin(Stdio::piped()).stdout(Stdio::piped()));
+    let pipe = holder.stdout.take().expect("stdout is piped");
+    let mut daemon = TestDaemon::start_with(|cmd| {
+        cmd.stdin(pipe);
+    });
+
+    holder.kill().unwrap();
+    holder.wait().unwrap();
+    let status = wait_exit(&mut daemon.child);
+
+    assert!(status.code() == Some(0) && !daemon.sock.exists(), "status={status:?}");
+}
+
+/// The app's daemon has `/dev/null` for stdin, and a `make run` daemon must
+/// outlive its app: without the variable, EOF changes nothing.
+#[test]
+fn a_daemon_not_asked_keeps_serving_at_eof_on_its_stdin() {
+    let stdins: [fn() -> Stdio; 2] = [Stdio::piped, Stdio::null];
+    for stdin in stdins {
+        let mut daemon = TestDaemon::start_with(|cmd| {
+            cmd.env_remove(EXIT_ON_STDIN_EOF).stdin(stdin());
+        });
+
+        drop(daemon.child.stdin.take());
+        settle();
+
+        let _ = Conn::hello(&daemon.sock, "cli");
+        assert!(daemon.child.try_wait().unwrap().is_none(), "the daemon exited");
+    }
+}
+
 // ── app-version relay (spec 2609.0012) ───────────────────────────────────────
 //
 // `tarmac --version` reports the *running* app's version, which reaches the CLI
@@ -296,7 +349,7 @@ fn hard_file_limit() -> libc::rlim_t {
 }
 
 /// The daemon starts at launchd's soft limit of 256 files, under `hard`.
-fn starts_at_256_files(cmd: &mut std::process::Command, hard: libc::rlim_t) {
+fn starts_at_256_files(cmd: &mut Command, hard: libc::rlim_t) {
     use std::os::unix::process::CommandExt;
     // SAFETY: setrlimit is async-signal-safe, and nothing else runs here.
     unsafe {
