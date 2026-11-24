@@ -127,4 +127,25 @@ final class ExternalLinkTests: XCTestCase {
             "HTTPS://Example.com/Path?Q=A#Frag"
         )
     }
+
+    // MARK: - open: what a clicked link hands to the OS opener
+
+    private func opened(_ href: String) -> [String] {
+        var urls: [String] = []
+        ExternalLink.open(href: href) { urls.append($0.absoluteString) }
+        return urls
+    }
+
+    func testAnOpenedLinkReachesTheOpenerAsTheCleanedURL() {
+        XCTAssertEqual(opened("https://x.com/a"), ["https://x.com/a"])
+        for href in [" https://x.com", "\thttps://x.com\n", "https://x.com ", "ht\ttps://x.com", "https://x\t.com"] {
+            XCTAssertEqual(opened(href), ["https://x.com"], href)
+        }
+    }
+
+    func testALinkThatIsNotAnHTTPURLReachesNoOpener() {
+        for href in ["", "#frag", "/abs", "mailto:a@b.c", "javascript:alert(1)", "https://", " https:// "] {
+            XCTAssertEqual(opened(href), [], href)
+        }
+    }
 }
