@@ -229,8 +229,8 @@ final class BoardSwitcherTests: XCTestCase {
             s, BoardSwitcher.BoardSummary(boardID: "b", name: nil, running: 3, bell: 0, cards: nil, isLive: true))
     }
 
-    // 2611.0013 S10: unread reports, for a visited board and a never-visited one.
-    func testS10TheReportCountIsKeptForABoardVisitedOrNot() {
+    // 2611.0013 "Board switcher counts reports": unread reports, for a visited board and a never-visited one.
+    func testTheReportCountIsKeptForABoardVisitedOrNot() {
         let unvisited = BoardSwitcher.summary(
             boardID: "b", name: nil, visited: false, terms: [term(bell: true)], cards: 1, daemonRunning: 1, reports: 2
         )
@@ -244,7 +244,8 @@ final class BoardSwitcherTests: XCTestCase {
         XCTAssertEqual(row.first?.meta, "1 running · 2 report")
     }
 
-    func testS10TheMetaDropsAZeroReportAndKeepsTheOrder() {
+    /// "Board switcher counts reports".
+    func testTheMetaDropsAZeroReportAndKeepsTheOrder() {
         XCTAssertEqual(BoardSwitcher.meta(running: 1, bell: 0, report: 2, cards: 3), "1 running · 2 report · 3 cards")
         XCTAssertEqual(
             BoardSwitcher.meta(running: 2, bell: 1, report: 1, cards: 8), "2 running · 1 bell · 1 report · 8 cards")

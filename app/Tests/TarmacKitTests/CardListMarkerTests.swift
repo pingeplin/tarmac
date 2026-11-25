@@ -116,25 +116,31 @@ final class CardListMarkerTests: XCTestCase {
 
     // MARK: - Layout (G1)
 
-    func testS1APlainUlItemsFirstLineStaysWithItsWrappedLinesAtZoom3() throws {
+    /// "Unordered item keeps left edge at zoom 3".
+    func testAPlainUlItemsFirstLineStaysWithItsWrappedLinesAtZoom3() throws {
         try assertLinesInPlace("<ul><li id=it>First \(Self.long)</li></ul>")
     }
 
-    func testS2OlItemsFirstLinesStayWithTheirWrappedLinesAtZoom3() throws {
+    /// "Ordered lists keep left edge at zoom 3".
+    func testOlItemsFirstLinesStayWithTheirWrappedLinesAtZoom3() throws {
         try assertLinesInPlace("<ol><li id=it>First \(Self.long)</li></ol>")
         try assertLinesInPlace("<ol start=10><li id=it>First \(Self.long)</li></ol>")
         try assertLinesInPlace("<ol type=I start=8 style='font-size:22px'><li id=it>First \(Self.long)</li></ol>")
     }
 
-    func testS14AnItemWhoseFirstChildIsABlockHasItsFirstLineInPlace() throws {
+    /// "Block child in item keeps left edge".
+    func testAnItemWhoseFirstChildIsABlockHasItsFirstLineInPlace() throws {
         for (list, child) in [("ul", "p"), ("ol", "div")] {
             let body = "<\(list)><li id=li><\(child) id=it>First \(Self.long)</\(child)></li></\(list)>"
             let view = try assertLinesInPlace(body)
-            XCTAssertEqual(try mark(view, "#li"), list == "ul" ? "disc" : "decimal", "S14 \(child)")
+            XCTAssertEqual(
+                try mark(view, "#li"), list == "ul" ? "disc" : "decimal", "Block child in item keeps left edge \(child)"
+            )
         }
     }
 
-    func testS22AnItemInAScrolledBoxHasItsFirstLineInPlace() throws {
+    /// "Item in a scrolled box keeps left edge".
+    func testAnItemInAScrolledBoxHasItsFirstLineInPlace() throws {
         let filler = (1...6).map { "<li>filler \($0) \(Self.long)</li>" }.joined()
         let body =
             "<div id=box style='height:150px;overflow:auto'><ul>\(filler)<li id=it>First \(Self.long)</li></ul></div>"
@@ -184,7 +190,8 @@ final class CardListMarkerTests: XCTestCase {
             try marks(view, "#control > li"), ["disc", "disc"], "the control is marked", file: file, line: line)
     }
 
-    func testS3NumberedItemsUseTheListItemCounter() throws {
+    /// "Start reversed and value lists use decimal".
+    func testNumberedItemsUseTheListItemCounter() throws {
         let view = try card(
             """
             <ol start=5><li>a</li><li>b</li></ol>
@@ -201,12 +208,14 @@ final class CardListMarkerTests: XCTestCase {
         }
     }
 
-    func testS4NestedBulletsAreDiscCircleSquare() throws {
+    /// "Nested lists get disc circle and square".
+    func testNestedBulletsAreDiscCircleSquare() throws {
         let view = try card("<ul><li id=a>a<ul><li id=b>b<ul><li id=c>c</li></ul></li></ul></li></ul>", zoom: 3)
         XCTAssertEqual(try [mark(view, "#a"), mark(view, "#b"), mark(view, "#c")], ["disc", "circle", "square"])
     }
 
-    func testS5TypeAttributesGiveTheirMarkerTypes() throws {
+    /// "Roman and alpha types keep their marker names".
+    func testTypeAttributesGiveTheirMarkerTypes() throws {
         let view = try card("<ol type=I><li id=r>a</li></ol><ol type=a><li id=l>b</li></ol>", zoom: 3)
         XCTAssertEqual(try mark(view, "#r"), "upper-roman")
         XCTAssertEqual(try mark(view, "#l"), "lower-alpha")
@@ -214,7 +223,8 @@ final class CardListMarkerTests: XCTestCase {
         XCTAssertTrue(try style(view, "#l", "content", pseudo: "::before")[0].contains("lower-alpha"))
     }
 
-    func testS6AListWithNoMarkerGetsNone() throws {
+    /// "Author list-style none gives no mark".
+    func testAListWithNoMarkerGetsNone() throws {
         let view = try card(
             "<ul class=chips><li>a</li><li>b</li></ul>" + Self.control, css: "ul.chips { list-style: none; }", zoom: 3)
         XCTAssertEqual(try marks(view, ".chips > li"), [nil, nil])
@@ -224,13 +234,15 @@ final class CardListMarkerTests: XCTestCase {
         try assertControlMarked(view)
     }
 
-    func testS7AnAuthorsSquareIsDrawnOnceByTarmac() throws {
+    /// "Author square style gets one square marker".
+    func testAnAuthorsSquareIsDrawnOnceByTarmac() throws {
         let view = try card("<ul class=sq><li>a</li><li>b</li></ul>", css: "ul.sq { list-style: square; }", zoom: 3)
         XCTAssertEqual(try marks(view, ".sq > li"), ["square", "square"])
         XCTAssertEqual(try style(view, ".sq > li", "list-style-type"), ["none", "none"])
     }
 
-    func testS8AnAuthorsOwnBeforeContentIsLeftAlone() throws {
+    /// "Author before content on items gets no mark".
+    func testAnAuthorsOwnBeforeContentIsLeftAlone() throws {
         let view = try card(
             "<ul class=ticks><li>a</li></ul>" + Self.control, css: #"ul.ticks li::before { content: "✓ "; }"#, zoom: 3)
         XCTAssertEqual(try marks(view, ".ticks > li"), [nil])
@@ -239,7 +251,8 @@ final class CardListMarkerTests: XCTestCase {
         try assertControlMarked(view)
     }
 
-    func testS9MarkersTarmacCannotDrawKeepTheirNativeMarker() throws {
+    /// "Unsupported author list styles get no mark".
+    func testMarkersTarmacCannotDrawKeepTheirNativeMarker() throws {
         let image = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'/%3E\")"
         let cases: [(String, String)] = [
             ("string", #"list-style-type: "→ ""#),
@@ -272,7 +285,8 @@ final class CardListMarkerTests: XCTestCase {
         try assertControlMarked(view)
     }
 
-    func testS10AnAuthorsStrongerImportantTypeKeepsTheNativeMarker() throws {
+    /// "Important author rule above sheet gets no mark".
+    func testAnAuthorsStrongerImportantTypeKeepsTheNativeMarker() throws {
         let view = try card(
             "<ul class=keep><li>a</li></ul>" + Self.control,
             css: "ul.keep > li { list-style-type: square !important; }", zoom: 3)
@@ -281,13 +295,15 @@ final class CardListMarkerTests: XCTestCase {
         try assertControlMarked(view)
     }
 
-    func testS17AnAuthorsWeakerImportantTypeIsDrawnOnceByTarmac() throws {
+    /// "Important author rule below the sheet is overridden".
+    func testAnAuthorsWeakerImportantTypeIsDrawnOnceByTarmac() throws {
         let view = try card("<ul><li id=it>a</li></ul>", css: "li { list-style-type: square !important; }", zoom: 3)
         XCTAssertEqual(try mark(view, "#it"), "square")
         XCTAssertEqual(try style(view, "#it", "list-style-type"), ["none"])
     }
 
-    func testS18AnAuthorsLaterBeforeContentWins() throws {
+    /// "Later author before rule still wins".
+    func testAnAuthorsLaterBeforeContentWins() throws {
         let view = try card("<ul><li id=it>a</li></ul>", zoom: 3)
         _ = try eval(
             view,
@@ -297,13 +313,15 @@ final class CardListMarkerTests: XCTestCase {
         XCTAssertEqual(try style(view, "#it", "content", pseudo: "::before"), [#""– ""#])
     }
 
-    func testS21AnAuthorsBeforeColourReachesTarmacsMarker() throws {
+    /// "Author before color without content is kept".
+    func testAnAuthorsBeforeColourReachesTarmacsMarker() throws {
         let view = try card("<ul><li id=it>a</li></ul>", css: "li::before { color: rgb(200, 0, 0); }", zoom: 3)
         XCTAssertEqual(try mark(view, "#it"), "disc")
         XCTAssertEqual(try style(view, "#it", "color", pseudo: "::before"), ["rgb(200, 0, 0)"])
     }
 
-    func testS23EverySupportedTypeIsMarkedAndDrawn() throws {
+    /// "Every supported list type gets its marker".
+    func testEverySupportedTypeIsMarkedAndDrawn() throws {
         // WebKit writes the default style out of a counter: `counter(list-item)`.
         let expected = ["disc": "•", "circle": "◦", "square": "▪", "decimal": "counter(list-item)"]
         let types = [
@@ -321,7 +339,8 @@ final class CardListMarkerTests: XCTestCase {
 
     // MARK: - When (D1, D5, D6)
 
-    func testS11NoZoomOrAZoomOf1MarksNothing() throws {
+    /// "Zoom 1 or no zoom adds no marks".
+    func testNoZoomOrAZoomOf1MarksNothing() throws {
         for zoom in [nil, 1.0] as [Double?] {
             let view = try card(Self.control, zoom: zoom)
             XCTAssertEqual(try marks(view, "li"), [nil, nil], "zoom \(String(describing: zoom))")
@@ -329,13 +348,15 @@ final class CardListMarkerTests: XCTestCase {
         }
     }
 
-    func testS19APageWithNoItemGetsNoSheet() throws {
+    /// "Page with no list item adds no sheet".
+    func testAPageWithNoItemGetsNoSheet() throws {
         let view = try card("<p>no list</p>", zoom: 3)
         XCTAssertEqual(try markerSheets(view), 0)
         XCTAssertEqual(try eval(view, "document.adoptedStyleSheets.length") as? Int, 1, "the media sheet only")
     }
 
-    func testS12ItemsAddedAfterTheZoomAreMarkedBeforeTheNextTask() throws {
+    /// "Lists added after zoom get marked".
+    func testItemsAddedAfterTheZoomAreMarkedBeforeTheNextTask() throws {
         let view = try card("<ul id=first><li>a</li></ul>", zoom: 3)
         _ = try eval(
             view,
@@ -357,7 +378,8 @@ final class CardListMarkerTests: XCTestCase {
         XCTAssertEqual(try eval(view, "window.seen") as? [String], ["disc", "disc", "disc"])
     }
 
-    func testS13ASecondZoomRunsThePassAgainAndKeepsOneMarkAndOneSheet() throws {
+    /// "Repeat zoom marks a freed list".
+    func testASecondZoomRunsThePassAgainAndKeepsOneMarkAndOneSheet() throws {
         let view = try card(
             "<ul id=first><li>a</li><li>b</li></ul><ul id=later class=bare><li id=late>c</li></ul>",
             css: "ul.bare { list-style: none; }", zoom: 3
@@ -371,7 +393,8 @@ final class CardListMarkerTests: XCTestCase {
         XCTAssertEqual(try markerSheets(view), 1)
     }
 
-    func testS28AnEmptyItemKeepsItsLineAndItsMarker() throws {
+    /// "Empty items keep their scaled height".
+    func testAnEmptyItemKeepsItsLineAndItsMarker() throws {
         let body = "<ul><li id=e1></li><li id=e2></li><li id=e3>third</li></ul>"
         let heights = "['e1', 'e2', 'e3'].map(id => document.getElementById(id).getBoundingClientRect().height)"
         let reference = try XCTUnwrap(eval(card(body, zoom: 1), heights) as? [Double])
@@ -383,7 +406,8 @@ final class CardListMarkerTests: XCTestCase {
         XCTAssertEqual(try [mark(view, "#e1"), mark(view, "#e2")], ["disc", "disc"])
     }
 
-    func testS29ItemsBesideAnAuthorsFloatStayBesideIt() throws {
+    /// "Items beside a float keep their scaled top".
+    func testItemsBesideAnAuthorsFloatStayBesideIt() throws {
         let body = """
             <div style="float:left;width:120px;height:200px;margin-right:10px"></div>
             <ul><li id=f1>one</li><li id=f2>two</li><li id=f3>three</li></ul>
@@ -398,13 +422,15 @@ final class CardListMarkerTests: XCTestCase {
         XCTAssertEqual(try marks(view, "li"), ["disc", "disc", "disc"])
     }
 
-    func testS25AnItemThatComesWithTheAttributeIsNotRead() throws {
+    /// "Source marker attribute is left as written".
+    func testAnItemThatComesWithTheAttributeIsNotRead() throws {
         let view = try card("<ul><li id=src data-tarmac-marker=square>a</li></ul>" + Self.control, zoom: 3)
         XCTAssertEqual(try mark(view, "#src"), "square")
         try assertControlMarked(view)
     }
 
-    func testS20TheFontSheetAndTheMarkerSheetBothStay() throws {
+    /// "Font sheet and marker sheet live together".
+    func testTheFontSheetAndTheMarkerSheetBothStay() throws {
         let fonts = CardFontVariables(interfaceFamily: nil, documentFamily: nil, documentSize: 17)
         let view = try card(Self.control, zoom: 3, fonts: fonts)
         XCTAssertEqual(try eval(view, "document.adoptedStyleSheets.length") as? Int, 3)

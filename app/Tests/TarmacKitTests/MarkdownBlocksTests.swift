@@ -11,7 +11,8 @@ private func blocks(_ text: String) -> [MarkdownBlock] { MarkdownBlocks.parse(te
 
 /// Spec 2611.0018 D1: a report's text as blocks, for the inbox preview pane.
 final class MarkdownBlocksTests: XCTestCase {
-    func testS1ThePrototypesReportIsAParagraphAListAndAParagraph() {
+    /// "Report text splits into paragraph and list blocks".
+    func testThePrototypesReportIsAParagraphAListAndAParagraph() {
         let text =
             "Done: **inbox preview** spike on `feat/inbox-preview`.\n"
             + "- added `InboxPreview` to TarmacKit, one rule per block\n"
@@ -31,7 +32,8 @@ final class MarkdownBlocksTests: XCTestCase {
             ])
     }
 
-    func testS2AnOrderedListKeepsItsNumbersAsWritten() {
+    /// "Ordered list keeps its numbers".
+    func testAnOrderedListKeepsItsNumbersAsWritten() {
         XCTAssertEqual(
             blocks("Triage:\n1. `swift test` green\n2. `cargo test` green\n12. **one** flaky"),
             [
@@ -44,7 +46,8 @@ final class MarkdownBlocksTests: XCTestCase {
             ])
     }
 
-    func testS3AHeadingAndACodeBlockKeepTheirLines() {
+    /// "Heading and code block keep their spacing".
+    func testAHeadingAndACodeBlockKeepTheirLines() {
         XCTAssertEqual(
             blocks("## Plan\n```\ncargo test  -p tarmacd\nmake qa\n```\nthen ship"),
             [
@@ -58,7 +61,8 @@ final class MarkdownBlocksTests: XCTestCase {
         XCTAssertEqual(blocks("one\n  two   three\nfour"), [para(p("one two three four"))])
     }
 
-    func testS20AnUnclosedFenceRunsToTheEnd() {
+    /// "Unclosed fence runs to the end".
+    func testAnUnclosedFenceRunsToTheEnd() {
         XCTAssertEqual(blocks("run:\n```\nmake qa"), [para(p("run:")), .code(["make qa"])])
     }
 
@@ -66,11 +70,13 @@ final class MarkdownBlocksTests: XCTestCase {
         XCTAssertEqual(blocks("```make qa``` failed\nsee the log"), [para(c("make qa"), p(" failed see the log"))])
     }
 
-    func testS21OnlyMarkupHasNoBlocks() {
+    /// "Text of only fence marks has no blocks".
+    func testOnlyMarkupHasNoBlocks() {
         XCTAssertEqual(blocks("```\n```"), [])
     }
 
-    func testS22AParagraphEndsAList() {
+    /// "List ends at a paragraph".
+    func testAParagraphEndsAList() {
         XCTAssertEqual(blocks("- a\n- b\nnext"), [.list([item("•", p("a")), item("•", p("b"))]), para(p("next"))])
     }
 
@@ -79,7 +85,8 @@ final class MarkdownBlocksTests: XCTestCase {
         XCTAssertEqual(InlineMarkdown.line("a\n- b\nc").runs, [p("a "), dot(), p(" b c")])
     }
 
-    func testS32AnItemOfTheOtherKindStartsANewList() {
+    /// "Changing list kind starts a new list".
+    func testAnItemOfTheOtherKindStartsANewList() {
         XCTAssertEqual(blocks("- a\n1. b"), [.list([item("•", p("a"))]), .list([item("1.", p("b"))])])
         XCTAssertEqual(blocks("1. a\n- b"), [.list([item("1.", p("a"))]), .list([item("•", p("b"))])])
     }
@@ -95,7 +102,8 @@ final class MarkdownBlocksTests: XCTestCase {
         XCTAssertEqual(blocks("```\n  indented\ntrail  \n```"), [.code(["  indented", "trail  "])])
     }
 
-    func testS27EmptyBlocksKeepTheLineRules() {
+    /// "Empty blocks match line parsing".
+    func testEmptyBlocksKeepTheLineRules() {
         XCTAssertEqual(blocks("- "), [.list([ListItem(marker: "•", text: InlineText([]))])])
         XCTAssertEqual(InlineMarkdown.line("- ").runs, [dot()])
         XCTAssertEqual(blocks("```\n  \n```"), [])

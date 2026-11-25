@@ -2,7 +2,7 @@ import XCTest
 
 @testable import TarmacKit
 
-/// Spec 2611.0013 S8, S38: the open inbox panel's keys.
+/// Spec 2611.0013 "Panel keys move select jump and remove", "Selection follows its item not its index": the open inbox panel's keys.
 final class InboxKeysTests: XCTestCase {
     private typealias State = InboxKeys.State
 
@@ -25,7 +25,8 @@ final class InboxKeysTests: XCTestCase {
         return (result.state, result.effect)
     }
 
-    func testS8TheArrowsMoveAndStopAtTheEnds() {
+    /// "Panel keys move select jump and remove".
+    func testTheArrowsMoveAndStopAtTheEnds() {
         var state = State(filter: .all, selected: a)
         for _ in 0..<3 { (state, _) = handle(down, state, [a, b, c]) }
         XCTAssertEqual(state.selected, c)
@@ -34,14 +35,16 @@ final class InboxKeysTests: XCTestCase {
         XCTAssertEqual(effect, InboxKeys.Effect.none)
     }
 
-    func testS8ReturnJumpsBackspaceRemovesAndEscapeCloses() {
+    /// "Panel keys move select jump and remove".
+    func testReturnJumpsBackspaceRemovesAndEscapeCloses() {
         let state = State(filter: .all, selected: b)
         XCTAssertEqual(handle(enter, state, [a, b, c]).1, .jump(b))
         XCTAssertEqual(handle(backspace, state, [a, b, c]).1, .remove(b))
         XCTAssertEqual(handle(esc, state, [a, b, c]).1, .close)
     }
 
-    func testS8TabCyclesTheFiltersAndClearsTheSelectionForTheTopRow() {
+    /// "Panel keys move select jump and remove".
+    func testTabCyclesTheFiltersAndClearsTheSelectionForTheTopRow() {
         var state = State(filter: .all, selected: b)
         var seen: [Inbox.Filter] = []
         for _ in 0..<4 {
@@ -54,7 +57,8 @@ final class InboxKeysTests: XCTestCase {
         XCTAssertEqual(InboxKeys.reselect(nil, oldRows: [a, b, c], newRows: [c, a]), c)
     }
 
-    func testS8AnyOtherKeyIsTakenAndACommandChordIsLeftForTheMenu() {
+    /// "Panel keys move select jump and remove".
+    func testAnyOtherKeyIsTakenAndACommandChordIsLeftForTheMenu() {
         let state = State(filter: .all, selected: a)
         let typed = handle(letter("x"), state, [a])
         XCTAssertEqual(typed.1, InboxKeys.Effect.none)
@@ -66,25 +70,29 @@ final class InboxKeysTests: XCTestCase {
         }
     }
 
-    func testS8WithNoRowsReturnAndBackspaceDoNothing() {
+    /// "Panel keys move select jump and remove".
+    func testWithNoRowsReturnAndBackspaceDoNothing() {
         let state = State(filter: .bell, selected: nil)
         XCTAssertEqual(handle(enter, state, []).1, InboxKeys.Effect.none)
         XCTAssertEqual(handle(backspace, state, []).1, InboxKeys.Effect.none)
     }
 
-    func testS38ANewItemAtTheTopDoesNotMoveTheSelection() {
+    /// "Selection follows its item not its index".
+    func testANewItemAtTheTopDoesNotMoveTheSelection() {
         let selected = InboxKeys.reselect(b, oldRows: [a, b, c], newRows: [n, a, b, c])
         XCTAssertEqual(selected, b)
         XCTAssertEqual(handle(enter, State(filter: .all, selected: selected), [n, a, b, c]).1, .jump(b))
     }
 
-    func testS38AnItemThatLeftHandsTheSelectionToItsOldIndexClamped() {
+    /// "Selection follows its item not its index".
+    func testAnItemThatLeftHandsTheSelectionToItsOldIndexClamped() {
         XCTAssertEqual(InboxKeys.reselect(b, oldRows: [a, b, c], newRows: [a, c]), c)
         XCTAssertEqual(InboxKeys.reselect(c, oldRows: [a, b, c], newRows: [a, b]), b)
         XCTAssertNil(InboxKeys.reselect(a, oldRows: [a], newRows: []))
     }
 
-    func testS38NoSelectionTakesTheTopRow() {
+    /// "Selection follows its item not its index".
+    func testNoSelectionTakesTheTopRow() {
         XCTAssertEqual(InboxKeys.reselect(nil, oldRows: [], newRows: [a]), a)
         XCTAssertNil(InboxKeys.reselect(nil, oldRows: [], newRows: []))
     }
@@ -110,40 +118,46 @@ final class InboxPointerTests: XCTestCase {
         return (result.state, result.effect)
     }
 
-    func testS7AClickSelectsAndTakesTheFocusBackFromTheGrip() {
+    /// "Single click selects a row without flying".
+    func testAClickSelectsAndTakesTheFocusBackFromTheGrip() {
         let (state, effect) = click(b, 1, State(filter: .reports, selected: a, focus: .grip))
         XCTAssertEqual(state, State(filter: .reports, selected: b, focus: .list))
         XCTAssertEqual(effect, InboxKeys.Effect.none)
     }
 
-    func testS7ASingleClickOnTheSelectedRowDoesNotFly() {
+    /// "Single click selects a row without flying".
+    func testASingleClickOnTheSelectedRowDoesNotFly() {
         let state = State(filter: .all, selected: b)
         let (after, effect) = click(b, 1, state)
         XCTAssertEqual(effect, InboxKeys.Effect.none)
         XCTAssertEqual(after, state)
     }
 
-    func testS8ADoubleClickOnTheSelectedRowFlies() {
+    /// "Double-click flies to the selected row".
+    func testADoubleClickOnTheSelectedRowFlies() {
         let state = State(filter: .all, selected: b)
         let (after, effect) = click(b, 2, state)
         XCTAssertEqual(effect, .jump(b))
         XCTAssertEqual(after, state)
     }
 
-    func testS28ADoubleClickOnAnotherRowOnlySelects() {
+    /// "Double-click on another row selects it only".
+    func testADoubleClickOnAnotherRowOnlySelects() {
         let (state, effect) = click(b, 2, State(filter: .all, selected: a, focus: .grip))
         XCTAssertEqual(state, State(filter: .all, selected: b, focus: .list))
         XCTAssertEqual(effect, InboxKeys.Effect.none)
     }
 
-    func testS26ADoubleClickOnAStaleSelectedIdLeavesTheJumpToCheckIt() {
+    /// "Double-click on a stale row id still jumps".
+    func testADoubleClickOnAStaleSelectedIdLeavesTheJumpToCheckIt() {
         let state = State(filter: .all, selected: x)
         let (after, effect) = click(x, 2, state)
         XCTAssertEqual(effect, .jump(x))
         XCTAssertEqual(after, state)
     }
 
-    func testS9TheGripsArrowsResizeAndLeaveTheSelection() {
+    /// "Grip arrow keys resize the pane".
+    func testTheGripsArrowsResizeAndLeaveTheSelection() {
         let state = State(filter: .all, selected: a, focus: .grip)
         let up = handle(named(126), state, [a, b])
         XCTAssertEqual(up.1, .resizePane(steps: 1))
@@ -153,7 +167,8 @@ final class InboxPointerTests: XCTestCase {
         XCTAssertEqual(down.0, state)
     }
 
-    func testS10TheGripKeepsEveryOtherKey() {
+    /// "Grip keeps Enter Esc and Tab behavior".
+    func testTheGripKeepsEveryOtherKey() {
         let state = State(filter: .all, selected: a, focus: .grip)
         XCTAssertEqual(handle(named(36), state, [a, b]).1, .jump(a))
         XCTAssertEqual(handle(named(53), state, [a, b]).1, .close)
@@ -161,7 +176,8 @@ final class InboxPointerTests: XCTestCase {
         XCTAssertEqual(tabbed, State(filter: .reports, selected: nil, focus: .list))
     }
 
-    func testS25AFilterChangeTakesTheFocusBackFromTheGrip() {
+    /// "Shift-Tab from the grip returns to the list".
+    func testAFilterChangeTakesTheFocusBackFromTheGrip() {
         let (state, _) = handle(named(48, shift), State(filter: .all, selected: a, focus: .grip), [a])
         XCTAssertEqual(state.focus, .list)
         XCTAssertEqual(state.filter, .exit)

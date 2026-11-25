@@ -15,14 +15,16 @@ final class InlineTextTests: XCTestCase {
 
     // MARK: - Cuts by count
 
-    func testS22PrefixCutsAcrossRunsAndKeepsMarks() {
+    /// "Prefix keeps marks".
+    func testPrefixCutsAcrossRunsAndKeepsMarks() {
         let text = InlineText([p("ab"), b("cd"), p("ef")])
         XCTAssertEqual(text.prefix(scalars: 4).runs, [p("ab"), b("c"), p("…")])
         XCTAssertEqual(text.prefix(scalars: 6), text)
         XCTAssertEqual(text.prefix(scalars: 1).runs, [p("…")])
     }
 
-    func testS34ARowCutKeepsGraphemesWhole() {
+    /// "Row cut keeps graphemes whole".
+    func testARowCutKeepsGraphemesWhole() {
         let text = InlineText.literal("a👍🏽bc")
         XCTAssertEqual(text.prefix(characters: 3).runs, [p("a👍🏽…")])
         XCTAssertEqual(text.prefix(characters: 4), text)

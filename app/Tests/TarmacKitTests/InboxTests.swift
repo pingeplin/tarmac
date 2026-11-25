@@ -35,7 +35,8 @@ final class InboxTests: XCTestCase {
         Inbox.ItemID(termID: term, family: family)
     }
 
-    func testS1AReportFrameMakesAnUnreadItemWithItsPlace() {
+    /// "Report frame makes an unread inbox item".
+    func testAReportFrameMakesAnUnreadItemWithItsPlace() {
         var inbox = Inbox()
         put(&inbox, report("T", text: "May I?", at: 1000, proc: "claude", cwd: "/w"))
         XCTAssertEqual(
@@ -49,7 +50,8 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(inbox.unreadCount, 1)
     }
 
-    func testS2ANewAtMsReplacesTheItemUnreadAtTheTop() {
+    /// "Newer report replaces the terminal's item".
+    func testANewAtMsReplacesTheItemUnreadAtTheTop() {
         var inbox = Inbox()
         put(&inbox, report("T", at: 10))
         put(&inbox, report("T", at: 10, read: true))
@@ -60,7 +62,8 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(inbox.items(.all).first?.read, false)
     }
 
-    func testS2AReadFrameWithTheSameAtMsKeepsItsPlace() {
+    /// "Newer report replaces the terminal's item".
+    func testAReadFrameWithTheSameAtMsKeepsItsPlace() {
         var inbox = Inbox()
         put(&inbox, report("T", at: 20))
         bell(&inbox, "U", at: 20)
@@ -71,14 +74,16 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(inbox.unreadCount, 1)
     }
 
-    func testS2AFrameWithNoKindRemovesTheReport() {
+    /// "Newer report replaces the terminal's item".
+    func testAFrameWithNoKindRemovesTheReport() {
         var inbox = Inbox()
         put(&inbox, report("T"))
         put(&inbox, report("T", nil))
         XCTAssertEqual(inbox.items(.all), [])
     }
 
-    func testS3NewestFirstAndOnATieThePutLaterFirst() {
+    /// "Items list newest first".
+    func testNewestFirstAndOnATieThePutLaterFirst() {
         var inbox = Inbox()
         put(&inbox, report("A", at: 10))
         bell(&inbox, "B", at: 30)
@@ -89,7 +94,8 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(ids(inbox).prefix(2), [id("E", .bell), id("D", .bell)])
     }
 
-    func testS4EachFilterKeepsItsKinds() {
+    /// "Filters pick items by kind".
+    func testEachFilterKeepsItsKinds() {
         var inbox = Inbox()
         put(&inbox, report("A", "blocked", at: 1))
         put(&inbox, report("B", "done", at: 2))
@@ -101,7 +107,8 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(ids(inbox, .all).count, 4)
     }
 
-    func testS9TheUnreadCountIsEveryUnreadItem() {
+    /// "Unread count and badge text".
+    func testTheUnreadCountIsEveryUnreadItem() {
         var inbox = Inbox()
         put(&inbox, report("A", at: 1))
         put(&inbox, report("B", at: 2, read: true))
@@ -111,7 +118,8 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(inbox.unreadCount, 2)
     }
 
-    func testS16OneBellItemPerTerminalUnreadAgainAfterATouch() {
+    /// "One bell item per terminal".
+    func testOneBellItemPerTerminalUnreadAgainAfterATouch() {
         var inbox = Inbox()
         bell(&inbox, "T", at: 10)
         inbox.touch(termID: "T")
@@ -120,7 +128,8 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(inbox.items(.bell).first?.read, false)
     }
 
-    func testS17ATouchMarksTheBellAndExitReadAndNotTheReport() {
+    /// "Touch marks bell and exit items read".
+    func testATouchMarksTheBellAndExitReadAndNotTheReport() {
         var inbox = Inbox()
         put(&inbox, report("T", at: 1))
         bell(&inbox, "T", at: 2)
@@ -133,7 +142,8 @@ final class InboxTests: XCTestCase {
             read, [id("T", .report): false, id("T", .bell): true, id("U", .exit): true, id("U", .bell): true])
     }
 
-    func testS17NoOtherOperationMarksABellOrAnExitRead() {
+    /// "Touch marks bell and exit items read".
+    func testNoOtherOperationMarksABellOrAnExitRead() {
         var inbox = Inbox()
         bell(&inbox, "T", at: 1)
         exit(&inbox, "U", at: 2)
@@ -146,7 +156,8 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(inbox.items(.bell).map(\.read) + inbox.items(.exit).map(\.read), [false, false, false, false])
     }
 
-    func testS18AnExitEndsTheReportKeepsTheBellAndAddsAnUnreadItem() {
+    /// "Exit adds an item and removes the report".
+    func testAnExitEndsTheReportKeepsTheBellAndAddsAnUnreadItem() {
         var inbox = Inbox()
         put(&inbox, report("T", at: 1, board: "board-0"))
         bell(&inbox, "T", at: 2, board: "board-0")
@@ -162,7 +173,8 @@ final class InboxTests: XCTestCase {
             ])
     }
 
-    func testS18AnExitOnATerminalWithNoItemKeepsItsBoardProcAndFolder() {
+    /// "Exit adds an item and removes the report".
+    func testAnExitOnATerminalWithNoItemKeepsItsBoardProcAndFolder() {
         var inbox = Inbox()
         inbox.exit(termID: "U", boardID: "board-1", code: 3, proc: "make", cwd: "/w/x", nowMs: 5)
         let item = inbox.items(.all).first
@@ -171,7 +183,8 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(item?.cwd, "/w/x")
     }
 
-    func testS18ASignalIsAnExitItemAndACleanExitIsNone() {
+    /// "Exit adds an item and removes the report".
+    func testASignalIsAnExitItemAndACleanExitIsNone() {
         var inbox = Inbox()
         exit(&inbox, "T", code: nil, at: 1)
         XCTAssertEqual(inbox.items(.exit).map(\.kind), [.exit(code: nil)])
@@ -180,14 +193,16 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(ids(inbox), [id("T", .exit)])
     }
 
-    func testS39ACleanExitOnABoardNotBuiltRemovesItsReport() {
+    /// "Every end of a report removes its item".
+    func testACleanExitOnABoardNotBuiltRemovesItsReport() {
         var inbox = Inbox()
         put(&inbox, report("T", at: 1, board: "board-1"))
         exit(&inbox, "T", code: 0, at: 2, board: "board-1")
         XCTAssertEqual(inbox.items(.all), [])
     }
 
-    func testS39ReportEndedRemovesTheReportAndKeepsTheBell() {
+    /// "Every end of a report removes its item".
+    func testReportEndedRemovesTheReportAndKeepsTheBell() {
         var inbox = Inbox()
         put(&inbox, report("T", at: 1))
         bell(&inbox, "T", at: 2)
@@ -195,7 +210,8 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(ids(inbox), [id("T", .bell)])
     }
 
-    func testS39KeepBoardsRemovesOnlyTheItemsOfBoardsNotKept() {
+    /// "Every end of a report removes its item".
+    func testKeepBoardsRemovesOnlyTheItemsOfBoardsNotKept() {
         var inbox = Inbox()
         put(&inbox, report("A", at: 1, board: "board-0"))
         bell(&inbox, "B", at: 2, board: "board-1")
@@ -205,7 +221,8 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(ids(inbox), [id("D", .exit), id("A", .report)])
     }
 
-    func testS19ADismissedReportStaysHiddenForItsAtMsAndShowsAgainForANewOne() {
+    /// "Dismissed report stays hidden on replay".
+    func testADismissedReportStaysHiddenForItsAtMsAndShowsAgainForANewOne() {
         var inbox = Inbox()
         put(&inbox, report("T", at: 10))
         bell(&inbox, "T", at: 11)
@@ -219,7 +236,8 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(inbox.items(.reports).first?.read, false)
     }
 
-    func testS19ClearReadHidesTheReadItemsTheFilterShows() {
+    /// "Dismissed report stays hidden on replay".
+    func testClearReadHidesTheReadItemsTheFilterShows() {
         var inbox = Inbox()
         put(&inbox, report("A", at: 1, read: true))
         bell(&inbox, "B", at: 2)
@@ -231,7 +249,8 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(ids(inbox), [id("C", .bell)])
     }
 
-    func testS20ALostConnectionDropsTheReportsAndKeepsTheRestAndTheDismissals() {
+    /// "Lost connection removes report items only".
+    func testALostConnectionDropsTheReportsAndKeepsTheRestAndTheDismissals() {
         var inbox = Inbox()
         put(&inbox, report("A", at: 1))
         put(&inbox, report("B", at: 2))
@@ -245,7 +264,8 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(ids(inbox), [id("D", .exit), id("C", .bell), id("B", .report)])
     }
 
-    func testS21ACardOrABoardGoesWithItsItems() {
+    /// "Removed card or board removes its items".
+    func testACardOrABoardGoesWithItsItems() {
         var inbox = Inbox()
         put(&inbox, report("T", at: 1))
         bell(&inbox, "T", at: 2)
@@ -271,7 +291,7 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(inbox.unreadCount, 0)
     }
 
-    /// S36: a jump to a card that went removes its row; unlike a dismissal,
+    /// "Jump to a gone card is dropped": a jump to a card that went removes its row; unlike a dismissal,
     /// a later frame with the same `atMs` shows it again.
     func testRemoveTakesTheItemOutWithoutHidingItsReplay() {
         var inbox = Inbox()
@@ -309,7 +329,8 @@ final class InboxTests: XCTestCase {
         XCTAssertFalse(inbox.bell(termID: "V", boardID: "b", proc: nil, cwd: nil, nowMs: 3))
     }
 
-    func testS22OverTheCapTheOldestReadItemGoesFirst() {
+    /// "Cap drops the oldest read item first".
+    func testOverTheCapTheOldestReadItemGoesFirst() {
         var inbox = Inbox()
         bell(&inbox, "t0", at: 0)
         bell(&inbox, "t1", at: 1)
@@ -324,7 +345,8 @@ final class InboxTests: XCTestCase {
         XCTAssertTrue(terms.isSuperset(of: ["t0", "t1", "new"]))
     }
 
-    func testS22WithEveryItemUnreadTheOldestGoes() {
+    /// "Cap drops the oldest read item first".
+    func testWithEveryItemUnreadTheOldestGoes() {
         var inbox = Inbox()
         for n in 0..<Inbox.maxItems { bell(&inbox, "t\(n)", at: UInt64(n)) }
         bell(&inbox, "new", at: 1000)
@@ -334,7 +356,8 @@ final class InboxTests: XCTestCase {
         XCTAssertTrue(terms.isSuperset(of: ["t1", "new"]))
     }
 
-    func testS23AFrameWithNoBoardUsesTheFallbackElseMakesNoItem() {
+    /// "Frame with no board uses the fallback board".
+    func testAFrameWithNoBoardUsesTheFallbackElseMakesNoItem() {
         var inbox = Inbox()
         put(&inbox, report("T", at: 1, board: nil), fallback: "board-0")
         XCTAssertEqual(inbox.items(.all).map(\.boardID), ["board-0"])
@@ -342,7 +365,8 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(ids(inbox), [id("T", .report)])
     }
 
-    func testS40ABellAndAnExitOfABoardNotBuiltMakeThinItems() {
+    /// "Unbuilt board bell and exit make items".
+    func testABellAndAnExitOfABoardNotBuiltMakeThinItems() {
         var inbox = Inbox()
         inbox.bell(termID: "T", boardID: "board-1", proc: nil, cwd: nil, nowMs: 1)
         inbox.exit(termID: "U", boardID: "board-1", code: 3, proc: nil, cwd: nil, nowMs: 2)
@@ -350,7 +374,8 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(inbox.items(.all).map(\.proc), [nil, nil])
     }
 
-    func testS41TheFirstBuildKeepsRowsWithACardOrASuccessorAndDropsTheRest() {
+    /// "First board build keeps live and successor items".
+    func testTheFirstBuildKeepsRowsWithACardOrASuccessorAndDropsTheRest() {
         var inbox = Inbox()
         bell(&inbox, "T", at: 1)
         exit(&inbox, "U", at: 2)
@@ -363,7 +388,8 @@ final class InboxTests: XCTestCase {
         XCTAssertNil(inbox.target(termID: "W"))
     }
 
-    func testS41AReportItemIsNotDroppedByTheBuild() {
+    /// "First board build keeps live and successor items".
+    func testAReportItemIsNotDroppedByTheBuild() {
         var inbox = Inbox()
         put(&inbox, report("W", at: 1))
         inbox.boardBuilt(boardID: "board-1", cards: [], successors: [:])

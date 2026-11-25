@@ -206,9 +206,10 @@ final class KeyLadderTests: XCTestCase {
         }
     }
 
-    // MARK: - the inbox (2611.0013 S7)
+    // MARK: - the inbox (2611.0013 "Cmd-I toggles the panel and owns keys")
 
-    func testS7CommandITogglesTheInboxWhoeverHoldsTheKeysAndOverTheSwitcher() {
+    /// "Cmd-I toggles the panel and owns keys".
+    func testCommandITogglesTheInboxWhoeverHoldsTheKeysAndOverTheSwitcher() {
         for keys in [KeyLadder.Keys.terminal, .host, .console] {
             XCTAssertEqual(KeyLadder.decide(letter("i", command), Facts(keys: keys)), .toggleInbox, "\(keys)")
         }
@@ -216,7 +217,8 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertEqual(KeyLadder.decide(letter("i", command), Facts(inboxOpen: true)), .toggleInbox)
     }
 
-    func testS7TheOpenInboxOwnsEveryKeyButCommandKAndCommandW() {
+    /// "Cmd-I toggles the panel and owns keys".
+    func testTheOpenInboxOwnsEveryKeyButCommandKAndCommandW() {
         let open = Facts(keys: .host, hasFlyTarget: true, esc: toasts, inboxOpen: true)
         for key in [enter(), esc(), letter("a"), named(125), tab(), letter("v", command)] {
             XCTAssertEqual(KeyLadder.decide(key, open), .inboxKey, "\(key)")
@@ -226,7 +228,8 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertEqual(KeyLadder.decide(letter("t", command), open), .inboxKey)
     }
 
-    func testS7PlainReturnWithTheInboxOpenIsTheInboxsNotAFlight() {
+    /// "Cmd-I toggles the panel and owns keys".
+    func testPlainReturnWithTheInboxOpenIsTheInboxsNotAFlight() {
         let facts = Facts(keys: .host, hasFlyTarget: true)
         XCTAssertEqual(KeyLadder.decide(enter(), facts), .flyToSignal)
         var open = facts
@@ -312,7 +315,7 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertEqual(KeyLadder.decide(letter("t", command | 1 << 16), Facts()), .newTerminal)
     }
 
-    // MARK: - 2611.0011 S9: Return on a resume or a reopen offer
+    // MARK: - 2611.0011 "Return key picks run reopen or pass through": Return on a resume or a reopen offer
 
     private func repeated(_ press: KeyPress) -> KeyPress {
         var press = press
@@ -320,12 +323,14 @@ final class KeyLadderTests: XCTestCase {
         return press
     }
 
-    func testS9PlainReturnRunsAnArmedResumeOrReopensADeadCard() {
+    /// "Return key picks run reopen or pass through".
+    func testPlainReturnRunsAnArmedResumeOrReopensADeadCard() {
         XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeArmed)), .runResume)
         XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .reopen)), .reopenDead)
     }
 
-    func testS9TheKeysThatComeFirstStillComeFirst() {
+    /// "Return key picks run reopen or pass through".
+    func testTheKeysThatComeFirstStillComeFirst() {
         var composing = Facts(offer: .resumeArmed)
         composing.composing = true
         XCTAssertNotEqual(KeyLadder.decide(enter(), composing), .runResume)
@@ -339,14 +344,16 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertNotEqual(KeyLadder.decide(enter(), Facts(keys: .host, offer: .resumeArmed)), .runResume)
     }
 
+    /// "Return key picks run reopen or pass through".
     /// A fresh Return on an offer that is not armed reaches the shell, and
     /// so drops the offer (D9).
-    func testS9AFreshReturnOnAnOfferThatIsNotArmedPassesThrough() {
+    func testAFreshReturnOnAnOfferThatIsNotArmedPassesThrough() {
         XCTAssertEqual(KeyLadder.decide(enter(), Facts()), .passThrough)
         XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeIdle)), .passThrough)
     }
 
-    func testS9ARepeatedReturnOnAReopenOfferIsIgnored() {
+    /// "Return key picks run reopen or pass through".
+    func testARepeatedReturnOnAReopenOfferIsIgnored() {
         XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .reopen)), .swallow)
     }
 
@@ -356,9 +363,10 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .reopenArming)), .swallow)
     }
 
+    /// "Return key picks run reopen or pass through".
     /// The D10 amendment: a held Return reopens once, and its repeats neither
     /// run the new card's command nor reach its shell.
-    func testS9AHeldReturnReopensOnceAndItsRepeatsAreIgnored() {
+    func testAHeldReturnReopensOnceAndItsRepeatsAreIgnored() {
         XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .reopen)), .reopenDead)
         XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .resumeArmed)), .swallow)
         XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .resumeIdle)), .swallow)
@@ -366,8 +374,9 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts()), .passThrough)
     }
 
+    /// "Return key picks run reopen or pass through".
     /// RA3: a held Return that runs the command sends it once.
-    func testS9AHeldReturnThatRanTheCommandIgnoresItsRepeats() {
+    func testAHeldReturnThatRanTheCommandIgnoresItsRepeats() {
         let runReturn = enter()
         XCTAssertTrue(KeyLadder.afterRun(was: false, press: runReturn, action: .runResume))
         XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(afterRun: true)), .swallow)
@@ -375,7 +384,8 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertFalse(KeyLadder.afterRun(was: true, press: letter("a"), action: .passThrough))
     }
 
-    func testS9AFreshReturnAfterTheRunPassesThroughAndClearsTheLatch() {
+    /// "Return key picks run reopen or pass through".
+    func testAFreshReturnAfterTheRunPassesThroughAndClearsTheLatch() {
         let action = KeyLadder.decide(enter(), Facts(afterRun: true))
         XCTAssertEqual(action, .passThrough)
         XCTAssertFalse(KeyLadder.afterRun(was: true, press: enter(), action: action))
@@ -386,14 +396,15 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertTrue(KeyLadder.afterRun(was: true, press: repeated(letter("a")), action: .passThrough))
     }
 
-    // MARK: - 2611.0011 S27: Esc meets the toast first (a guard; it passed before)
+    // MARK: - 2611.0011 "Esc meets the toast first" (a guard; it passed before)
 
-    func testS27EscClearsTheToastBeforeItReachesTheTerminalAndPassesThroughWithNoRung() {
+    /// "Esc meets the toast first".
+    func testEscClearsTheToastBeforeItReachesTheTerminalAndPassesThroughWithNoRung() {
         XCTAssertEqual(KeyLadder.decide(esc(), Facts(keys: .terminal, esc: toasts)), .esc(.clearToasts))
         XCTAssertEqual(KeyLadder.decide(esc(), Facts(keys: .terminal, esc: EscLadder.Facts())), .passThrough)
     }
 
-    // MARK: - #358 and 2611.0015 S18: the restore card takes the first key; with no resume line, any key closes
+    // MARK: - #358 and 2611.0015 "Without resume line any key closes the card": the restore card takes the first key; with no resume line, any key closes
 
     private let cardUp = Facts(restoreCard: [])
 
@@ -461,16 +472,18 @@ final class KeyLadderTests: XCTestCase {
         XCTAssertFalse(KeyLadder.afterRestoreCard(was: false, press: repeated(enter()), action: .passThrough))
     }
 
-    // MARK: - 2611.0015 S3: the restore card's keys with choices
+    // MARK: - 2611.0015 "Restore card keys with choices"
 
     private let choicesUp = Facts(restoreCard: [.resumeAll, .perCard, .skipAll])
 
-    func testS3PlainOrShiftedReturnResumesAll() {
+    /// "Restore card keys with choices".
+    func testPlainOrShiftedReturnResumesAll() {
         XCTAssertEqual(KeyLadder.decide(enter(), choicesUp), .restoreCard(.resumeAll))
         XCTAssertEqual(KeyLadder.decide(enter(shift), choicesUp), .restoreCard(.resumeAll))
     }
 
-    func testS3PlainOrShiftedEscSkipsAllAndDoesNotClearTheToastsFirst() {
+    /// "Restore card keys with choices".
+    func testPlainOrShiftedEscSkipsAllAndDoesNotClearTheToastsFirst() {
         XCTAssertEqual(KeyLadder.decide(esc(), choicesUp), .restoreCard(.skipAll))
         XCTAssertEqual(KeyLadder.decide(esc(shift), choicesUp), .restoreCard(.skipAll))
         XCTAssertEqual(
@@ -478,7 +491,8 @@ final class KeyLadderTests: XCTestCase {
             .restoreCard(.skipAll))
     }
 
-    func testS3AnyOtherKeyDecidesPerCard() {
+    /// "Restore card keys with choices".
+    func testAnyOtherKeyDecidesPerCard() {
         let keys = [
             letter("a"), letter("a", control), tab(), letter("k", command), letter("v", command),
             enter(option), enter(command), enter(control), esc(command), esc(option),
@@ -488,14 +502,16 @@ final class KeyLadderTests: XCTestCase {
         }
     }
 
-    func testS3CommandQPassesThroughAndARepeatNeverChooses() {
+    /// "Restore card keys with choices".
+    func testCommandQPassesThroughAndARepeatNeverChooses() {
         XCTAssertEqual(KeyLadder.decide(letter("q", command), choicesUp), .passThrough)
         for key in [enter(), esc(), letter("a")] {
             XCTAssertEqual(KeyLadder.decide(repeated(key), choicesUp), .swallow, "\(key)")
         }
     }
 
-    func testS3TheCardTakesReturnBeforeEveryOtherRung() {
+    /// "Restore card keys with choices".
+    func testTheCardTakesReturnBeforeEveryOtherRung() {
         var composing = choicesUp
         composing.composing = true
         var switcher = choicesUp
@@ -511,16 +527,18 @@ final class KeyLadderTests: XCTestCase {
         }
     }
 
-    // MARK: - 2611.0015 S4: the latch covers all three choices
+    // MARK: - 2611.0015 "Held key latch covers all three choices"
 
-    func testS4ResumeAllAndSkipAllSetTheLatch() {
+    /// "Held key latch covers all three choices".
+    func testResumeAllAndSkipAllSetTheLatch() {
         XCTAssertTrue(KeyLadder.afterRestoreCard(was: false, press: enter(), action: .restoreCard(.resumeAll)))
         XCTAssertTrue(KeyLadder.afterRestoreCard(was: false, press: esc(), action: .restoreCard(.skipAll)))
     }
 
+    /// "Held key latch covers all three choices".
     /// The prime card ran at once, so it has no offer and no `afterRun`:
     /// only the latch keeps the repeats from its shell.
-    func testS4UnderTheLatchTheRepeatsReachNoTerminal() {
+    func testUnderTheLatchTheRepeatsReachNoTerminal() {
         let latched = Facts(offer: .none, afterRun: false, afterRestoreCard: true)
         XCTAssertEqual(KeyLadder.decide(repeated(enter()), latched), .swallow)
         XCTAssertEqual(KeyLadder.decide(repeated(esc()), latched), .swallow)
@@ -529,13 +547,15 @@ final class KeyLadderTests: XCTestCase {
             KeyLadder.decide(repeated(enter()), Facts(offer: .resumeQueued, afterRestoreCard: true)), .swallow)
     }
 
-    func testS4AFreshLetterClearsTheLatch() {
+    /// "Held key latch covers all three choices".
+    func testAFreshLetterClearsTheLatch() {
         XCTAssertFalse(KeyLadder.afterRestoreCard(was: true, press: letter("a"), action: .passThrough))
     }
 
-    // MARK: - 2611.0015 S17: Return on a queued offer is taken and dropped
+    // MARK: - 2611.0015 "Return on a queued card is dropped"
 
-    func testS17ReturnOnAQueuedOfferIsDroppedFreshOrRepeated() {
+    /// "Return on a queued card is dropped".
+    func testReturnOnAQueuedOfferIsDroppedFreshOrRepeated() {
         XCTAssertEqual(KeyLadder.decide(enter(), Facts(offer: .resumeQueued)), .swallow)
         XCTAssertEqual(KeyLadder.decide(repeated(enter()), Facts(offer: .resumeQueued)), .swallow)
         XCTAssertEqual(KeyLadder.decide(letter("a"), Facts(offer: .resumeQueued)), .passThrough)

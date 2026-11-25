@@ -2,7 +2,7 @@ import Foundation
 import TarmacKit
 import XCTest
 
-/// 2611.0011 S8, S20 and 2611.0015 S1, S2, S7, S16: the resume
+/// 2611.0011 "Resume chip arms and runs once", "Any user byte drops the offer" and 2611.0015 "Resume all runs each card at its output", "Request runs on prime and non-prime cards", "Skip clears fresh armed and queued offers", "Input cancels only its own card's queued run": the resume
 /// offer and its one reducer.
 final class ResumeOfferTests: XCTestCase {
     private let uuid = "claude --resume 3f2a1b9c-0000-4000-8000-000000000000"
@@ -21,9 +21,10 @@ final class ResumeOfferTests: XCTestCase {
         try ResumeOffer.fixture(cmd, after: [.request])
     }
 
-    // MARK: S8
+    // MARK: "Resume chip arms and runs once"
 
-    func testS8AnEmptyChunkDoesNotArmAndAChunkArmsOnlyThePrimeCard() throws {
+    /// "Resume chip arms and runs once".
+    func testAnEmptyChunkDoesNotArmAndAChunkArmsOnlyThePrimeCard() throws {
         let empty = try XCTUnwrap(ResumeOffer.step(try offer(), .output(byteCount: 0)).offer)
         XCTAssertFalse(empty.armed(prime: true))
         let up = try armed()
@@ -31,7 +32,8 @@ final class ResumeOfferTests: XCTestCase {
         XCTAssertFalse(up.armed(prime: false))
     }
 
-    func testS8ReturnOnTheArmedPrimeCardRunsTheCommandAndOneCarriageReturnOnce() throws {
+    /// "Resume chip arms and runs once".
+    func testReturnOnTheArmedPrimeCardRunsTheCommandAndOneCarriageReturnOnce() throws {
         let (gone, effect) = ResumeOffer.step(try armed(), .returnKey(prime: true))
         XCTAssertNil(gone)
         XCTAssertEqual(effect, .run(Data(uuid.utf8) + Data([0x0D])))
@@ -41,7 +43,8 @@ final class ResumeOfferTests: XCTestCase {
         XCTAssertNil(again)
     }
 
-    func testS8ReturnBeforeTheShellIsUpOrOnACardThatIsNotPrimeDoesNothing() throws {
+    /// "Resume chip arms and runs once".
+    func testReturnBeforeTheShellIsUpOrOnACardThatIsNotPrimeDoesNothing() throws {
         let notUp = try offer()
         let (kept, effect) = ResumeOffer.step(notUp, .returnKey(prime: true))
         XCTAssertEqual(kept, notUp)
@@ -53,12 +56,14 @@ final class ResumeOfferTests: XCTestCase {
         XCTAssertNil(effectUp)
     }
 
-    func testS8MoreOutputKeepsAnArmedOfferArmed() throws {
+    /// "Resume chip arms and runs once".
+    func testMoreOutputKeepsAnArmedOfferArmed() throws {
         let again = try XCTUnwrap(ResumeOffer.step(try armed(), .output(byteCount: 5)).offer)
         XCTAssertTrue(again.armed(prime: true))
     }
 
-    func testS8NoOfferStaysNoOffer() {
+    /// "Resume chip arms and runs once".
+    func testNoOfferStaysNoOffer() {
         for event in [ResumeOffer.Event.output(byteCount: 5), .userInput] {
             let (offer, effect) = ResumeOffer.step(nil, event)
             XCTAssertNil(offer, "\(event)")
@@ -66,16 +71,18 @@ final class ResumeOfferTests: XCTestCase {
         }
     }
 
-    func testS8NoCommandOrARefusedOneMakesNoOffer() {
+    /// "Resume chip arms and runs once".
+    func testNoCommandOrARefusedOneMakesNoOffer() {
         XCTAssertNil(ResumeOffer.make(cmd: nil))
         XCTAssertNil(ResumeOffer.make(cmd: "echo a\necho b"))
     }
 
-    // MARK: S20
+    // MARK: "Any user byte drops the offer"
 
+    /// "Any user byte drops the offer".
     /// Each row is an offer in another state, and the Return that follows
     /// it is one that would have run that offer had it survived.
-    func testS20AnyUserByteDropsTheOfferInEveryState() throws {
+    func testAnyUserByteDropsTheOfferInEveryState() throws {
         let cases: [(String, ResumeOffer, Bool)] = [
             ("not yet armed, then Return once armed", try offer("echo one"), true),
             ("armed, on a card that is not prime", try armed("echo two"), false),
@@ -91,11 +98,12 @@ final class ResumeOfferTests: XCTestCase {
         }
     }
 
-    // MARK: 2611.0015 S1, S2: a request runs at once or queues
+    // MARK: 2611.0015 "Resume all runs each card at its output", "Request runs on prime and non-prime cards": a request runs at once or queues
 
     private func run(_ cmd: String) -> ResumeOffer.Effect { .run(Data(cmd.utf8) + Data([0x0D])) }
 
-    func testS1ARequestRunsAnOfferWhoseShellIsUpAndQueuesOneWhoseShellIsNot() throws {
+    /// "Resume all runs each card at its output".
+    func testARequestRunsAnOfferWhoseShellIsUpAndQueuesOneWhoseShellIsNot() throws {
         let (aAfter, aEffect) = ResumeOffer.step(try armed("echo A"), .request)
         XCTAssertNil(aAfter)
         XCTAssertEqual(aEffect, run("echo A"))
@@ -105,7 +113,8 @@ final class ResumeOfferTests: XCTestCase {
         XCTAssertNil(bEffect)
     }
 
-    func testS1AQueuedOfferWaitsThroughARequestAReturnAndAnEmptyChunk() throws {
+    /// "Resume all runs each card at its output".
+    func testAQueuedOfferWaitsThroughARequestAReturnAndAnEmptyChunk() throws {
         let queued = try queuedOffer("echo B")
         for event in [ResumeOffer.Event.request, .returnKey(prime: true), .output(byteCount: 0)] {
             let (kept, effect) = ResumeOffer.step(queued, event)
@@ -114,7 +123,8 @@ final class ResumeOfferTests: XCTestCase {
         }
     }
 
-    func testS1AQueuedOfferRunsAtItsFirstOutputOnceWithOneCarriageReturn() throws {
+    /// "Resume all runs each card at its output".
+    func testAQueuedOfferRunsAtItsFirstOutputOnceWithOneCarriageReturn() throws {
         let queued = try queuedOffer("echo B")
         let (gone, effect) = ResumeOffer.step(queued, .output(byteCount: 3))
         XCTAssertNil(gone)
@@ -131,12 +141,14 @@ final class ResumeOfferTests: XCTestCase {
         XCTAssertFalse(try armed().queued)
     }
 
-    func testS2AQueuedOfferIsNeverArmed() throws {
+    /// "Request runs on prime and non-prime cards".
+    func testAQueuedOfferIsNeverArmed() throws {
         let queued = try queuedOffer()
         XCTAssertFalse(queued.armed(prime: true))
     }
 
-    func testS2ARequestRunsOnACardThatIsNotPrimeAsReturnDoesOnThePrimeCard() throws {
+    /// "Request runs on prime and non-prime cards".
+    func testARequestRunsOnACardThatIsNotPrimeAsReturnDoesOnThePrimeCard() throws {
         let up = try armed()
         XCTAssertFalse(up.armed(prime: false))
         let request = ResumeOffer.step(up, .request)
@@ -145,9 +157,10 @@ final class ResumeOfferTests: XCTestCase {
         XCTAssertEqual(request.effect, ResumeOffer.step(up, .returnKey(prime: true)).effect)
     }
 
-    // MARK: 2611.0015 S7: skip
+    // MARK: 2611.0015 "Skip clears fresh armed and queued offers"
 
-    func testS7SkipDropsAFreshAnArmedAndAQueuedOfferWithTheSkipEffect() throws {
+    /// "Skip clears fresh armed and queued offers".
+    func testSkipDropsAFreshAnArmedAndAQueuedOfferWithTheSkipEffect() throws {
         let queued = try queuedOffer()
         for (name, offer) in [("fresh", try offer()), ("armed", try armed()), ("queued", queued)] {
             let (gone, effect) = ResumeOffer.step(offer, .skip)
@@ -159,9 +172,10 @@ final class ResumeOfferTests: XCTestCase {
         XCTAssertNil(effect)
     }
 
-    // MARK: 2611.0015 S16: input cancels only its own card's queued run
+    // MARK: 2611.0015 "Input cancels only its own card's queued run"
 
-    func testS16InputToOneQueuedCardLeavesTheOtherCardsQueuedRun() throws {
+    /// "Input cancels only its own card's queued run".
+    func testInputToOneQueuedCardLeavesTheOtherCardsQueuedRun() throws {
         let a = try queuedOffer("echo A")
         let b = try queuedOffer("echo B")
         let (aGone, aEffect) = ResumeOffer.step(a, .userInput)

@@ -2,21 +2,23 @@ import CoreGraphics
 import TarmacKit
 import XCTest
 
-/// 2611.0015 S8, S9, S23: the header chip of a terminal with a recorded
+/// 2611.0015 "Header chip shows resume with command tooltip", "Recorded command comes from plan table or push", "Refused command is never shown run or copied": the header chip of a terminal with a recorded
 /// resume command, and where that command comes from.
 final class ResumeHeaderChipTests: XCTestCase {
     private let uuid = "claude --resume 3f2a1b9c-0000-4000-8000-000000000000"
 
-    // MARK: S8
+    // MARK: "Header chip shows resume with command tooltip"
 
-    func testS8TheChipReadsResumeAndItsToolTipIsTheWholeCommand() throws {
+    /// "Header chip shows resume with command tooltip".
+    func testTheChipReadsResumeAndItsToolTipIsTheWholeCommand() throws {
         let model = try XCTUnwrap(ResumeHeaderChip.model(cmd: uuid, dead: false))
         XCTAssertEqual(model.text, "resume")
         XCTAssertEqual(model.toolTip, uuid)
         XCTAssertFalse(model.text.contains("↻"))
     }
 
-    func testS8NoCommandARefusedCommandOrADeadCardGivesNoChip() {
+    /// "Header chip shows resume with command tooltip".
+    func testNoCommandARefusedCommandOrADeadCardGivesNoChip() {
         XCTAssertNil(ResumeHeaderChip.model(cmd: nil, dead: false))
         XCTAssertNil(ResumeHeaderChip.model(cmd: "echo a\necho b", dead: false))
         XCTAssertNil(ResumeHeaderChip.model(cmd: "echo \u{202E}x", dead: false))
@@ -24,11 +26,12 @@ final class ResumeHeaderChipTests: XCTestCase {
         XCTAssertNotNil(ResumeHeaderChip.model(cmd: "echo HI", dead: false))
     }
 
-    func testS8TheCopyToastSaysTheCommandWasCopied() {
+    /// "Header chip shows resume with command tooltip".
+    func testTheCopyToastSaysTheCommandWasCopied() {
         XCTAssertEqual(ResumeHeaderChip.copiedToast, "resume command copied")
     }
 
-    // MARK: S9
+    // MARK: "Recorded command comes from plan table or push"
 
     private func term(_ id: String, spawn: SpawnRequest?, resume: String? = nil) -> BoardRestore.Term {
         .fixture(id, spawn: spawn, resume: resume)
@@ -38,15 +41,17 @@ final class ResumeHeaderChipTests: XCTestCase {
         [id: TermRecord(lastCwd: nil, resume: ResumeRecord(cmd: cmd))]
     }
 
-    func testS9APushedCommandIsKeptOnlyWhenAccepted() {
+    /// "Recorded command comes from plan table or push".
+    func testAPushedCommandIsKeptOnlyWhenAccepted() {
         XCTAssertEqual(ResumeCommand.accepted("echo HI"), "echo HI")
         XCTAssertNil(ResumeCommand.accepted(nil))
         XCTAssertNil(ResumeCommand.accepted("echo a\necho b"))
     }
 
-    // MARK: S23
+    // MARK: "Refused command is never shown run or copied"
 
-    func testS23ARefusedCommandGetsNoOfferNoChipAndNoRecordedCommand() {
+    /// "Refused command is never shown run or copied".
+    func testARefusedCommandGetsNoOfferNoChipAndNoRecordedCommand() {
         let refused = "echo a\necho b"
         XCTAssertNil(ResumeOffer.make(cmd: refused))
         XCTAssertNil(ResumeHeaderChip.model(cmd: refused, dead: false))

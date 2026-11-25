@@ -95,7 +95,7 @@ final class ReconnectRestoreTests: XCTestCase {
         XCTAssertEqual(ReconnectRestore.restartToastBody(reopenable: 0), "open new terminals with ⌘T")
     }
 
-    /// 2611.0011 S11: a dead card that offers a reopen changes the way forward.
+    /// 2611.0011 "Restore summary counts terminals and sessions": a dead card that offers a reopen changes the way forward.
     func testTheRestartToastPointsAtADeadCardThatCanReopen() {
         XCTAssertEqual(ReconnectRestore.restartToastBody(reopenable: 1), "⏎ on a dead card reopens it in its folder")
         XCTAssertEqual(ReconnectRestore.restartToastBody(reopenable: 2), "⏎ on a dead card reopens it in its folder")

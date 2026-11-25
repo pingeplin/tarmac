@@ -2,23 +2,27 @@ import XCTest
 
 @testable import TarmacKit
 
-/// Spec 2611.0013 S6, S36: where a jump from the inbox goes, and what it does
+/// Spec 2611.0013 "Jump plan flies or switches board first", "Jump to a gone card is dropped": where a jump from the inbox goes, and what it does
 /// on arrival.
 final class InboxJumpTests: XCTestCase {
-    func testS6AnItemOnTheActiveBoardSwitchesNowhere() {
+    /// "Jump plan flies or switches board first".
+    func testAnItemOnTheActiveBoardSwitchesNowhere() {
         XCTAssertNil(InboxJump.switchTarget(inboxItem(board: "board-0"), activeBoardID: "board-0"))
     }
 
-    func testS6AnItemOnAnotherBoardSwitchesToItsBoard() {
+    /// "Jump plan flies or switches board first".
+    func testAnItemOnAnotherBoardSwitchesToItsBoard() {
         XCTAssertEqual(InboxJump.switchTarget(inboxItem(board: "board-1"), activeBoardID: "board-0"), "board-1")
     }
 
-    func testS6ALiveCardIsPrimedAndADeadOneSelected() {
+    /// "Jump plan flies or switches board first".
+    func testALiveCardIsPrimedAndADeadOneSelected() {
         XCTAssertEqual(InboxJump.land(cardExists: true, cardDead: false), .prime)
         XCTAssertEqual(InboxJump.land(cardExists: true, cardDead: true), .select)
     }
 
-    func testS36NoCardDropsTheItem() {
+    /// "Jump to a gone card is dropped".
+    func testNoCardDropsTheItem() {
         XCTAssertEqual(InboxJump.land(cardExists: false, cardDead: false), .drop)
         XCTAssertEqual(InboxJump.land(cardExists: false, cardDead: true), .drop)
     }

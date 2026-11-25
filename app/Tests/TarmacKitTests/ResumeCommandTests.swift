@@ -2,7 +2,7 @@ import Foundation
 import TarmacKit
 import XCTest
 
-/// 2611.0011 S31: `tarmac-protocol`'s `tests/fixtures/resume_cmd_cases.json`,
+/// 2611.0011 "Command check agrees in Rust and Swift": `tarmac-protocol`'s `tests/fixtures/resume_cmd_cases.json`,
 /// the table its own `s31_the_resume_command_check` runs, so both languages
 /// accept and refuse the same commands with the same cause.
 final class ResumeCommandTests: XCTestCase {

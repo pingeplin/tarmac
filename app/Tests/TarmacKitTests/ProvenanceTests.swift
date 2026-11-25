@@ -36,7 +36,8 @@ final class ProvenanceTests: XCTestCase {
         Provenance.edges(cards)
     }
 
-    func testS8ATermCardWithAnOwnerOnTheBoardDrawsAnEdgeFromItsOwnersCentre() {
+    /// "Edge joins owner card to new card".
+    func testATermCardWithAnOwnerOnTheBoardDrawsAnEdgeFromItsOwnersCentre() {
         let edges = edges(cards())
 
         XCTAssertTrue(edges.contains(Provenance.edge(owner: ownerFrame, card: childFrame)))
@@ -44,7 +45,8 @@ final class ProvenanceTests: XCTestCase {
         XCTAssertEqual(edges.count, 2)
     }
 
-    func testS8WithItsOwnerGoneNoCardDrawsAnEdge() {
+    /// "Edge joins owner card to new card".
+    func testWithItsOwnerGoneNoCardDrawsAnEdge() {
         XCTAssertEqual(edges(cards(owner: false)), [])
     }
 
@@ -57,9 +59,9 @@ final class ProvenanceTests: XCTestCase {
 
     // MARK: - which cards an owner's drag carries
 
-    /// 2611.0016 S30, D7: a terminal card starts not attached, so a term card
+    /// 2611.0016 "Owned term card is not attached to owner", D7: a terminal card starts not attached, so a term card
     /// with an owner is not carried; a doc starts attached.
-    func testS30ATermCardStartsNotAttachedAndADocDoes() {
+    func testATermCardStartsNotAttachedAndADocDoes() {
         XCTAssertFalse(Provenance.startsAttached(isDoc: false))
         XCTAssertTrue(Provenance.startsAttached(isDoc: true))
     }

@@ -19,21 +19,24 @@ final class ReportChipTests: XCTestCase {
         ReportChip.model(report: try XCTUnwrap(TermReport.frame(message)?.report), nowMs: now)
     }
 
-    func testS7AnUnreadBlockedReportShowsItsAgeInItsKindsColour() throws {
+    /// "Chip model shows tone age and tooltip".
+    func testAnUnreadBlockedReportShowsItsAgeInItsKindsColour() throws {
         let chip = try model(frame())
         XCTAssertEqual(chip.text, "report · 2m")
         XCTAssertEqual(chip.signal, .blocked)
         XCTAssertFalse(chip.dimmed)
     }
 
-    func testS7ADoneReportHasTheDoneToneAndAReadOneIsDimmed() throws {
+    /// "Chip model shows tone age and tooltip".
+    func testADoneReportHasTheDoneToneAndAReadOneIsDimmed() throws {
         XCTAssertEqual(try model(frame(kind: "done")).signal, .done)
         let read = try model(frame(kind: "done", read: true))
         XCTAssertTrue(read.dimmed)
         XCTAssertEqual(read.signal, .done)
     }
 
-    func testS19TheHeadingPlacesAReportInTimeAndNoProcIsTheBareTitle() {
+    /// "Chip copy without proc or text".
+    func testTheHeadingPlacesAReportInTimeAndNoProcIsTheBareTitle() {
         XCTAssertEqual(ReportChip.heading(proc: "claude"), "report · during claude")
         XCTAssertEqual(ReportChip.heading(proc: nil), "report")
     }
@@ -43,7 +46,8 @@ final class ReportChipTests: XCTestCase {
         XCTAssertEqual(try model(frame(text: nil, proc: nil)), try model(frame()))
     }
 
-    func testS20AReportFromTheFutureIsUnderAMinuteOld() throws {
+    /// "Chip age text for each time range".
+    func testAReportFromTheFutureIsUnderAMinuteOld() throws {
         XCTAssertEqual(try model(frame(atMs: now + 90_000)).text, "report · <1m")
     }
 }

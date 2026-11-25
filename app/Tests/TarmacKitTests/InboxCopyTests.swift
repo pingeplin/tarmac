@@ -2,48 +2,55 @@ import XCTest
 
 @testable import TarmacKit
 
-/// Spec 2611.0013 S5, S40: what an inbox row says.
+/// Spec 2611.0013 "Item copy is English with place line", "Unbuilt board bell and exit make items": what an inbox row says.
 final class InboxCopyTests: XCTestCase {
-    func testS5ABlockedReportReadsItsTagTitleAndQuote() {
+    /// "Item copy is English with place line".
+    func testABlockedReportReadsItsTagTitleAndQuote() {
         let report = inboxItem(.report(.blocked), proc: "claude", text: "May I?")
         XCTAssertEqual(InboxCopy.tag(report.kind), "blocked")
         XCTAssertEqual(InboxCopy.title(report), "report · during claude")
         XCTAssertEqual(InboxCopy.quote(report)?.plain, "“May I?”")
     }
 
-    func testS5ADoneReportWithNoProcOrTextIsTheBareTitleAndNoQuote() {
+    /// "Item copy is English with place line".
+    func testADoneReportWithNoProcOrTextIsTheBareTitleAndNoQuote() {
         let report = inboxItem(.report(.done))
         XCTAssertEqual(InboxCopy.tag(report.kind), "done")
         XCTAssertEqual(InboxCopy.title(report), "report")
         XCTAssertNil(InboxCopy.quote(report))
     }
 
-    func testS5ABellReadsDuringItsProcWithNoQuote() {
+    /// "Item copy is English with place line".
+    func testABellReadsDuringItsProcWithNoQuote() {
         let bell = inboxItem(.bell, proc: "zsh")
         XCTAssertEqual(InboxCopy.tag(bell.kind), "bell")
         XCTAssertEqual(InboxCopy.title(bell), "bell · during zsh")
         XCTAssertNil(InboxCopy.quote(bell))
     }
 
-    func testS5AnExitReadsAsItsToast() {
+    /// "Item copy is English with place line".
+    func testAnExitReadsAsItsToast() {
         XCTAssertEqual(InboxCopy.tag(.exit(code: 3)), "exit")
         XCTAssertEqual(InboxCopy.title(inboxItem(.exit(code: 3), proc: "zsh")), "shell exited · 3")
         XCTAssertEqual(InboxCopy.title(inboxItem(.exit(code: nil))), "killed by signal")
     }
 
-    func testS5AQuoteIsOneLine() {
+    /// "Item copy is English with place line".
+    func testAQuoteIsOneLine() {
         XCTAssertEqual(
             InboxCopy.quote(inboxItem(.report(.blocked), text: "  May\n\tI  run\r\n rm?  "))?.plain, "“May I run rm?”")
     }
 
-    func testS9TheRowQuoteRendersInlineMarkdown() {
+    /// "Row quote keeps its marks".
+    func testTheRowQuoteRendersInlineMarkdown() {
         XCTAssertEqual(
             InboxCopy.quote(inboxItem(.report(.blocked), text: "**May** I?"))?.runs,
             [p("“"), b("May"), p(" I?”")]
         )
     }
 
-    func testS10ARowQuoteWithNoMarkdownReadsAsBefore() {
+    /// "Text without markdown is unchanged".
+    func testARowQuoteWithNoMarkdownReadsAsBefore() {
         for text in S10.texts {
             XCTAssertEqual(
                 InboxCopy.quote(inboxItem(.report(.blocked), text: text)), .literal("“\(ChromeText.oneLine(text))”"),
@@ -52,11 +59,13 @@ final class InboxCopyTests: XCTestCase {
         }
     }
 
-    func testS30TheQuoteOfAnEmptyReportIsTheQuoteMarks() {
+    /// "Blank input gives no runs".
+    func testTheQuoteOfAnEmptyReportIsTheQuoteMarks() {
         XCTAssertEqual(InboxCopy.quote(inboxItem(.report(.blocked), text: "")), .literal("“”"))
     }
 
-    func testS5ThePlaceIsBoardTerminalAndFolderUnderHome() {
+    /// "Item copy is English with place line".
+    func testThePlaceIsBoardTerminalAndFolderUnderHome() {
         let withCwd = inboxItem(.report(.blocked), proc: "zsh", cwd: "/Users/u/w/x")
         XCTAssertEqual(
             InboxCopy.place(withCwd, boardName: "api", cardLabel: "claude", home: "/Users/u"), "api › claude · ~/w/x")
@@ -82,7 +91,8 @@ final class InboxCopyTests: XCTestCase {
         XCTAssertEqual(place("/tmp"), "b › t · /tmp")
     }
 
-    func testS40ABellAndAnExitOfABoardNotBuiltReadThin() {
+    /// "Unbuilt board bell and exit make items".
+    func testABellAndAnExitOfABoardNotBuiltReadThin() {
         let bell = inboxItem(.bell)
         XCTAssertEqual(InboxCopy.title(bell), "bell")
         XCTAssertEqual(InboxCopy.place(bell, boardName: nil, cardLabel: nil, home: "/Users/u"), "board-1 › shell")
@@ -125,7 +135,8 @@ final class InboxCopyTests: XCTestCase {
         )
     }
 
-    func testS5EveryStringIsEnglish() {
+    /// "Item copy is English with place line".
+    func testEveryStringIsEnglish() {
         let items = [
             inboxItem(.report(.blocked), proc: "claude", cwd: "/w", text: "ok"), inboxItem(.report(.done)),
             inboxItem(.bell), inboxItem(.exit(code: 1)), inboxItem(.exit(code: nil)),
@@ -147,7 +158,8 @@ final class InboxCopyTests: XCTestCase {
 
 /// Spec 2611.0018 D3: what the inbox preview pane says.
 final class InboxPreviewCopyTests: XCTestCase {
-    func testS5AReportShowsItsRowsHeadAndItsTextAsBlocks() {
+    /// "Report preview copies row title age and place".
+    func testAReportShowsItsRowsHeadAndItsTextAsBlocks() {
         let report = inboxItem(.report(.done), proc: "claude", text: "**ok**", at: 1_000, term: "T1")
         XCTAssertEqual(
             InboxCopy.preview(report, place: "api › claude", nowMs: 1_000 + 125_000),
@@ -159,7 +171,8 @@ final class InboxPreviewCopyTests: XCTestCase {
         )
     }
 
-    func testS6ABellAndAnExitHaveNoText() {
+    /// "Bell and exit previews have no text".
+    func testABellAndAnExitHaveNoText() {
         for kind in [Inbox.Kind.bell, .exit(code: 1)] {
             let preview = InboxCopy.preview(inboxItem(kind), place: "board-1 › shell", nowMs: 0)
             XCTAssertEqual(preview.body, .noText)
@@ -168,14 +181,16 @@ final class InboxPreviewCopyTests: XCTestCase {
         }
     }
 
-    func testS31ABlankTextHasNoText() {
+    /// "Whitespace-only report has no text".
+    func testABlankTextHasNoText() {
         for text in ["", "  \n ", "\t"] {
             let preview = InboxCopy.preview(inboxItem(.report(.blocked), text: text), place: "p", nowMs: 0)
             XCTAssertEqual(preview.body, .noText, text.debugDescription)
         }
     }
 
-    func testS21TextOfOnlyMarkupShowsAsTyped() {
+    /// "Text of only fence marks has no blocks".
+    func testTextOfOnlyMarkupShowsAsTyped() {
         let preview = InboxCopy.preview(inboxItem(.report(.done), text: "```\n```"), place: "p", nowMs: 0)
         XCTAssertEqual(preview.body, .blocks([.paragraph(.literal("``` ```"))]))
     }

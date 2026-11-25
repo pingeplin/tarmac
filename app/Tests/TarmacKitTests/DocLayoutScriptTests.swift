@@ -44,44 +44,44 @@ final class DocLayoutScriptTests: XCTestCase {
         text.components(separatedBy: part).count - 1
     }
 
-    /// S26
-    func testS26TheScriptsLoadWithNoDOM() throws {
+    /// "Layout script loads without a DOM"
+    func testTheScriptsLoadWithNoDOM() throws {
         let context = try page()
         XCTAssertEqual(context.evaluateScript("typeof tarmacDocLayout.render")?.toString(), "function")
         XCTAssertEqual(context.evaluateScript("typeof tarmacDocLayout.textColumns")?.toString(), "function")
     }
 
-    /// S8
-    func testS8AColumnWithAProseCellOfFortyIsATextColumn() throws {
+    /// "Long prose cell marks a text column"
+    func testAColumnWithAProseCellOfFortyIsATextColumn() throws {
         XCTAssertEqual(try textColumns(table("n | d", "| 1 | \(a(40)) |", "| 2 | ok |")), [false, true])
     }
 
-    /// S9
-    func testS9ThirtyNineIsNot() throws {
+    /// "Prose cell one short is no text column"
+    func testThirtyNineIsNot() throws {
         XCTAssertEqual(try textColumns(table("n | d", "| 1 | \(a(39)) |")), [false, false])
     }
 
-    /// S10
-    func testS10InlineCodeDoesNotCount() throws {
+    /// "Code spans do not count as prose"
+    func testInlineCodeDoesNotCount() throws {
         XCTAssertEqual(try textColumns(table("d", "| `\(a(60))` hello |")), [false])
         XCTAssertEqual(try textColumns(table("d", "| \(a(20)) `x` \(a(20)) |")), [true])
         XCTAssertEqual(try textColumns(table("d", "| **\(a(40))** |")), [true])
     }
 
-    /// S11
-    func testS11TheProseIsTrimmed() throws {
+    /// "Trailing space next to code is trimmed"
+    func testTheProseIsTrimmed() throws {
         XCTAssertEqual(try textColumns(table("d", "| \(a(39)) `x` |")), [false])
     }
 
-    /// S12
-    func testS12AShortRowCountsItsMissingCellsAsEmpty() throws {
+    /// "Ragged rows are padded before counting"
+    func testAShortRowCountsItsMissingCellsAsEmpty() throws {
         XCTAssertEqual(
             try textColumns(table("x | y | z", "| x | y | \(a(40)) |", "| \(a(40)) |")), [true, false, true]
         )
     }
 
-    /// S13
-    func testS13AWideCharacterCountsTwoAndWidthIsByCodePoint() throws {
+    /// "Wide characters count double"
+    func testAWideCharacterCountsTwoAndWidthIsByCodePoint() throws {
         func column(_ cell: String) throws -> [Bool] { try textColumns(table("d", "| \(cell) |")) }
         XCTAssertEqual(try column(String(repeating: "字", count: 20)), [true])
         XCTAssertEqual(try column(String(repeating: "字", count: 19)), [false])
@@ -90,9 +90,9 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try column(String(repeating: "\u{1D400}", count: 39)), [false])
     }
 
-    /// S13 — the first and the last code point of every wide range count 2;
+    /// "Wide characters count double" — the first and the last code point of every wide range count 2;
     /// U+10FF, before the first range, and U+1F650, after one, count 1.
-    func testS13EveryWideRangeIsWideToItsEdges() throws {
+    func testEveryWideRangeIsWideToItsEdges() throws {
         let ranges: [(UInt32, UInt32)] = [
             (0x1100, 0x115F), (0x2E80, 0x303E), (0x3041, 0x33FF), (0x3400, 0x4DBF), (0x4E00, 0x9FFF),
             (0xA000, 0xA4CF), (0xAC00, 0xD7A3), (0xF900, 0xFAFF), (0xFE30, 0xFE4F), (0xFF00, 0xFF60),
@@ -113,21 +113,21 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(width.call(withArguments: [0x1F650]).toBool(), false)
     }
 
-    /// S38 — an escaped character is prose.
-    func testS38AnEscapeCountsAsProse() throws {
+    /// "Escaped marks count by their text" — an escaped character is prose.
+    func testAnEscapeCountsAsProse() throws {
         XCTAssertEqual(try textColumns(table("d", "| \(a(38))\\*\\* |")), [true])
         XCTAssertEqual(try textColumns(table("d", "| \(a(37))\\*\\* |")), [false])
     }
 
-    /// S14
-    func testS14AHeaderOnlyTableHasNoTextColumn() throws {
+    /// "Header-only table has no text column"
+    func testAHeaderOnlyTableHasNoTextColumn() throws {
         let markdown = "| \(a(50)) | b |\n|---|---|\n"
         XCTAssertEqual(try textColumns(markdown), [false, false])
         XCTAssertFalse(try render(markdown).contains("doc-text-col"))
     }
 
-    /// S33
-    func testS33EveryMarkdownTableIsWrappedAndTheRestIsMarkedsOwn() throws {
+    /// "Tables get a wrapper and paragraphs stay"
+    func testEveryMarkdownTableIsWrappedAndTheRestIsMarkedsOwn() throws {
         let markdown = "Some *text*\nhere.\n\n" + table("a | b", "| 1 | 2 |") + "\n- item\n\n  " + table("c", "| 3 |")
         let html = try render(markdown)
 
@@ -138,8 +138,8 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertTrue(html.hasPrefix(try markedParse("Some *text*\nhere.")))
     }
 
-    /// S34
-    func testS34EveryCellOfATextColumnHasTheClass() throws {
+    /// "Class goes on text column cells only"
+    func testEveryCellOfATextColumnHasTheClass() throws {
         let html = try render(table("n | d", "| 1 | \(a(40)) |", "| 2 | ok |"))
 
         XCTAssertTrue(html.contains("<th class=\"doc-text-col\">d</th>"))
@@ -147,8 +147,8 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(occurrences(of: "class=", in: html), 4)
     }
 
-    /// S34 — a table inside a list item is marked too.
-    func testS34ANestedTableMarksItsTextColumn() throws {
+    /// "Class goes on text column cells only" — a table inside a list item is marked too.
+    func testANestedTableMarksItsTextColumn() throws {
         let html = try render(
             "- item\n\n  " + table("n | d", "| 1 | \(a(40)) |").replacingOccurrences(of: "\n|", with: "\n  |"))
 
@@ -157,8 +157,8 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertTrue(html.contains("<td class=\"doc-text-col\">"))
     }
 
-    /// S35
-    func testS35AlignmentIsKeptAndARawTableIsUntouched() throws {
+    /// "Alignment is kept and raw tables stay untouched"
+    func testAlignmentIsKeptAndARawTableIsUntouched() throws {
         let aligned = try render("| d | n |\n|:-:|--:|\n| \(a(40)) | 1 |\n")
         XCTAssertTrue(aligned.contains("<th align=\"center\" class=\"doc-text-col\">"))
         XCTAssertTrue(aligned.contains("<td align=\"right\">1</td>"))
@@ -167,8 +167,8 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try render(raw), try markedParse(raw))
     }
 
-    /// S36
-    func testS36TheGlobalMarkedIsUntouched() throws {
+    /// "Global marked parser is left untouched"
+    func testTheGlobalMarkedIsUntouched() throws {
         let markdown = table("n | d", "| 1 | \(a(40)) |")
         let html = try evaluate("tarmacDocLayout.render(md); marked.parse(md)", markdown: markdown)
 
@@ -192,8 +192,8 @@ final class DocLayoutScriptTests: XCTestCase {
 
     private let outlined = "# A\n\ntext\n\n## B\n\n#### D\n\n- item\n\n  ### C\n\nSet\n---\n"
 
-    /// 2611.0022 S24
-    func test2611_0022S24TheOutlineIsEveryHeadingToDepthThreeNestedOnesToo() throws {
+    /// 2611.0022 "Outline lists headings one to three"
+    func testTheOutlineIsEveryHeadingToDepthThreeNestedOnesToo() throws {
         XCTAssertEqual(
             try outline(outlined),
             #"[{"depth":1,"text":"A"},{"depth":2,"text":"B"},{"depth":3,"text":"C"},{"depth":2,"text":"Set"}]"#
@@ -201,8 +201,8 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try outline("> ### Q\n\n# R"), #"[{"depth":3,"text":"Q"},{"depth":1,"text":"R"}]"#)
     }
 
-    /// 2611.0022 S25
-    func test2611_0022S25AHeadingsTextIsItsPlainText() throws {
+    /// 2611.0022 "Heading text drops marks and decodes entities"
+    func testAHeadingsTextIsItsPlainText() throws {
         XCTAssertEqual(try headingText("## The `code` *and* **marks**"), "The code and marks")
         XCTAssertEqual(try headingText("## [Link](u) \\* <b>x</b>  y"), "Link * x y")
         XCTAssertEqual(try headingText("## Tom &amp; Jerry &#x41;"), "Tom & Jerry A")
@@ -214,8 +214,8 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try headingText("## a &amp;lt; b"), "a &lt; b")
     }
 
-    /// 2611.0022 S26
-    func test2611_0022S26AnOutlinedHeadingCarriesTheRendersMark() throws {
+    /// 2611.0022 "Outline marks go on headings only"
+    func testAnOutlinedHeadingCarriesTheRendersMark() throws {
         let html = try evaluate("tarmacDocLayout.parse(md, 'k9').html", markdown: outlined)
         let headings = [
             "<h1 data-outline=\"k9-0\">A</h1>", "<h2 data-outline=\"k9-1\">B</h2>",
@@ -232,9 +232,9 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try render(outlined), unmarked)
     }
 
-    /// 2611.0022 S26 — a render keeps no outline and no mark from the one
+    /// 2611.0022 "Outline marks go on headings only" — a render keeps no outline and no mark from the one
     /// before it.
-    func test2611_0022S26ARenderStartsAFreshOutlineAndMark() throws {
+    func testARenderStartsAFreshOutlineAndMark() throws {
         let context = try page()
         context.setObject(outlined, forKeyedSubscript: "md" as NSString)
         context.evaluateScript("tarmacDocLayout.parse(md, 'k9'); var second = tarmacDocLayout.parse('# R', '');")
@@ -244,15 +244,15 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(context.evaluateScript("second.html.indexOf('data-outline')")?.toInt32(), -1)
     }
 
-    /// 2611.0022 S27
-    func test2611_0022S27ARawHTMLHeadingIsNotInTheOutline() throws {
+    /// 2611.0022 "Raw HTML heading is not in the outline"
+    func testARawHTMLHeadingIsNotInTheOutline() throws {
         let markdown = "<h2>raw</h2>\n\n## md"
         XCTAssertEqual(try outline(markdown), #"[{"depth":2,"text":"md"}]"#)
         XCTAssertTrue(try evaluate("tarmacDocLayout.parse(md, 'k9').html", markdown: markdown).contains("<h2>raw</h2>"))
     }
 
-    /// 2611.0022 S28
-    func test2611_0022S28TheCurrentSection() throws {
+    /// 2611.0022 "Current section follows scroll position"
+    func testTheCurrentSection() throws {
         let context = try page()
         func current(_ tops: [Double], _ scrollTop: Double, _ view: Double, _ height: Double, _ zoom: Double) -> Int32?
         {
@@ -284,8 +284,8 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try json("tarmacDocLayout.scrollTarget(null, 400, 3000, 1)"), "null")
     }
 
-    /// 2611.0022 S29
-    func test2611_0022S29TheDragWidth() throws {
+    /// 2611.0022 "Drag width clamps and collapses"
+    func testTheDragWidth() throws {
         func drag(_ arguments: String) throws -> String { try json("tarmacDocLayout.dragWidth(\(arguments))") }
         XCTAssertEqual(try drag("240, 30, 0.5, 1, 160, 420"), #"{"width":300,"collapsed":false}"#)
         XCTAssertEqual(try drag("240, 30, 1, -1, 160, 420"), #"{"width":210,"collapsed":false}"#)
@@ -296,16 +296,16 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try drag("200, 100, 1, 1, 160, 240"), #"{"width":240,"collapsed":false}"#)
     }
 
-    /// 2611.0022 S29a
-    func test2611_0022S29aNoContentShowsNoSidebar() throws {
+    /// 2611.0022 "Shown mode needs fields or outline"
+    func testNoContentShowsNoSidebar() throws {
         XCTAssertEqual(try evaluate("tarmacDocLayout.shownMode({mode: 'docked'}, 0, 0)", markdown: ""), "none")
         XCTAssertEqual(try evaluate("tarmacDocLayout.shownMode({mode: 'docked'}, 1, 0)", markdown: ""), "docked")
         XCTAssertEqual(try evaluate("tarmacDocLayout.shownMode({mode: 'docked'}, 0, 2)", markdown: ""), "docked")
         XCTAssertEqual(try evaluate("tarmacDocLayout.shownMode(null, 1, 2)", markdown: ""), "none")
     }
 
-    /// 2611.0022 S29b
-    func test2611_0022S29bTheGeometryOfEachMode() throws {
+    /// 2611.0022 "Layout geometry follows the shown mode"
+    func testTheGeometryOfEachMode() throws {
         func geometry(_ mode: String, _ width: Double = 240, drag: String = "null") throws -> String {
             try json("tarmacDocLayout.geometry({mode: '\(mode)', width: \(width), strip: 30, grip: 8}, 1280, \(drag))")
         }
@@ -337,8 +337,8 @@ final class DocLayoutScriptTests: XCTestCase {
         )
     }
 
-    /// 2611.0022 S29c
-    func test2611_0022S29cTheReleaseReport() throws {
+    /// 2611.0022 "Release sends resize or close"
+    func testTheReleaseReport() throws {
         XCTAssertEqual(try json("tarmacDocLayout.release(false, {width: 300, collapsed: false})"), "null")
         XCTAssertEqual(
             try json("tarmacDocLayout.release(true, {width: 300, collapsed: false})"),
@@ -347,8 +347,8 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try json("tarmacDocLayout.release(true, {width: -60, collapsed: true})"), #"{"action":"close"}"#)
     }
 
-    /// 2611.0022 S29d
-    func test2611_0022S29dTheStripsIconsAndTicks() throws {
+    /// 2611.0022 "Strip icons and ticks follow content"
+    func testTheStripsIconsAndTicks() throws {
         let outline = "[1, 2, 3, 2, 3].map(function (depth) { return {depth: depth, text: 'h'}; })"
         func strip(_ fields: Int, _ outline: String, _ current: Int) throws -> String {
             try json("tarmacDocLayout.strip(\(fields), \(outline), \(current))")
@@ -365,8 +365,8 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try strip(0, "[]", -1), #"{"icons":[],"ticks":[],"lit":-1,"section":null}"#)
     }
 
-    /// 2611.0022 S29e
-    func test2611_0022S29eAnIconClick() throws {
+    /// 2611.0022 "Icon click picks open close or switch"
+    func testAnIconClick() throws {
         func click(_ arguments: String) throws -> String { try json("tarmacDocLayout.iconClick(\(arguments))") }
         XCTAssertEqual(
             try click("'strip', 'fields', 'outline'"), #"{"post":"open","section":"outline","scroll":"onOpen"}"#)
@@ -376,8 +376,8 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try click("'docked', 'outline', 'fields'"), #"{"post":null,"section":"outline","scroll":null}"#)
     }
 
-    /// 2611.0022 S29f
-    func test2611_0022S29fTheScrollTarget() throws {
+    /// 2611.0022 "Scroll target sits below the top"
+    func testTheScrollTarget() throws {
         for (arguments, target) in [
             ("500, 400, 3000, 1", "492"), ("500, 400, 3000, 0.5", "496"), ("4, 400, 3000, 1", "0"),
             ("2900, 400, 3000, 1", "2600"), ("10, 400, 300, 1", "0"),
@@ -386,7 +386,7 @@ final class DocLayoutScriptTests: XCTestCase {
         }
     }
 
-    /// 2611.0022 D11g, 2611.0025 S8: what of the sidebar shows and where the
+    /// 2611.0022 D11g, 2611.0025 "Panel start replaces panel left with same values": what of the sidebar shows and where the
     /// panel starts, from the sidebar's outer edge.
     func test2611_0022TheSidebarsParts() throws {
         func parts(_ mode: String, panel: Int, resizable: Bool = true) throws -> String {
@@ -482,9 +482,9 @@ final class DocLayoutScriptTests: XCTestCase {
         XCTAssertEqual(try json("tarmacDocLayout.sameDrag(null, \(width))"), "false")
     }
 
-    /// 2611.0025 S7: the side the page lays its sidebar out on; anything but
+    /// 2611.0025 "Page script reads the side and drag direction": the side the page lays its sidebar out on; anything but
     /// exactly "right" is the left.
-    func test2611_0025S7ThePagesSide() throws {
+    func testThePagesSide() throws {
         XCTAssertEqual(try json("tarmacDocLayout.side({side: 'right'})"), #""right""#)
         XCTAssertEqual(try json("tarmacDocLayout.direction(tarmacDocLayout.side({side: 'right'}))"), "-1")
         for state in ["{side: 'left'}", "{}", "{side: 'Right'}", "{side: 1}", "null"] {
