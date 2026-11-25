@@ -1,6 +1,6 @@
 # Font settings prose fixture
 
-Spec 2610.0005, "Document font reflows markdown prose". Twenty paragraphs of several lines each, and one code block that must stay in the Interface font.
+Spec 2610.0005, S17. Twenty paragraphs of several lines each, and one code block that must stay in the Interface font.
 
 ```
 let interface = "this block follows the Interface font"
