@@ -11,7 +11,7 @@ public enum ZoomMode: String, Equatable, Sendable {
     /// stable layout, and a document that re-wraps as you zoom is the wrong default
     /// for what most HTML cards are. Only a deliberate, well-formed `reveal` opts
     /// out — the case with a real reason behind it (a self-contained D3/Canvas
-    /// dashboard needing honest viewport dimensions, spec 2607.0004 S6) — so a
+    /// dashboard needing honest viewport dimensions, spec 2607.0004 "Agent opened HTML card animates beside terminal") — so a
     /// malformed value takes the default rather than silently landing in the mode
     /// almost nobody wants. The default is decided here, not as markup injected
     /// into the page: that would make the served document lie about its source.

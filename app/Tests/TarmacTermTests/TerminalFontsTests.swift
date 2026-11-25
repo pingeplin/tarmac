@@ -43,7 +43,7 @@ final class TerminalFontsTests: XCTestCase {
         return top - foot
     }
 
-    /// 2610.0005 S10 — the app ships no face: with no family chosen the
+    /// 2610.0005 "Default terminal face is the system monospace" — the app ships no face: with no family chosen the
     /// terminal is set in the system's monospaced font, which has real italics.
     func testWithNoFamilyTheFaceIsTheSystemMonospacedFont() {
         let system = fonts(nil)
@@ -57,7 +57,7 @@ final class TerminalFontsTests: XCTestCase {
         XCTAssertEqual(TerminalFace.name(family: nil), systemFace)
     }
 
-    /// S11
+    /// "Named terminal family gives regular and bold".
     func testAFamilyGivesItsRegularAndBoldFaces() {
         let menlo = fonts("Menlo")
         XCTAssertEqual(name(menlo.regular), "Menlo-Regular")
@@ -65,7 +65,7 @@ final class TerminalFontsTests: XCTestCase {
         XCTAssertEqual(TerminalFace.name(family: "Menlo"), "Menlo-Regular")
     }
 
-    /// S30 — CoreText gives Helvetica for a name it does not know.
+    /// "Unknown terminal family falls back to system" — CoreText gives Helvetica for a name it does not know.
     func testAFamilyThatIsNotInstalledGivesTheSystemFace() {
         let missing = "No Such Family 204"
         XCTAssertEqual(name(fonts(missing).regular), systemFace)

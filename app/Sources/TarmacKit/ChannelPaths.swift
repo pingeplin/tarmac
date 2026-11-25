@@ -8,7 +8,7 @@ import Foundation
 /// orphaned boards). Nothing here reads the environment or the disk, so the
 /// rules are table-driven unit-tested; the caller supplies the override, the
 /// home directory and the channel. The `dev` literal is duplicated only here
-/// across the language boundary, pinned by S2/S5.
+/// across the language boundary, pinned by "Dev socket path inserts channel segment" and "Dev socket differs from release by one segment".
 public enum ChannelPaths {
     /// Build channel. `.release` is the shipped, signed bundle; `.dev` is any
     /// debug build. Rust maps `cfg!(debug_assertions)` to it at one audited line
@@ -90,15 +90,15 @@ public enum ChannelPaths {
 
     /// The daemon socket. `override` is `TARMAC_SOCKET` (`nil` if unset): it wins
     /// VERBATIM iff non-nil AND `!isEmpty` (no trimming; empty == unset, spec
-    /// S9), in both channels (S3/S4). Otherwise `channelDir/tarmacd.sock` —
-    /// `.release` is today's flat path byte-for-byte (S1), `.dev` inserts
-    /// exactly the `/dev` segment (S2/S5).
+    /// "Empty override is treated as unset"), in both channels ("Override wins in release channel", "Override wins even in dev channel"). Otherwise `channelDir/tarmacd.sock` —
+    /// `.release` is today's flat path byte-for-byte ("Release socket path matches legacy path"), `.dev` inserts
+    /// exactly the `/dev` segment ("Dev socket path inserts channel segment", "Dev socket differs from release by one segment").
     public static func socketPath(override: String?, home: String, channel: Channel) -> String {
         resolve(override, home: home, channel: channel, file: "tarmacd.sock")
     }
 
     /// The in-app QA driver's socket (issue #166), which the APP binds —
-    /// `TARMAC_DEV_SOCKET`, else `channelDir/tarmac-dev.sock` (S50–S52).
+    /// `TARMAC_DEV_SOCKET`, else `channelDir/tarmac-dev.sock` (spec 2609.0015).
     public static func devSocketPath(override: String?, home: String, channel: Channel) -> String {
         resolve(override, home: home, channel: channel, file: "tarmac-dev.sock")
     }
@@ -123,7 +123,7 @@ public enum ChannelPaths {
     }
 
     /// Human label for diagnostics: `.release` -> `"release"`, `.dev` -> `"dev"`.
-    /// Mirrors Rust `tarmac_protocol::channel_label` (spec S10).
+    /// Mirrors Rust `tarmac_protocol::channel_label` (spec "Channel label names release and dev correctly").
     public static func channelLabel(_ channel: Channel) -> String {
         switch channel {
         case .release: return "release"

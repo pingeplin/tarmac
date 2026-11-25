@@ -1,20 +1,20 @@
 #!/usr/bin/env node
-// Resume after a restart (spec 2611.0011 S37; spec 2611.0015 D15). Stand-in
+// Resume after a restart (spec 2611.0011 "QA runner drives the stand-in scenario"; spec 2611.0015 D15). Stand-in
 // agents record a command and the dev daemon is killed, which ends every dev
 // terminal, so this is a runner of its own and not part of `smoke.mjs`.
 //
 //   CASE=reopen (default)   no relaunch: dead cards reopen and offer the
 //                           command; Return, Esc, the panel's clicks, the
-//                           header chip and the `click` refusals (S26, S28–S30,
-//                           S40, and 2611.0011 S37).
+//                           header chip and the `click` refusals ("QA decide per card and panel clicks", "QA keys on the prime panel", "QA header chip on a live terminal", "QA reopened card chip goes after run",
+//                           "QA click verb against a live app", and 2611.0011 "QA runner drives the stand-in scenario").
 //   CASE=restore-setup      two more terminals, the records, a quit through the
 //                           ⌘Q guard and the daemon kill; then `make run` and
-//                           one of the cases below (S25–S27, S32).
+//                           one of the cases below ("QA resume all from the restore card", "QA decide per card and panel clicks", "QA skip all from the restore card", "QA Cmd-Q with the choices up").
 //   CASE=resume-all | resume-all-held | resume-all-click | per-card |
 //        per-card-click | veil | skip-all | skip-all-click | quit
 //   CASE=before-output      needs `make run SHELL_GATE=1`: Return and a
 //                           `resume` click on a reopened card while the gate
-//                           holds its shell before the first output (S28).
+//                           holds its shell before the first output ("QA keys on the prime panel").
 //
 // The daemon is found only by `lsof -t` on lib.mjs's absolute DAEMON_SOCK, as
 // `make kill-daemon` does, and only those pids are killed. A held key is
@@ -187,7 +187,7 @@ function withClipboard(body) {
 
 // ------------------------------------------------------------ shared steps
 
-/** S26: a click on a card that is not prime runs its command and selects it;
+/** "QA decide per card and panel clicks": a click on a card that is not prime runs its command and selects it;
  *  a click on `skip` on another leaves the selection and drops the record. */
 async function panelClicks(boardId, resumeID, skipID) {
   await run.checkAsync(`click ${resumeID} resume: it runs there, selects the card and leaves the viewport (S26, S40)`, async () => {
@@ -502,7 +502,7 @@ function restoreCardUp() {
   return { boardId, offers, plain };
 }
 
-/** `held` (S25's held Return, #380): the repeats after the card closes are
+/** `held` (the held Return of "QA resume all from the restore card", #380): the repeats after the card closes are
  *  taken and dropped, so the card with the keys moves down no more rows than
  *  the other card that ran the same command in the same folder, and the card
  *  with no offer gets no byte. */

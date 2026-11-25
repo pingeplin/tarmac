@@ -533,7 +533,7 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertTrue(sentText.hasPrefix("\u{1b}[<64;"), sentText.debugDescription)
     }
 
-    // MARK: scroll position (2610.0003 S14, S26)
+    // MARK: scroll position (2610.0003)
 
     private let tenLines = (1...10).map { "line\($0)" }.joined(separator: "\r\n")
 
@@ -550,7 +550,8 @@ final class TerminalViewTests: XCTestCase {
         _ = view.viewportCells()
     }
 
-    func test2610S14TheHostIsToldWhereTheViewportIsWheneverThatChanges() throws {
+    /// "Terminal view reports its scrollbar".
+    func testTheHostIsToldWhereTheViewportIsWheneverThatChanges() throws {
         try resize(rows: 3)
         var told: [TerminalScrollbar] = []
         view.onScrollChanged = { told.append($0) }
@@ -568,9 +569,10 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(told.last?.visible, 5)
     }
 
+    /// "Terminal view reports its scrollbar".
     /// Nothing was told while there was no one to tell, so the first check
     /// after the callback is set reports, though the scrollbar has not moved.
-    func test2610S14ACallbackSetLateIsToldAtTheNextFrameRead() throws {
+    func testACallbackSetLateIsToldAtTheNextFrameRead() throws {
         try resize(rows: 3)
         feed(tenLines)
         read()
@@ -584,8 +586,9 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(told, [scrollbar])
     }
 
+    /// "Terminal view reports its scrollbar".
     /// A relayout checks whether or not it resizes the engine.
-    func test2610S14ACallbackSetLateIsToldByARelayoutThatKeepsTheGrid() throws {
+    func testACallbackSetLateIsToldByARelayoutThatKeepsTheGrid() throws {
         try resize(rows: 3)
         feed(tenLines)
         read()
@@ -598,8 +601,9 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(told, [view.engine.scrollbar])
     }
 
+    /// "Terminal view reports its scrollbar".
     /// A view too small for a grid draws nothing, and its history still grows.
-    func test2610S14AFrameReadIsToldThoughTheViewHasNoGrid() throws {
+    func testAFrameReadIsToldThoughTheViewHasNoGrid() throws {
         try resize(rows: 3)
         var told: [TerminalScrollbar] = []
         view.onScrollChanged = { told.append($0) }
@@ -611,7 +615,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(told.last, TerminalScrollbar(total: 10, offset: 7, visible: 3))
     }
 
-    func test2610S26OutputThatLeavesTheScrollbarAsItWasIsNotToldAgain() throws {
+    /// "Unchanged scrollbar is not reported again".
+    func testOutputThatLeavesTheScrollbarAsItWasIsNotToldAgain() throws {
         try resize(rows: 3)
         var told: [TerminalScrollbar] = []
         view.onScrollChanged = { told.append($0) }
@@ -626,7 +631,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(told, before)
     }
 
-    func test2610S26ARelayoutThatLeavesTheScrollbarAsItWasIsNotToldAgain() throws {
+    /// "Unchanged scrollbar is not reported again".
+    func testARelayoutThatLeavesTheScrollbarAsItWasIsNotToldAgain() throws {
         try resize(rows: 3)
         var told: [TerminalScrollbar] = []
         view.onScrollChanged = { told.append($0) }
@@ -641,7 +647,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(told, before)
     }
 
-    func test2610S26TheAlternateScreenHasNothingToScroll() throws {
+    /// "Unchanged scrollbar is not reported again".
+    func testTheAlternateScreenHasNothingToScroll() throws {
         try resize(rows: 3)
         var told: [TerminalScrollbar] = []
         view.onScrollChanged = { told.append($0) }
@@ -675,9 +682,10 @@ final class TerminalViewTests: XCTestCase {
         return { told }
     }
 
+    /// "Terminal view scrolls to a row".
     /// `scroll(to:)` schedules its own frame read: none is pending when it is
     /// asked.
-    func test2610_0004S13ScrollToGoesToTheNearestRowAndTheHostIsTold() throws {
+    func testScrollToGoesToTheNearestRowAndTheHostIsTold() throws {
         let told = try scrolledBack()
         let rows: [(Double, Int)] = [(2.4, 2), (2.5, 3), (99, 7), (-4, 0)]
         for (asked, row) in rows {
@@ -688,7 +696,8 @@ final class TerminalViewTests: XCTestCase {
         }
     }
 
-    func test2610_0004S34ScrollToANumberThatIsNoRowScrollsNothing() throws {
+    /// "Terminal scroll refuses non-finite rows".
+    func testScrollToANumberThatIsNoRowScrollsNothing() throws {
         let told = try scrolledBack()
         view.scroll(to: 2)
         read()
@@ -702,7 +711,8 @@ final class TerminalViewTests: XCTestCase {
         }
     }
 
-    func test2610_0004S34ScrollToFarPastEitherEndIsThatEnd() throws {
+    /// "Terminal scroll refuses non-finite rows".
+    func testScrollToFarPastEitherEndIsThatEnd() throws {
         let told = try scrolledBack()
         view.scroll(to: -1e300)
         read()
@@ -712,7 +722,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(told().last?.offset, 7)
     }
 
-    func test2610_0004S34ScrollToOnTheAlternateScreenScrollsNothing() throws {
+    /// "Terminal scroll refuses non-finite rows".
+    func testScrollToOnTheAlternateScreenScrollsNothing() throws {
         _ = try scrolledBack()
         feed("\u{1b}[?1049h")
         read()
@@ -920,7 +931,7 @@ final class TerminalViewTests: XCTestCase {
         TerminalFonts(size: size, pixelsPerPoint: scale ?? window.backingScaleFactor, family: family).metrics.cell
     }
 
-    /// S12 — a new family is a new cell: the grid is laid out again and the
+    /// "Terminal family change resizes the grid once" — a new family is a new cell: the grid is laid out again and the
     /// program is told its new size, once.
     func testANewFamilyRebuildsTheFontsAndReportsTheNewGrid() throws {
         XCTAssertNotEqual(cell("Monaco"), cell(nil))
@@ -939,7 +950,7 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual([view.engine.cols, view.engine.rows], [layout.cols, layout.rows])
     }
 
-    /// S32
+    /// "Same family again changes nothing".
     func testTheSameFamilyAgainDoesNothingAndNoFamilyIsTheSystemFace() {
         view.fontFamily = "Monaco"
         let before = view.fontGeneration
@@ -955,7 +966,7 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(resizes.count, 1)
     }
 
-    /// S33 — a rebuild for a new display density keeps the chosen family.
+    /// "View moved to another window refreshes its font" — a rebuild for a new display density keeps the chosen family.
     func testARebuildForANewBackingScaleKeepsTheFamily() throws {
         let mounted = window.backingScaleFactor
         let other: CGFloat = mounted == 1 ? 2 : 1
@@ -974,7 +985,7 @@ final class TerminalViewTests: XCTestCase {
 
     // MARK: the chosen size (2610.0006)
 
-    /// S11 — a new size is a new cell: the grid is laid out again in the same
+    /// "Terminal size change regrids once" — a new size is a new cell: the grid is laid out again in the same
     /// view and the program is told its new size, once.
     func testANewSizeRebuildsTheFontsAndReportsTheNewGrid() throws {
         XCTAssertNotEqual(cell(nil, size: 20), cell(nil))
@@ -993,7 +1004,7 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual([view.engine.cols, view.engine.rows], [layout.cols, layout.rows])
     }
 
-    /// S11 — a smaller size is a new cell too.
+    /// "Terminal size change regrids once" — a smaller size is a new cell too.
     func testASmallerSizeRebuildsTheFonts() {
         XCTAssertNotEqual(cell(nil), cell(nil, size: 20))
         view.fontSize = 20
@@ -1005,7 +1016,7 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(view.gridLayout?.cell, cell(nil))
     }
 
-    /// S26
+    /// "Same size again changes nothing".
     func testTheSameSizeAgainDoesNothing() {
         view.fontSize = 20
         let before = view.fontGeneration
@@ -1017,7 +1028,7 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(resizes, [])
     }
 
-    /// S27 — the size and the family are two choices: a change of one keeps
+    /// "Family and size combine in the cell" — the size and the family are two choices: a change of one keeps
     /// the other.
     func testANewSizeKeepsTheFamilyAndANewFamilyKeepsTheSize() {
         let monacoAt20 = cell("Monaco", size: 20)
@@ -1034,7 +1045,7 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(view.gridLayout?.cell, monacoAt20)
     }
 
-    /// S28 — a rebuild for a new display density keeps the chosen size. The
+    /// "View moved to another window refreshes its size" — a rebuild for a new display density keeps the chosen size. The
     /// system face is used because Monaco's cell at 20 is one at both
     /// densities.
     func testARebuildForANewBackingScaleKeepsTheSize() throws {
@@ -1113,9 +1124,9 @@ final class TerminalViewTests: XCTestCase {
         return canvas
     }
 
-    /// S21 — the frame is not read again after the change, and a draw reads
+    /// "Terminal view redraws in a new theme" — the frame is not read again after the change, and a draw reads
     /// none: the second bitmap has the new colours only if the setter read one.
-    func test2610_0007S21ANewThemeRecoloursTheTextOnScreenWithNothingFed() throws {
+    func testANewThemeRecoloursTheTextOnScreenWithNothingFed() throws {
         feed("MMMM\r\n\u{1b}[31mMMMM\u{1b}[0m\r\n\u{1b}[44m    \u{1b}[0m")
         read()
         let before = try drawn(view)
@@ -1136,9 +1147,9 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(resizes, [])
     }
 
-    /// S21, on the screen — `drawn(_:)` draws every row, so it cannot tell a
+    /// "Terminal view redraws in a new theme", on the screen — `drawn(_:)` draws every row, so it cannot tell a
     /// setter that reads the frame and asks for no display from one that asks.
-    func test2610_0007S21ANewThemeAsksForTheWholeViewToBeDrawn() throws {
+    func testANewThemeAsksForTheWholeViewToBeDrawn() throws {
         feed("MMMM")
         settle()
         let screen = try Screen(showing: view)
@@ -1150,7 +1161,7 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(screen.asked.map { $0.intersection(view.bounds) }, [view.bounds])
     }
 
-    /// The exception of S21: while a program holds its output (mode 2026) the
+    /// The exception of "Terminal view redraws in a new theme": while a program holds its output (mode 2026) the
     /// frame on screen stays, and the new colours come when the hold ends.
     func test2610_0007ANewThemeWaitsForAHeldFrame() throws {
         feed("\u{1b}[?2026h")
@@ -1163,8 +1174,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(try drawn(view).center(col: 10, row: 5), light.background)
     }
 
-    /// S22 — the window is not key, so the cursor is an outline.
-    func test2610_0007S22ANewThemeRecoloursTheBackgroundAndTheCursor() throws {
+    /// "New theme colors background cursor and selection" — the window is not key, so the cursor is an outline.
+    func testANewThemeRecoloursTheBackgroundAndTheCursor() throws {
         feed("ab")
         read()
         XCTAssertTrue(try drawn(view).colours(inCols: 2..<3, row: 0).contains(dark.cursor))
@@ -1178,8 +1189,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertFalse(cursor.contains(dark.cursor))
     }
 
-    /// S22
-    func test2610_0007S22ASelectionMadeBeforeTheChangeTakesTheNewTint() throws {
+    /// "New theme colors background cursor and selection".
+    func testASelectionMadeBeforeTheChangeTakesTheNewTint() throws {
         view.mouseDown(with: try mouse(.leftMouseDown, col: 2, row: 3))
         view.mouseDragged(with: try mouse(.leftMouseDragged, col: 8, row: 3))
         view.mouseUp(with: try mouse(.leftMouseUp, col: 8, row: 3))
@@ -1202,8 +1213,8 @@ final class TerminalViewTests: XCTestCase {
         "\u{1b}]11;rgb:fcfc/fcfc/fcfc\u{1b}\\\u{1b}]10;rgb:2323/2626/2929\u{1b}\\"
         + "\u{1b}]4;2;rgb:0b0b/8a8a/0f0f\u{1b}\\\u{1b}[?997;2n"
 
-    /// S23
-    func test2610_0007S23ColourQueriesAreAnsweredFromTheThemeSetLater() {
+    /// "Terminal answers color queries from the theme".
+    func testColourQueriesAreAnsweredFromTheThemeSetLater() {
         view.theme = light
 
         feed(colourQueries)
@@ -1211,9 +1222,9 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(sentText, lightAnswers)
     }
 
-    /// S23 — and each terminal answers for its own theme: the suite's view,
+    /// "Terminal answers color queries from the theme" — and each terminal answers for its own theme: the suite's view,
     /// made before this one, is still dark.
-    func test2610_0007S23ColourQueriesAreAnsweredFromTheThemeGivenAtInit() throws {
+    func testColourQueriesAreAnsweredFromTheThemeGivenAtInit() throws {
         let view = try TerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 400), theme: light)
         var sent: [UInt8] = []
         view.onInput = { bytes, _ in sent.append(contentsOf: bytes) }
@@ -1225,23 +1236,23 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(sentText, "\u{1b}[?997;1n")
     }
 
-    /// S23
-    func test2610_0007S23ADarkThemeAnswersTheColourSchemeQueryAsDark() {
+    /// "Terminal answers color queries from the theme".
+    func testADarkThemeAnswersTheColourSchemeQueryAsDark() {
         feed("\u{1b}[?996n")
 
         XCTAssertEqual(sentText, "\u{1b}[?997;1n")
     }
 
-    /// S43
-    func test2610_0007S43AProgramThatDidNotAskIsToldNothing() {
+    /// "No mode 2031 report without a real change".
+    func testAProgramThatDidNotAskIsToldNothing() {
         view.theme = light
 
         XCTAssertEqual(view.theme, light)
         XCTAssertEqual(sent, [])
     }
 
-    /// S43
-    func test2610_0007S43AnotherThemeOfTheSameSchemeIsNotReported() {
+    /// "No mode 2031 report without a real change".
+    func testAnotherThemeOfTheSameSchemeIsNotReported() {
         var darker = dark
         darker.background = RGB(hex: 0x101214)
         feed("\u{1b}[?2031h")
@@ -1252,8 +1263,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(sent, [])
     }
 
-    /// S43
-    func test2610_0007S43TheThemeTheViewAlreadyHasIsNotReported() {
+    /// "No mode 2031 report without a real change".
+    func testTheThemeTheViewAlreadyHasIsNotReported() {
         feed("\u{1b}[?2031h")
 
         view.theme = dark
@@ -1271,8 +1282,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(try drawn(view).colours(inCols: 0..<4, row: 1), [dark.background])
     }
 
-    /// S43
-    func test2610_0007S43AProgramThatStoppedAskingIsToldNothing() {
+    /// "No mode 2031 report without a real change".
+    func testAProgramThatStoppedAskingIsToldNothing() {
         feed("\u{1b}[?2031h\u{1b}[?2031l")
 
         view.theme = light
@@ -1281,8 +1292,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(sent, [])
     }
 
-    /// S25 — a rebuild of the fonts makes a new renderer.
-    func test2610_0007S25TheThemeSetLaterSurvivesANewFamilyAndANewSize() throws {
+    /// "Font changes keep the light theme" — a rebuild of the fonts makes a new renderer.
+    func testTheThemeSetLaterSurvivesANewFamilyAndANewSize() throws {
         view.theme = light
         let before = view.fontGeneration
 
@@ -1294,8 +1305,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(try drawn(view).center(col: 10, row: 5), light.background)
     }
 
-    /// S25
-    func test2610_0007S25TheThemeSetLaterSurvivesARebuildForANewBackingScale() throws {
+    /// "Font changes keep the light theme".
+    func testTheThemeSetLaterSurvivesARebuildForANewBackingScale() throws {
         let mounted = window.backingScaleFactor
         let other: CGFloat = mounted == 1 ? 2 : 1
         let view = try TerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 400), backingScale: other)
@@ -1309,9 +1320,9 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(try drawn(view).center(col: 10, row: 5), light.background)
     }
 
-    /// S44 — a 256-colour index above 15 and an RGB colour are not the
+    /// "Indexed and RGB colors survive a theme change" — a 256-colour index above 15 and an RGB colour are not the
     /// theme's to change.
-    func test2610_0007S44ANewThemeLeavesIndexedAndRgbTextAsItWas() throws {
+    func testANewThemeLeavesIndexedAndRgbTextAsItWas() throws {
         let indexed = RGB(255, 0, 0)
         let direct = RGB(10, 20, 30)
         feed("\u{1b}[38;5;196mMMMM\u{1b}[0m\r\n\u{1b}[38;2;10;20;30mMMMM\u{1b}[0m")
@@ -1328,8 +1339,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertTrue(after.colours(inCols: 0..<4, row: 1).contains(direct))
     }
 
-    /// S44 — a colour the program set is its own until it gives it back.
-    func test2610_0007S44AProgramsOwnBackgroundOutlivesANewThemeUntilItIsReset() throws {
+    /// "Indexed and RGB colors survive a theme change" — a colour the program set is its own until it gives it back.
+    func testAProgramsOwnBackgroundOutlivesANewThemeUntilItIsReset() throws {
         feed("\u{1b}]11;rgb:10/20/30\u{1b}\\")
         read()
 
@@ -1341,13 +1352,13 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(try drawn(view).center(col: 10, row: 5), light.background)
     }
 
-    // MARK: a default colour a program sets, on screen (2610.0007 S50)
+    // MARK: a default colour a program sets, on screen (2610.0007 "Program background survives a theme change")
 
-    /// S50 — a default colour changes no row, so the frame read names none
+    /// "Program background survives a theme change" — a default colour changes no row, so the frame read names none
     /// dirty, and an empty cell has no colour of its own: it shows the new
     /// background only if the view asked for every row to be drawn again.
     /// The cursor is on row 0.
-    func test2610_0007S50AProgramsOwnBackgroundReachesTheRowsItDidNotWrite() throws {
+    func testAProgramsOwnBackgroundReachesTheRowsItDidNotWrite() throws {
         feed("ab")
         settle()
         let screen = try Screen(showing: view)
@@ -1362,9 +1373,9 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(screen.shown().center(col: 10, row: 5), dark.background)
     }
 
-    /// S50, for the foreground: text with no colour of its own. The cursor is
+    /// "Program background survives a theme change", for the foreground: text with no colour of its own. The cursor is
     /// on row 2.
-    func test2610_0007S50AProgramsOwnForegroundReachesTheTextAlreadyOnScreen() throws {
+    func testAProgramsOwnForegroundReachesTheTextAlreadyOnScreen() throws {
         let own = RGB(hex: 0xaabbcc)
         feed("MMMM\r\n\r\n")
         settle()
@@ -1384,9 +1395,10 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertFalse(reset.contains(own))
     }
 
+    /// "Program background survives a theme change".
     /// The cost: a frame that changes no default colour draws its own rows
     /// and no more.
-    func test2610_0007S50AnOrdinaryFrameDrawsOnlyItsRows() throws {
+    func testAnOrdinaryFrameDrawsOnlyItsRows() throws {
         feed("ab\r\n")
         settle()
         let screen = try Screen(showing: view)
@@ -1415,9 +1427,9 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(sentText, "\u{1b}[1;1R")
     }
 
-    /// 2611.0008 S12. Whoever asked is no longer waiting: an answer would
+    /// 2611.0008 "Replay sends nothing". Whoever asked is no longer waiting: an answer would
     /// arrive at today's prompt as typed text.
-    func test2611_0008S12ReplayedHistoryAnswersNothingAndRingsNothing() {
+    func testReplayedHistoryAnswersNothingAndRingsNothing() {
         var bells = 0
         view.onBell = { bells += 1 }
         view.replay(Data("old\u{1b}[6n\u{1b}[c\u{07}".utf8))
@@ -1446,13 +1458,15 @@ final class TerminalViewTests: XCTestCase {
 
     // MARK: the source of each send (2611.0008)
 
-    func test2611_0008S1AKeyPressIsTheUsers() {
+    /// "Key press sends bytes as user input".
+    func testAKeyPressIsTheUsers() {
         view.keyDown(with: key("a", code: 0x00))
 
         XCTAssertEqual(calls, [Sent(text: "a", source: .user)])
     }
 
-    func test2611_0008S1BytesTheHostSendsForAChordAreTheUsers() {
+    /// "Key press sends bytes as user input".
+    func testBytesTheHostSendsForAChordAreTheUsers() {
         view.keyOverride = { _ in [0x15] }
 
         view.keyDown(with: key("\u{7f}", code: 0x33, flags: .command))
@@ -1460,7 +1474,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{15}", source: .user)])
     }
 
-    func test2611_0008S2APasteIsTheUsers() {
+    /// "Paste sends bytes as user input".
+    func testAPasteIsTheUsers() {
         pasteboard.clearContents()
         pasteboard.setString("hi", forType: .string)
 
@@ -1469,19 +1484,22 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "hi", source: .user)])
     }
 
-    func test2611_0008S3SentTextIsTheUsers() {
+    /// "Send text and IME commit are user input".
+    func testSentTextIsTheUsers() {
         view.sendText("x")
 
         XCTAssertEqual(calls, [Sent(text: "x", source: .user)])
     }
 
-    func test2611_0008S3AnImeCommitIsTheUsers() {
+    /// "Send text and IME commit are user input".
+    func testAnImeCommitIsTheUsers() {
         view.insertText("你", replacementRange: NSRange(location: NSNotFound, length: 0))
 
         XCTAssertEqual(calls, [Sent(text: "你", source: .user)])
     }
 
-    func test2611_0008S4AKeyReleaseIsTheUsers() {
+    /// "Key release and modifier reports are user input".
+    func testAKeyReleaseIsTheUsers() {
         feed("\u{1b}[>3u")
 
         view.keyUp(with: key("n", code: 0x2d, type: .keyUp))
@@ -1489,7 +1507,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[110;1:3u", source: .user)])
     }
 
-    func test2611_0008S4AModifierKeyIsTheUsers() {
+    /// "Key release and modifier reports are user input".
+    func testAModifierKeyIsTheUsers() {
         feed("\u{1b}[>8u")
 
         view.flagsChanged(with: key("", code: 0x38, flags: .shift, type: .flagsChanged))
@@ -1497,8 +1516,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[57441;2u", source: .user)])
     }
 
-    /// S5b
-    func test2611_0008S5bAHoverReportIsTheTerminals() throws {
+    /// "Hover motion report is terminal input".
+    func testAHoverReportIsTheTerminals() throws {
         feed("\u{1b}[?1003h\u{1b}[?1006h")
 
         view.mouseMoved(with: try mouse(.mouseMoved, col: 2, row: 0))
@@ -1506,7 +1525,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[<35;3;1M", source: .terminal)])
     }
 
-    func test2611_0008S5AMousePressReportIsTheUsers() throws {
+    /// "Mouse press wheel and drag are user input".
+    func testAMousePressReportIsTheUsers() throws {
         feed("\u{1b}[?1000h\u{1b}[?1006h")
 
         view.mouseDown(with: try mouse(.leftMouseDown, col: 2, row: 0))
@@ -1514,7 +1534,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[<0;3;1M", source: .user)])
     }
 
-    func test2611_0008S5AWheelReportIsTheUsers() throws {
+    /// "Mouse press wheel and drag are user input".
+    func testAWheelReportIsTheUsers() throws {
         feed("\u{1b}[?1000h\u{1b}[?1006h")
 
         view.scrollWheel(with: try wheel(lines: 1))
@@ -1523,8 +1544,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertTrue(sentText.hasPrefix("\u{1b}[<64;"), sentText.debugDescription)
     }
 
-    /// S5 — mode 1000 reports no motion, so the drag uses button-event mode.
-    func test2611_0008S5ADragReportIsTheUsers() throws {
+    /// "Mouse press wheel and drag are user input" — mode 1000 reports no motion, so the drag uses button-event mode.
+    func testADragReportIsTheUsers() throws {
         feed("\u{1b}[?1002h\u{1b}[?1006h")
         view.mouseDown(with: try mouse(.leftMouseDown, col: 2, row: 0))
         calls = []
@@ -1534,7 +1555,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[<32;5;1M", source: .user)])
     }
 
-    func test2611_0008S5ALeftReleaseReportIsTheUsers() throws {
+    /// "Mouse press wheel and drag are user input".
+    func testALeftReleaseReportIsTheUsers() throws {
         feed("\u{1b}[?1000h\u{1b}[?1006h")
         view.mouseDown(with: try mouse(.leftMouseDown, col: 2, row: 0))
         calls = []
@@ -1544,7 +1566,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[<0;3;1m", source: .user)])
     }
 
-    func test2611_0008S5RightButtonReportsAreTheUsers() throws {
+    /// "Mouse press wheel and drag are user input".
+    func testRightButtonReportsAreTheUsers() throws {
         feed("\u{1b}[?1002h\u{1b}[?1006h")
 
         view.rightMouseDown(with: try mouse(.rightMouseDown, col: 2, row: 0))
@@ -1559,7 +1582,8 @@ final class TerminalViewTests: XCTestCase {
             ])
     }
 
-    func test2611_0008S5MiddleButtonReportsAreTheUsers() throws {
+    /// "Mouse press wheel and drag are user input".
+    func testMiddleButtonReportsAreTheUsers() throws {
         feed("\u{1b}[?1000h\u{1b}[?1006h")
 
         view.otherMouseDown(with: try mouse(.otherMouseDown, col: 2, row: 0))
@@ -1572,7 +1596,8 @@ final class TerminalViewTests: XCTestCase {
             ])
     }
 
-    func test2611_0008S6AWheelInTheAlternateScreenIsTheUsers() throws {
+    /// "Alternate screen wheel is user input".
+    func testAWheelInTheAlternateScreenIsTheUsers() throws {
         feed("\u{1b}[?1049h")
 
         view.scrollWheel(with: try wheel(lines: 1))
@@ -1580,7 +1605,8 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[A", source: .user)])
     }
 
-    func test2611_0008S7FocusReportsAreTheTerminals() {
+    /// "Focus reports are terminal input".
+    func testFocusReportsAreTheTerminals() {
         feed("\u{1b}[?1004h")
 
         window.makeFirstResponder(nil)
@@ -1589,15 +1615,16 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[O", source: .terminal), Sent(text: "\u{1b}[I", source: .terminal)])
     }
 
-    func test2611_0008S8AnEngineReplyIsTheTerminals() {
+    /// "Device attributes reply is terminal input".
+    func testAnEngineReplyIsTheTerminals() {
         feed("\u{1b}[c")
 
         XCTAssertEqual(calls, [Sent(text: "\u{1b}[?62;22c", source: .terminal)])
     }
 
-    /// 2610.0007 S24 and 2611.0008 S9: one report for each change, and it is
+    /// 2610.0007 "Theme change reports to mode 2031 once" and 2611.0008 "Colour scheme report is terminal input": one report for each change, and it is
     /// the terminal's.
-    func test2610_0007S24And2611_0008S9AProgramThatAskedIsToldOnceEachSchemeChangeAsTheTerminal() {
+    func testAProgramThatAskedIsToldOnceEachSchemeChangeAsTheTerminal() {
         feed("\u{1b}[?2031h")
 
         view.theme = light
@@ -1610,7 +1637,8 @@ final class TerminalViewTests: XCTestCase {
             ])
     }
 
-    func test2611_0008S13EachSendKeepsItsOwnSource() {
+    /// "Source does not leak between calls".
+    func testEachSendKeepsItsOwnSource() {
         feed("\u{1b}[?1004h")
 
         window.makeFirstResponder(nil)

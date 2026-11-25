@@ -130,7 +130,7 @@ public final class DaemonClient: @unchecked Sendable {
 
     /// PURE: does `path` fit a `sockaddr_un`? (byte length `< sunPathCapacity`).
     /// A path that does not fails the connect with a reason rather than being
-    /// truncated into some other path (spec S8/S8b).
+    /// truncated into some other path (spec "Dev socket path hits sockaddr byte boundary", "Per-worktree dev path hits sockaddr byte boundary").
     public static func fitsUnixSocketPath(_ path: String) -> Bool {
         path.utf8.count < sunPathCapacity
     }

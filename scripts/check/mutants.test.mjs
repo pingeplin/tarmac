@@ -121,7 +121,7 @@ const WHY = "each line is a change the tool made to the code; the tests still pa
 const FIX = "add a test that fails with that change (see the change: core/mutants.out/diff/), or list the mutant in core/.cargo/mutants.toml with the reason it cannot be seen";
 const INSTALL = `cargo install cargo-mutants --version ${VERSION} --locked`;
 
-test("S1/S13: with no Rust change against the base the check passes and does not start the tool", () => {
+test("No Rust change exits 0 without the tool / Unchanged branch is no Rust change: with no Rust change against the base the check passes and does not start the tool", () => {
   const cargo = tool();
   const untouched = mutants(repo(), cargo);
   const docsOnly = repo();
@@ -132,7 +132,7 @@ test("S1/S13: with no Rust change against the base the check passes and does not
   assert.deepEqual(calls(cargo), []);
 });
 
-test("S1: with no Rust change the check passes with no cargo on the PATH at all", () => {
+test("No Rust change exits 0 without the tool: with no Rust change the check passes with no cargo on the PATH at all", () => {
   const dir = repo();
   const run = spawnSync(process.execPath, [SCRIPT, "--base", "main"], { cwd: dir, encoding: "utf8", env: { PATH: onlyGit(), HOME: scratch() } });
 
@@ -140,7 +140,7 @@ test("S1: with no Rust change the check passes with no cargo on the PATH at all"
   assert.match(run.stderr, /no Rust change/);
 });
 
-test("S11: a Rust file outside core/, or another kind of file inside it, is no Rust change", () => {
+test("Changes outside core Rust files are no change: a Rust file outside core/, or another kind of file inside it, is no Rust change", () => {
   const cargo = tool();
   const dir = repo({ "scripts/x.rs": "fn a() {}\n", "core/Cargo.toml": "[workspace]\n" });
   commit(dir, { "scripts/x.rs": "fn b() {}\n", "core/Cargo.toml": "[workspace]\nresolver = \"3\"\n" });
@@ -149,7 +149,7 @@ test("S11: a Rust file outside core/, or another kind of file inside it, is no R
   assert.deepEqual(calls(cargo), []);
 });
 
-test("S2/S29: a run in which every mutant was caught passes and says how many", () => {
+test("Passing run exits 0 and prints the count / Zero mutants tested exits 0: a run in which every mutant was caught passes and says how many", () => {
   const three = mutants(changed(), tool({ exit: 0, files: { "caught.txt": ["a", "b", "c"], "missed.txt": [], "timeout.txt": [], "unviable.txt": ["d"] } }));
   const none = mutants(changed(), tool({ exit: 0 }));
 
@@ -161,14 +161,14 @@ test("S2/S29: a run in which every mutant was caught passes and says how many", 
   assert.equal(none.err.split("\n").at(-2), "mutants: 0 changes to the code tried, each one seen by a test");
 });
 
-test("S2: the tool's own progress goes to stderr", () => {
+test("Passing run exits 0 and prints the count: the tool's own progress goes to stderr", () => {
   const run = mutants(changed(), tool({ exit: 0 }));
 
   assert.match(run.err, /^progress line of the tool$/m);
   assert.equal(run.out, "");
 });
 
-test("S3/S28: a missed mutant fails the check with the report of the contract", () => {
+test("Missed mutants exit 1 with report / Single missed mutant uses singular summary: a missed mutant fails the check with the report of the contract", () => {
   const two = mutants(changed(), tool({ exit: 2, files: { "missed.txt": MISSED } }));
   const one = mutants(changed(), tool({ exit: 2, files: { "missed.txt": [MISSED[0]] } }));
 
@@ -181,7 +181,7 @@ test("S3/S28: a missed mutant fails the check with the report of the contract", 
   assert.match(one.err, /^✗ mutants: 1 change to the code that no test saw$/m);
 });
 
-test("S10: a time-out is listed with its suffix beside the missed mutants, and is no catch", () => {
+test("Timed-out mutant is reported as missed: a time-out is listed with its suffix beside the missed mutants, and is no catch", () => {
   const run = mutants(changed(), tool({ exit: 3, files: { "missed.txt": [MISSED[0]], "timeout.txt": [TIMED_OUT] } }));
 
   assert.equal(run.code, 1);
@@ -190,14 +190,14 @@ test("S10: a time-out is listed with its suffix beside the missed mutants, and i
   assert.match(run.err, /^ {7}a time-out is not a catch: add a test that fails fast, or exclude the mutant with its reason$/m);
 });
 
-test("S10: a time-out alone fails the check", () => {
+test("Timed-out mutant is reported as missed: a time-out alone fails the check", () => {
   const run = mutants(changed(), tool({ exit: 3, files: { "timeout.txt": [TIMED_OUT] } }));
 
   assert.equal(run.code, 1);
   assert.match(run.err, /^✗ mutants: 1 change to the code that no test saw$/m);
 });
 
-test("S12/S27: an exit code that says missed or timed out, with no such mutant in the result files, cannot be read", () => {
+test("Missing missed list exits 2 / Missing timeout list exits 2: an exit code that says missed or timed out, with no such mutant in the result files, cannot be read", () => {
   for (const plan of [{ exit: 2 }, { exit: 2, files: { "missed.txt": [] } }, { exit: 3 }, { exit: 3, files: { "timeout.txt": [], "missed.txt": [] } }]) {
     const run = mutants(changed(), tool(plan));
 
@@ -206,7 +206,7 @@ test("S12/S27: an exit code that says missed or timed out, with no such mutant i
   }
 });
 
-test("S4: the diff names paths from core/ and holds committed and uncommitted changes", () => {
+test("Diff paths are relative to core: the diff names paths from core/ and holds committed and uncommitted changes", () => {
   const cargo = tool();
   const dir = changed();
   write(dir, { [SOURCE]: "fn a() -> u8 {\n    2\n}\nfn later() {}\n" });
@@ -222,7 +222,7 @@ test("S4: the diff names paths from core/ and holds committed and uncommitted ch
   assert.equal(args[args.indexOf("--output") + 1], join(dir, "core"));
 });
 
-test("S38: the user's diff settings do not change the prefixes the tool needs", () => {
+test("Git config does not change the diff: the user's diff settings do not change the prefixes the tool needs", () => {
   for (const setting of ["diff.mnemonicPrefix", "diff.noprefix"]) {
     const cargo = tool();
     const dir = changed();
@@ -234,7 +234,7 @@ test("S38: the user's diff settings do not change the prefixes the tool needs", 
   }
 });
 
-test("S36: a new Rust file that git does not track is in the diff as a whole, and the index stays as it was", () => {
+test("Untracked Rust file counts as added: a new Rust file that git does not track is in the diff as a whole, and the index stays as it was", () => {
   const cargo = tool();
   const dir = repo({ ".gitignore": "core/ignored/\n" });
   write(dir, { "core/crates/x/src/new.rs": "fn one() {}\nfn two() {}\n" });
@@ -248,7 +248,7 @@ test("S36: a new Rust file that git does not track is in the diff as a whole, an
   assert.equal(git(dir, "status", "--porcelain"), before);
 });
 
-test("S36: an ignored new Rust file, or one outside core/, is no Rust change", () => {
+test("Untracked Rust file counts as added: an ignored new Rust file, or one outside core/, is no Rust change", () => {
   const cargo = tool();
   const dir = repo({ ".gitignore": "core/ignored/\n" });
   write(dir, { "core/ignored/new.rs": "fn one() {}\n", "scripts/new.rs": "fn one() {}\n" });
@@ -257,7 +257,7 @@ test("S36: an ignored new Rust file, or one outside core/, is no Rust change", (
   assert.deepEqual(calls(cargo), []);
 });
 
-test("S5/S30: --all starts the tool on the whole workspace, with a shard when one is named, and reads no base", () => {
+test("All and shard options reach the tool / All ignores the base: --all starts the tool on the whole workspace, with a shard when one is named, and reads no base", () => {
   const cargo = tool();
   const dir = repo();
   mutants(dir, cargo, ["--all"]);
@@ -271,7 +271,7 @@ test("S5/S30: --all starts the tool on the whole workspace, with a shard when on
   assert.deepEqual(given.map((args) => (args.includes("--shard") ? args[args.indexOf("--shard") + 1] : null)), [null, "3/8", null, null]);
 });
 
-test("S49: --file starts the tool on every mutant of one file, named from core/, and reads no base", () => {
+test("File option runs one file: --file starts the tool on every mutant of one file, named from core/, and reads no base", () => {
   const cargo = tool({ files: { "caught.txt": ["a"] } });
   const dir = repo();
   mutants(dir, cargo, ["--file", SOURCE]);
@@ -288,7 +288,7 @@ test("S49: --file starts the tool on every mutant of one file, named from core/,
   }
 });
 
-test("S50: --file with a path that is no Rust file of core/ cannot run, and the tool is not started", () => {
+test("File option rejects bad paths: --file with a path that is no Rust file of core/ cannot run, and the tool is not started", () => {
   const cargo = tool();
   const dir = repo({ "app/a.rs": "fn a() {}\n", "core/notes.md": "x\n" });
   for (const [path, why] of [["core/crates/x/src/gone.rs", "no such file"], ["app/a.rs", "not under core/"], ["core/notes.md", "not a Rust file"], ["core/crates/x/src", "not a Rust file"], ["core/crates/x/src/*.rs", "no such file"]]) {
@@ -301,7 +301,7 @@ test("S50: --file with a path that is no Rust file of core/ cannot run, and the 
   assert.deepEqual(calls(cargo), []);
 });
 
-test("S52: --file with a file in which the tool finds no mutant cannot run", () => {
+test("File with no mutant exits 2: --file with a file in which the tool finds no mutant cannot run", () => {
   const dir = repo({ "core/crates/x/tests/t.rs": "#[test]\nfn t() {}\n", "core/crates/x/src/a.rs.d/x.rs/keep": "" });
   const none = mutants(dir, tool({ exit: 0 }), ["--file", "core/crates/x/tests/t.rs"]);
   const onlyUnviable = mutants(dir, tool({ exit: 0, files: { "unviable.txt": ["a"] } }), ["--file", SOURCE]);
@@ -314,7 +314,7 @@ test("S52: --file with a file in which the tool finds no mutant cannot run", () 
   assert.match(directory.err, /not a Rust file/);
 });
 
-test("S51: --file does not go with --all or --shard, and --changed with it says true", () => {
+test("File option rejects bad combinations: --file does not go with --all or --shard, and --changed with it says true", () => {
   const cargo = tool();
   const dir = repo();
   for (const args of [["--file", SOURCE, "--all"], ["--all", "--file", SOURCE], ["--file"], ["--file", SOURCE, "--shard", "1/2"]]) {
@@ -329,7 +329,7 @@ test("S51: --file does not go with --all or --shard, and --changed with it says 
   assert.deepEqual(calls(cargo), []);
 });
 
-test("S6: the tool gets two jobs, or the number that was named", () => {
+test("Jobs option defaults to two: the tool gets two jobs, or the number that was named", () => {
   const cargo = tool();
   const dir = changed();
   mutants(dir, cargo);
@@ -338,7 +338,7 @@ test("S6: the tool gets two jobs, or the number that was named", () => {
   assert.deepEqual(calls(cargo).map(({ args }) => args[args.indexOf("--jobs") + 1]), ["2", "4"]);
 });
 
-test("S7: the tool gets a new empty home and no variable that is not on the list", () => {
+test("Tool environment is scrubbed except HOME: the tool gets a new empty home and no variable that is not on the list", () => {
   const cargo = tool();
   const leaks = { TARMAC_SOCKET: "/x/s", TARMAC_STATE: "/x/t", TARMAC_TERM_ID: "t1", TARMAC_CONFIG_DIR: "/x/c", TARMAC_DEV_SOCKET: "/x/d", CLAUDE_CONFIG_DIR: "/x/claude", ZDOTDIR: "/x/z", GITHUB_ACTION: "run", RUSTUP_TOOLCHAIN: "nightly", SOME_OTHER_NAME: "1" };
   const run = mutants(changed(), cargo, ["--base", "main"], { ...leaks, GITHUB_ACTIONS: "true", LANG: "en_US.UTF-8", TERM: "xterm", NO_COLOR: "1" });
@@ -354,7 +354,7 @@ test("S7: the tool gets a new empty home and no variable that is not on the list
   assert.deepEqual(Object.keys(env).filter((name) => !known.includes(name) && name !== "__CF_USER_TEXT_ENCODING"), []);
 });
 
-test("S8: cargo and rustup stay in the real home, or where the caller put them", () => {
+test("Cargo and rustup homes come from caller HOME: cargo and rustup stay in the real home, or where the caller put them", () => {
   const cargo = tool();
   const plain = mutants(changed(), cargo);
   mutants(changed(), cargo, ["--base", "main"], { CARGO_HOME: "/elsewhere/cargo", RUSTUP_HOME: "/elsewhere/rustup" });
@@ -364,7 +364,7 @@ test("S8: cargo and rustup stay in the real home, or where the caller put them",
   assert.deepEqual(second, ["/elsewhere/cargo", "/elsewhere/rustup"]);
 });
 
-test("S9: the temporary directory is gone after each outcome", () => {
+test("Temporary directory is removed after every run: the temporary directory is gone after each outcome", () => {
   for (const plan of [{ exit: 0 }, { exit: 2, files: { "missed.txt": MISSED } }, { exit: 4 }]) {
     const cargo = tool(plan);
     mutants(changed(), cargo);
@@ -375,7 +375,7 @@ test("S9: the temporary directory is gone after each outcome", () => {
   }
 });
 
-test("S14: with no cargo-mutants the check cannot run and gives the install command", () => {
+test("Missing tool exits 2 with install hint: with no cargo-mutants the check cannot run and gives the install command", () => {
   const cargo = tool({ version: null });
   const run = mutants(changed(), cargo);
 
@@ -386,7 +386,7 @@ test("S14: with no cargo-mutants the check cannot run and gives the install comm
   assert.deepEqual(calls(cargo), []);
 });
 
-test("S14: with no cargo at all the check cannot run", () => {
+test("Missing tool exits 2 with install hint: with no cargo at all the check cannot run", () => {
   const dir = changed();
   const run = spawnSync(process.execPath, [SCRIPT, "--base", "main"], { cwd: dir, encoding: "utf8", env: { PATH: onlyGit(), HOME: scratch() } });
 
@@ -394,7 +394,7 @@ test("S14: with no cargo at all the check cannot run", () => {
   assert.match(run.stderr, /^✗ mutants: cannot run cargo-mutants$/m);
 });
 
-test("S15: a tool of another version is refused before it is started on the tree", () => {
+test("Wrong tool version exits 2: a tool of another version is refused before it is started on the tree", () => {
   const cargo = tool({ version: "26.0.0" });
   const run = mutants(changed(), cargo);
 
@@ -404,7 +404,7 @@ test("S15: a tool of another version is refused before it is started on the tree
   assert.deepEqual(calls(cargo), []);
 });
 
-test("S16: a run the tool could not make is not a pass and not a finding", () => {
+test("Tool exit codes four to six exit 2: a run the tool could not make is not a pass and not a finding", () => {
   const said = (exit) => {
     const run = mutants(changed(), tool({ exit, files: { "missed.txt": MISSED } }));
     return [run.code, run.err.split("\n").find((line) => line.startsWith("✗ "))];
@@ -417,7 +417,7 @@ test("S16: a run the tool could not make is not a pass and not a finding", () =>
   assert.deepEqual(said(1), [2, "✗ mutants: cargo-mutants ended with exit code 1"]);
 });
 
-test("S17/S32: a base that names no commit, or shares no history, cannot be used, and is named", () => {
+test("Bad base or no repository exits 2 / Base with no merge base exits 2: a base that names no commit, or shares no history, cannot be used, and is named", () => {
   const cargo = tool();
   const dir = changed();
   git(dir, "checkout", "-q", "--orphan", "apart");
@@ -433,14 +433,14 @@ test("S17/S32: a base that names no commit, or shares no history, cannot be used
   assert.deepEqual(calls(cargo), []);
 });
 
-test("S17: outside a git repository the check cannot run", () => {
+test("Bad base or no repository exits 2: outside a git repository the check cannot run", () => {
   const run = mutants(scratch(), tool());
 
   assert.equal(run.code, 2);
   assert.match(run.err, /^✗ mutants: not in a git repository$/m);
 });
 
-test("S18/S31: arguments the check does not know end it with the usage, before the tool is started", () => {
+test("Unknown argument or lone shard exits 2 / Bad jobs or shard values exit 2: arguments the check does not know end it with the usage, before the tool is started", () => {
   const cargo = tool();
   const dir = changed();
   for (const args of [["--frobnicate"], ["--shard", "3/8"], ["--all", "--jobs", "0"], ["--all", "--jobs", "x"], ["--all", "--shard", "3"], ["--all", "--shard", "x/8"], ["--base"], ["--all", "--jobs"]]) {
@@ -452,7 +452,7 @@ test("S18/S31: arguments the check does not know end it with the usage, before t
   assert.deepEqual(calls(cargo), []);
 });
 
-test("S37: --report words a survivor, writes it to the job summary, and still passes; a run that could not be made does not", () => {
+test("Report option exits 0 and writes summary: --report words a survivor, writes it to the job summary, and still passes; a run that could not be made does not", () => {
   const dir = changed();
   const summary = join(scratch(), "summary.md");
   const survived = mutants(dir, tool({ exit: 2, files: { "missed.txt": MISSED } }), ["--base", "main", "--report"], { GITHUB_STEP_SUMMARY: summary });
@@ -464,7 +464,7 @@ test("S37: --report words a survivor, writes it to the job summary, and still pa
   assert.equal(broken.code, 2);
 });
 
-test("S37: without --report the job summary is not written", () => {
+test("Report option exits 0 and writes summary: without --report the job summary is not written", () => {
   const summary = join(scratch(), "summary.md");
   const run = mutants(changed(), tool({ exit: 2, files: { "missed.txt": MISSED } }), ["--base", "main"], { GITHUB_STEP_SUMMARY: summary });
 
@@ -472,7 +472,7 @@ test("S37: without --report the job summary is not written", () => {
   assert.equal(existsSync(summary), false);
 });
 
-test("S19: the config excludes the one function that sends a signal, each exclusion has its reason above it, and git ignores the tool's output", () => {
+test("Config excludes kill and is explained: the config excludes the one function that sends a signal, each exclusion has its reason above it, and git ignores the tool's output", () => {
   const lines = readFileSync(join(ROOT, "core/.cargo/mutants.toml"), "utf8").trimEnd().split("\n").map((line) => line.trim());
   const isEntry = (line) => /^"(?:[^"\\]|\\.)*",$/.test(line);
   const isReason = (line) => /^# \S/.test(line);
@@ -488,7 +488,7 @@ test("S19: the config excludes the one function that sends a signal, each exclus
   assert.ok(readFileSync(join(ROOT, ".gitignore"), "utf8").split("\n").includes("/core/mutants.out*/"));
 });
 
-test("S20: the workflow pins the script's version, runs on every pull request, and shards the weekly run", () => {
+test("Workflow matches pinned version and runs always: the workflow pins the script's version, runs on every pull request, and shards the weekly run", () => {
   const workflow = readFileSync(join(ROOT, ".github/workflows/mutants.yml"), "utf8");
   const [, triggers, jobs] = workflow.match(/^on:\n([\s\S]*?)^permissions:[\s\S]*?^jobs:\n([\s\S]*)$/m);
   const [, gateJob, diffJob, allJob] = jobs.match(/^ {2}rust-changed:\n([\s\S]*?)^ {2}in-diff:\n([\s\S]*?)^ {2}all:\n([\s\S]*)$/m);
@@ -506,7 +506,7 @@ test("S20: the workflow pins the script's version, runs on every pull request, a
   assert.match(allJob, /run: make mutants ALL=1 REPORT=1 SHARD=\$\{\{ matrix\.shard \}\}\/8$/m);
 });
 
-test("S21: make mutants hands its variables to the script as arguments", () => {
+test("Make variables map to script options: make mutants hands its variables to the script as arguments", () => {
   const said = (...vars) => execFileSync("make", ["-n", "mutants", ...vars], { cwd: ROOT, encoding: "utf8" }).trim().split("scripts/check/mutants.mjs ")[1].replace(/\s+/g, " ");
 
   assert.equal(said(), "--base origin/main");
@@ -515,7 +515,7 @@ test("S21: make mutants hands its variables to the script as arguments", () => {
   assert.equal(said("FILE=core/crates/x/src/a.rs"), "--base origin/main --file core/crates/x/src/a.rs");
 });
 
-test("S29: the result files of an earlier run are not read as this run's", () => {
+test("Zero mutants tested exits 0: the result files of an earlier run are not read as this run's", () => {
   const dir = changed();
   write(dir, { "core/mutants.out/caught.txt": "old one\nold two\n", "core/mutants.out/missed.txt": "old survivor\n" });
   const run = mutants(dir, tool({ exit: 0 }));
@@ -524,7 +524,7 @@ test("S29: the result files of an earlier run are not read as this run's", () =>
   assert.equal(run.err.split("\n").at(-2), "mutants: 0 changes to the code tried, each one seen by a test");
 });
 
-test("S42: a git command that fails is not read as no Rust change", () => {
+test("Failed git command exits 2: a git command that fails is not read as no Rust change", () => {
   const cargo = tool();
   const dir = changed();
   const broken = scratch("mutants-git-");
@@ -538,7 +538,7 @@ test("S42: a git command that fails is not read as no Rust change", () => {
   assert.deepEqual(calls(cargo), []);
 });
 
-test("S43: the changes are those since the branch left the base, not those against the base as it is now", () => {
+test("Diff holds only changes since merge base: the changes are those since the branch left the base, not those against the base as it is now", () => {
   const cargo = tool();
   const dir = changed();
   git(dir, "checkout", "-q", "main");
@@ -549,7 +549,7 @@ test("S43: the changes are those since the branch left the base, not those again
   assert.doesNotMatch(calls(cargo)[0].diff, /only_on_main/);
 });
 
-test("S12/S27: the result file that the exit code points at decides, not the other one", () => {
+test("Missing missed list exits 2 / Missing timeout list exits 2: the result file that the exit code points at decides, not the other one", () => {
   const missedButTimeoutCode = mutants(changed(), tool({ exit: 3, files: { "missed.txt": MISSED, "timeout.txt": [] } }));
   const timedOutButMissedCode = mutants(changed(), tool({ exit: 2, files: { "missed.txt": [], "timeout.txt": [TIMED_OUT] } }));
 
@@ -557,14 +557,14 @@ test("S12/S27: the result file that the exit code points at decides, not the oth
   assert.equal(timedOutButMissedCode.code, 2);
 });
 
-test("S37: --report with no job summary to write still words the survivor and passes", () => {
+test("Report option exits 0 and writes summary: --report with no job summary to write still words the survivor and passes", () => {
   const run = mutants(changed(), tool({ exit: 2, files: { "missed.txt": MISSED } }), ["--base", "main", "--report"]);
 
   assert.equal(run.code, 0);
   assert.deepEqual(atRows(run.err), MISSED);
 });
 
-test("S44: with no --base the base is origin/main", () => {
+test("Default base is origin main: with no --base the base is origin/main", () => {
   const cargo = tool();
   const dir = changed();
   const noSuchRef = mutants(dir, cargo, []);
@@ -576,7 +576,7 @@ test("S44: with no --base the base is origin/main", () => {
   assert.equal(calls(cargo).length, 1);
 });
 
-test("S7: each name on the list reaches the tool with the caller's value", () => {
+test("Tool environment is scrubbed except HOME: each name on the list reaches the tool with the caller's value", () => {
   const cargo = tool();
   const passed = { LANG: "a", LC_ALL: "b", TERM: "c", USER: "d", LOGNAME: "e", SHELL: "f", CARGO_TERM_COLOR: "g", NO_COLOR: "h", CI: "i", GITHUB_ACTIONS: "j", RUNNER_OS: "k", RUNNER_TEMP: "l" };
   mutants(changed(), cargo, ["--base", "main"], passed);
@@ -586,7 +586,7 @@ test("S7: each name on the list reaches the tool with the caller's value", () =>
   assert.equal(env.TMPDIR, tmpdir());
 });
 
-test("S45: with no HOME of the caller the check cannot place cargo and rustup, and does not start the tool", () => {
+test("Missing HOME exits 2 unless homes are named: with no HOME of the caller the check cannot place cargo and rustup, and does not start the tool", () => {
   const cargo = tool();
   const dir = changed();
   const run = spawnSync(process.execPath, [SCRIPT, "--base", "main"], { cwd: dir, encoding: "utf8", env: { PATH: [cargo, process.env.PATH].join(delimiter) } });
@@ -596,7 +596,7 @@ test("S45: with no HOME of the caller the check cannot place cargo and rustup, a
   assert.deepEqual(calls(cargo), []);
 });
 
-test("S45: with CARGO_HOME and RUSTUP_HOME named, no HOME is needed", () => {
+test("Missing HOME exits 2 unless homes are named: with CARGO_HOME and RUSTUP_HOME named, no HOME is needed", () => {
   const cargo = tool();
   const dir = changed();
   const run = spawnSync(process.execPath, [SCRIPT, "--base", "main"], { cwd: dir, encoding: "utf8", env: { PATH: [cargo, process.env.PATH].join(delimiter), CARGO_HOME: "/elsewhere/cargo", RUSTUP_HOME: "/elsewhere/rustup" } });
@@ -604,7 +604,7 @@ test("S45: with CARGO_HOME and RUSTUP_HOME named, no HOME is needed", () => {
   assert.equal(run.status, 0);
 });
 
-test("S46: a repository with no core/ directory is named as that", () => {
+test("Missing core directory exits 2: a repository with no core/ directory is named as that", () => {
   const dir = scratch();
   write(dir, { "README.md": "x\n" });
   git(dir, "init", "-q", "-b", "main");
@@ -614,7 +614,7 @@ test("S46: a repository with no core/ directory is named as that", () => {
   assert.equal(said(["--all"]), "✗ mutants: this repository has no core/ directory");
 });
 
-test("S47: a failure of the check itself is cannot run, not a finding", () => {
+test("Internal failure exits 2: a failure of the check itself is cannot run, not a finding", () => {
   const dir = changed();
   const run = mutants(dir, tool({ exit: 2, files: { "missed.txt": MISSED } }), ["--base", "main", "--report"], { GITHUB_STEP_SUMMARY: join(dir, "no-such-directory/summary.md") });
 
@@ -622,7 +622,7 @@ test("S47: a failure of the check itself is cannot run, not a finding", () => {
   assert.match(run.err, /^✗ mutants: the check itself failed$/m);
 });
 
-test("S36: an untracked file of another kind is no Rust change", () => {
+test("Untracked Rust file counts as added: an untracked file of another kind is no Rust change", () => {
   const cargo = tool();
   const dir = repo();
   write(dir, { "core/notes.md": "x\n" });
@@ -631,7 +631,7 @@ test("S36: an untracked file of another kind is no Rust change", () => {
   assert.deepEqual(calls(cargo), []);
 });
 
-test("S38: an external diff program, colour and quoted paths in the user's git config do not reach the diff", () => {
+test("Git config does not change the diff: an external diff program, colour and quoted paths in the user's git config do not reach the diff", () => {
   const cargo = tool();
   const dir = changed();
   git(dir, "config", "diff.external", "false");
@@ -645,7 +645,7 @@ test("S38: an external diff program, colour and quoted paths in the user's git c
   assert.match(diff, /^\+\+\+ b\/crates\/x\/src\/naïve é\.rs\t?$/m);
 });
 
-test("S22: the three documents name the command, and the workflow document its CI job", () => {
+test("Docs describe make mutants: the three documents name the command, and the workflow document its CI job", () => {
   const read = (path) => readFileSync(join(ROOT, path), "utf8");
   const claude = read("CLAUDE.md").split("\n## ").find((section) => section.startsWith("Build, run, test"));
 
@@ -656,13 +656,13 @@ test("S22: the three documents name the command, and the workflow document its C
   assert.match(read("CONTRIBUTING.md"), new RegExp(`\`cargo-mutants\` ${VERSION.replaceAll(".", "\\.")}`));
 });
 
-test("S20: a weekly run is not cancelled by another event on the same branch", () => {
+test("Workflow matches pinned version and runs always: a weekly run is not cancelled by another event on the same branch", () => {
   const workflow = readFileSync(join(ROOT, ".github/workflows/mutants.yml"), "utf8");
 
   assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
 });
 
-test("S48: --changed answers on stdout whether a run would start the tool, and starts nothing", () => {
+test("Changed option prints true or false: --changed answers on stdout whether a run would start the tool, and starts nothing", () => {
   const cargo = tool();
   const said = (dir, args = ["--base", "main", "--changed"]) => {
     const run = mutants(dir, cargo, args);
@@ -679,7 +679,7 @@ test("S48: --changed answers on stdout whether a run would start the tool, and s
   assert.deepEqual(calls(cargo), []);
 });
 
-test("S48: a Linux job asks whether there is a Rust change; the macOS job is skipped only on a clear no (#546)", () => {
+test("Changed option prints true or false: a Linux job asks whether there is a Rust change; the macOS job is skipped only on a clear no (#546)", () => {
   const workflow = readFileSync(join(ROOT, ".github/workflows/mutants.yml"), "utf8");
   const [, gateJob, diffJob] = workflow.match(/^ {2}rust-changed:\n([\s\S]*?)^ {2}in-diff:\n([\s\S]*?)^ {2}all:\n/m);
   const check = diffJob.split(/^ {6}- /m).find((step) => /run: make mutants/.test(step));
@@ -704,7 +704,7 @@ function gitFailingOn(word, code) {
   return bin;
 }
 
-test("S42: a failed listing of the untracked files, or an untracked file that cannot be read, is not no Rust change", () => {
+test("Failed git command exits 2: a failed listing of the untracked files, or an untracked file that cannot be read, is not no Rust change", () => {
   const cargo = tool();
   const listing = mutants(changed(), cargo, ["--base", "main"], { PATH: [gitFailingOn("ls-files", 128), cargo, process.env.PATH].join(delimiter) });
   const unreadable = repo();
@@ -726,7 +726,7 @@ function changedUntracked() {
   return dir;
 }
 
-test("S38: the diff of an untracked file has the same prefixes, whatever the user's settings", () => {
+test("Git config does not change the diff: the diff of an untracked file has the same prefixes, whatever the user's settings", () => {
   for (const setting of ["diff.mnemonicPrefix", "diff.noprefix"]) {
     const cargo = tool();
     const dir = changedUntracked();
@@ -737,7 +737,7 @@ test("S38: the diff of an untracked file has the same prefixes, whatever the use
   }
 });
 
-test("S38: a text conversion in the user's git config does not reach the diff", () => {
+test("Git config does not change the diff: a text conversion in the user's git config does not reach the diff", () => {
   const cargo = tool();
   const dir = changed();
   write(dir, { ".gitattributes": "*.rs diff=shout\n", [SOURCE]: "fn a() -> u8 {\n    5\n}\nfn quiet() {}\n" });
@@ -747,7 +747,7 @@ test("S38: a text conversion in the user's git config does not reach the diff", 
   assert.match(calls(cargo)[0].diff, /^\+fn quiet\(\) \{\}$/m);
 });
 
-test("S9: nothing is left in the temp directory when the check stops before the tool is started", () => {
+test("Temporary directory is removed after every run: nothing is left in the temp directory when the check stops before the tool is started", () => {
   const left = (plan, env = {}) => {
     const temp = scratch("mutants-tmp-");
     const run = mutants(changed(), tool(plan), ["--base", "main"], { TMPDIR: temp, ...env });
@@ -759,13 +759,13 @@ test("S9: nothing is left in the temp directory when the check stops before the 
   assert.deepEqual(left({ exit: 0 }), [0, []]);
 });
 
-test("S2: one caught mutant is one change", () => {
+test("Passing run exits 0 and prints the count: one caught mutant is one change", () => {
   const run = mutants(changed(), tool({ exit: 0, files: { "caught.txt": ["a"] } }));
 
   assert.equal(run.err.split("\n").at(-2), "mutants: 1 change to the code tried, and a test saw it");
 });
 
-test("S16: a tool that a signal ended is named as that", () => {
+test("Tool exit codes four to six exit 2: a tool that a signal ended is named as that", () => {
   const cargo = tool({ signal: "SIGKILL" });
   const run = mutants(changed(), cargo);
 
@@ -773,7 +773,7 @@ test("S16: a tool that a signal ended is named as that", () => {
   assert.match(run.err, /^✗ mutants: cargo-mutants was ended by SIGKILL$/m);
 });
 
-test("S38: a Rust file that git takes for binary still gives its changed lines", () => {
+test("Git config does not change the diff: a Rust file that git takes for binary still gives its changed lines", () => {
   const cargo = tool();
   const dir = changed();
   write(dir, { ".git/info/attributes": "*.rs -diff\n", [SOURCE]: "fn a() -> u8 {\n    6\n}\n", "core/crates/x/src/nul.rs": "fn with_nul() {} // \0\n" });
@@ -785,14 +785,14 @@ test("S38: a Rust file that git takes for binary still gives its changed lines",
   assert.doesNotMatch(diff, /^Binary files /m);
 });
 
-test("S21: a variable of the same name in the environment does not change what make mutants runs", () => {
+test("Make variables map to script options: a variable of the same name in the environment does not change what make mutants runs", () => {
   const env = { ...process.env, ALL: "1", SHARD: "3/8", JOBS: "9", REPORT: "1" };
   const said = execFileSync("make", ["-n", "mutants"], { cwd: ROOT, encoding: "utf8", env }).trim().split("scripts/check/mutants.mjs ")[1];
 
   assert.equal(said, "--base origin/main");
 });
 
-test("S47: a failure of the check itself names the error, and make mutants as the next command", () => {
+test("Internal failure exits 2: a failure of the check itself names the error, and make mutants as the next command", () => {
   const dir = changed();
   const run = mutants(dir, tool({ exit: 2, files: { "missed.txt": MISSED } }), ["--base", "main", "--report"], { GITHUB_STEP_SUMMARY: join(dir, "no-such-directory/summary.md") });
 

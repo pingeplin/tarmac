@@ -26,13 +26,13 @@ for (const subject of [
   'Revert "fix: y"',
   ...TYPES.map((type) => `${type}: x`),
 ]) {
-  test(`S12: "${subject}" with a sign-off passes`, () => {
+  test(`Commit message hook checks subject and sign-off: "${subject}" with a sign-off passes`, () => {
     assert.equal(judge(signed(subject), [ME]), "");
   });
 }
 
 for (const subject of ["fix the thing", "Fix(board): x", "fix(board) x", "fix: ", "fix(board):x", "ci: probe", "fix(): x", "fix(a b): x", "Revert x", "Merged it", "fixup!fix: y", ""]) {
-  test(`S12: "${subject}" is not a subject`, () => {
+  test(`Commit message hook checks subject and sign-off: "${subject}" is not a subject`, () => {
     const report = judge(signed(subject), [ME]);
 
     assert.equal(firstLine(report), "✗ commit-msg: the subject is not `type(scope): summary`");
@@ -41,7 +41,7 @@ for (const subject of ["fix the thing", "Fix(board): x", "fix(board) x", "fix: "
   });
 }
 
-test("S12: a merge needs no sign-off; every other message does, whatever its subject", () => {
+test("Commit message hook checks subject and sign-off: a merge needs no sign-off; every other message does, whatever its subject", () => {
   assert.equal(judge("Merge branch 'main' into x\n", [ME], true), "");
   assert.equal(firstLine(judge("Merge branch 'main' into x\n", [ME])), "✗ commit-msg: the message has no Signed-off-by line");
   assert.equal(firstLine(judge("fix: y\n\nA body.\n", [ME])), "✗ commit-msg: the message has no Signed-off-by line");
@@ -65,7 +65,7 @@ test("a sign-off counts only as a line of its own, from the first column", () =>
   assert.notEqual(judge(`fix: y\n\n  Signed-off-by: Me <${ME}>\n`, [ME]), "");
 });
 
-test("S27: comment lines are not the message", () => {
+test("Commit message hook skips comment lines: comment lines are not the message", () => {
   assert.equal(judge(`# Please enter the commit message\n\n${signed("fix: y")}`, [ME]), "");
   assert.equal(firstLine(judge("# only\n# comments\n", [ME])), "✗ commit-msg: the subject is not `type(scope): summary`");
   assert.equal(firstLine(judge(`fix: y\n\n# Signed-off-by: Me <${ME}>\n`, [ME])), "✗ commit-msg: the message has no Signed-off-by line");
@@ -93,7 +93,7 @@ test("the script reads the message file and the identity git would commit with",
   assert.deepEqual([merge.status, merge.stderr], [0, ""]);
 });
 
-test("S20: the types in CLAUDE.md are the types the script accepts", () => {
+test("Docs name the six hooks and no verify: the types in CLAUDE.md are the types the script accepts", () => {
   const doc = readFileSync(join(import.meta.dirname, "../../CLAUDE.md"), "utf8");
   const line = doc.split("\n").find((text) => text.includes("Commits: Conventional Commits"));
   const named = [...line.matchAll(/`([a-z]+):?`/g)].map(([, type]) => type).filter((type) => type !== "type");

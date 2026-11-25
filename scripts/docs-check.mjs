@@ -128,7 +128,7 @@ export function docsCheck(root = ROOT, argv = process.argv) {
   // CamelCase; protocol.md names the on-wire snake_case "t" tag. A message that
   // ships without landing in both is invisible to anyone reading the docs.
   //
-  // This rule is also what discharges spec 2609.0015's S49: the QA driver's
+  // This rule is also what discharges spec 2609.0015's "Docs check passes without new Msg row": the QA driver's
   // `DevRequest` is a separate enum on a separate socket, deliberately NOT a `Msg`
   // variant, so this rule finds nothing new and the V1-V17 conformance vectors stay
   // untouched. Make it a `Msg` variant and this rule fails until both docs and the

@@ -457,9 +457,9 @@ window and re-run. D18 zooms to 0.3 so its borrowing double-click can take the
 same path; that is printed (`focus d18.html → window`), not required.
 
 ```sh
-make qa-quit CASE=hold      # S15: a 2 s hold hides the window, then quits on release
-make qa-quit CASE=double    # S16: two taps within 1 s quit
-make qa-quit CASE=stale     # S17: a press stamped 2.5 s old quits at once
+make qa-quit CASE=hold      # "Held Cmd-Q hides windows then quits": a 2 s hold hides the window, then quits on release
+make qa-quit CASE=double    # "Two quick Cmd-Q taps quit on release": two taps within 1 s quit
+make qa-quit CASE=stale     # "Stale Cmd-Q press quits at once": a press stamped 2.5 s old quits at once
 ```
 
 `scripts/qa/quit.mjs` holds the three scenarios that **end the app**. One
@@ -477,7 +477,7 @@ make run SHELL_GATE=1                # then, with no relaunch:
 make qa-resume CASE=before-output
 ```
 
-`scripts/qa/resume.mjs` (specs 2611.0011 S37 and 2611.0015) kills the dev
+`scripts/qa/resume.mjs` (specs 2611.0011 "QA runner drives the stand-in scenario" and 2611.0015) kills the dev
 daemon by the pid that holds its socket, so every dev terminal ends.
 `CASE=reopen` (the default; `qa-quit`'s `CASE ?= hold` is not inherited)
 reopens four dead cards and drives the resume panel's keys and clicks, the
