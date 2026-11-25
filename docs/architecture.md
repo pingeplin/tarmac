@@ -773,13 +773,14 @@ directory with an out call of the gate (`PathGate::is_out_dir`: the
 directory itself or a file in it) is not asked of notify; it waits in the
 thread's `retry` set, and the gate's `returned` sends the thread `Retry`,
 which reconciles each such directory again. A directory whose `unwatch`
-fails still leaves the set: notify takes the path out of the stream before it
-can fail, so keeping it would mean it is never watched again. A directory
-whose `watch` fails is unwatched again at once: notify 9 can fail a watch
-after taking the path into the stream, which then does not start again
-(over its FSEvents path budget, a twelfth of the soft `RLIMIT_NOFILE`, or when
-FSEvents does not create or start the stream), and a directory not in the
-set is never unwatched. If the thread panics, it logs an error and is not
+fails still leaves the set: with the daemon's one watcher and a soft
+`RLIMIT_NOFILE` that it only raises, notify takes the path out of the stream
+before it can fail, so keeping it would mean it is never watched again. A
+directory whose `watch` fails is unwatched again at once: notify 9 can fail a
+watch after taking the path into the stream, when FSEvents does not create or
+start the new stream, and a directory not in the set is never unwatched. A
+watch over notify's FSEvents path budget (a twelfth of the soft
+`RLIMIT_NOFILE`) fails with the path taken back and the stream left running. If the thread panics, it logs an error and is not
 restarted; every open that needs a new watch then fails at its limit.
 
 Every open sends `Reconcile`. Only the first doc of a directory waits for

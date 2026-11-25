@@ -242,9 +242,9 @@ impl<W: Fn(&Path) -> bool, O: Fn(&Path) -> bool, F: Fn()> Thread<W, O, F> {
                 self.watched.insert(dir.to_owned());
             } else {
                 // notify 9 can fail a watch after taking the dir into its
-                // stream, which then does not start again
-                // (`FsEventWatcher::watch_inner`); a dir not kept here is
-                // never unwatched, so the watch is taken back.
+                // stream, when FSEvents does not create or start the new
+                // stream (`FsEventWatcher::watch_inner`); a dir not kept here
+                // is never unwatched, so the watch is taken back.
                 if let Err(e) = self.source.unwatch(dir)
                     && !is_watch_not_found(&e)
                 {
@@ -253,10 +253,11 @@ impl<W: Fn(&Path) -> bool, O: Fn(&Path) -> bool, F: Fn()> Thread<W, O, F> {
             }
             ("watch", called)
         } else {
-            // notify 9 fails an unwatch only when the dir was not in its
-            // stream or after taking it out (`FsEventWatcher::unwatch_inner`),
-            // so a failed one counts as done: a dir kept here would never be
-            // watched again.
+            // With one watcher and a soft `RLIMIT_NOFILE` that never drops
+            // (`fd_limit::raise`), notify 9 fails an unwatch only when the dir
+            // was not in its stream or after taking it out
+            // (`FsEventWatcher::unwatch_inner`), so a failed one counts as
+            // done: a dir kept here would never be watched again.
             self.watched.remove(dir);
             ("unwatch", self.source.unwatch(dir))
         };
