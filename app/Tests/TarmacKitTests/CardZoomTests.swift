@@ -6,7 +6,7 @@ import XCTest
 /// HTML-card zoom geometry and the wheel's travel in a document's units:
 /// specs 2607.0004 "Iframe size rounds frame times zoom" (the settled real-px box), 2607.0006 (the frozen
 /// magnification), 2609.0013 (whole-unit steps with a carry) and 2610.0002
-/// (the wheel scale). Scenario ids are per spec and collide.
+/// (the wheel scale). Scenario titles are per spec.
 final class CardZoomTests: XCTestCase {
     // MARK: - magnifyK never upsamples (2607.0006)
 

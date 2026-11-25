@@ -220,7 +220,7 @@ final class DevKeyComboTests: XCTestCase {
         }
     }
 
-    // MARK: - S14 refusals with a reason
+    // MARK: - "Cmd-C and Cmd-V combos are unsupported", "Bare printable combo is unsupported": refusals with a reason
 
     /// "Bare printable combo is unsupported".
     func testABarePrintableIsRefusedWithTypeAsTheRemedy() {
