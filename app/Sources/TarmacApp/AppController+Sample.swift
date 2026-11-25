@@ -37,12 +37,12 @@ extension AppController {
                     sample.cardsHTML += 1
                     let peak = html.takePendingPeak()
                     sample.pending.append(
-                        SampleLine.Pending(path: path, largest: peak.largest, timesOver: peak.timesOver))
+                        SampleLine.Pending(path: path.string, largest: peak.largest, timesOver: peak.timesOver))
                 } else {
                     sample.cardsMarkdown += 1
                 }
                 if let pid = card.docBody?.webProcessID {
-                    sample.webContent.append(SampleLine.WebContent(pid: pid, path: path, footprint: nil))
+                    sample.webContent.append(SampleLine.WebContent(pid: pid, path: path.string, footprint: nil))
                 }
             }
         }

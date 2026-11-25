@@ -148,7 +148,7 @@
                 // An HTML card's console can hold a selection, and so the keys,
                 // without its document having them.
                 let holds = card.htmlBody.map { $0.documentHoldsKeys(view) } ?? view.isDescendant(of: card)
-                if holds { return .doc(path: path) }
+                if holds { return .doc(path: path.string) }
             }
             return nil
         }
@@ -192,7 +192,7 @@
         init(_ ref: DevSnapshot.CardRef) {
             switch ref.kind {
             case .term: self = .term(ref.id)
-            case .doc: self = .doc(ref.id)
+            case .doc: self = .doc(DocPath(ref.id))
             }
         }
 
@@ -200,7 +200,7 @@
         var wireRef: DevSnapshot.CardRef {
             switch self {
             case .term(let termID): DevSnapshot.CardRef(kind: .term, id: termID)
-            case .doc(let path): DevSnapshot.CardRef(kind: .doc, id: path)
+            case .doc(let path): DevSnapshot.CardRef(kind: .doc, id: path.string)
             }
         }
 

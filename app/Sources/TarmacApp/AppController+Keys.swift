@@ -225,7 +225,7 @@ extension AppController {
         case .noop:
             break
         case .closeDoc:
-            if case .doc(let path)? = focusedCardID { closeDocCard(path) }
+            if case .doc(let path)? = focusedCardID { closeDocCard(path.string) }
         case .closeTerminal(let replace):
             if case .term(let termID)? = focusedCardID {
                 closeTerminal(termID, replace: replace)

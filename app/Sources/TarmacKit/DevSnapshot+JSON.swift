@@ -86,12 +86,12 @@ extension DevSnapshot {
             "kind": .string(card.kind.rawValue),
             "board_rect": rect(card.frame),
             "screen_rect": card.screenRect.map(rect) ?? .null,
-            "focused": .bool(card.id == input.selectedCard),
+            "focused": .bool(DocPath(card.id) == input.selectedCard.map(DocPath.init)),
             "scroll": card.scroll.map(scroll) ?? .null,
         ]
         switch card.content {
         case .doc:
-            fields["borrowed"] = .bool(card.id == input.borrowedCard)
+            fields["borrowed"] = .bool(DocPath(card.id) == input.borrowedCard.map(DocPath.init))
         case .term(let terminal):
             var term: [String: JSONValue] = [
                 "alive": .bool(terminal.live && !terminal.dead),

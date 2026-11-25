@@ -268,4 +268,27 @@ final class BoardRestoreTests: XCTestCase {
         )
         XCTAssertEqual(restored.droppedDocPaths, ["/gone.md"])
     }
+
+    // MARK: - two forms of one name (spec 2611.0034)
+
+    private let nfc = "/v/\u{e9}/a.md"
+    private let nfd = "/v/e\u{301}/a.md"
+
+    func testRestorePlanJoinsATileOnlyToItsOwnForm() {
+        let restored = plan(
+            [termTile("A"), termTile("B"), docTile(nfc), docTile(nfd)],
+            docs: [registered(nfc, owner: "A"), registered(nfd, owner: "B")], live: ["A", "B"]
+        )
+        let owner = { (path: String) in
+            restored.docs.first { Array($0.path.utf8) == Array(path.utf8) }?.ownerTermID
+        }
+        XCTAssertEqual(owner(nfc), "A")
+        XCTAssertEqual(owner(nfd), "B")
+    }
+
+    func testRestorePlanDropsATileWithNoDocOfItsForm() {
+        let restored = plan([docTile(nfd)], docs: [registered(nfc)])
+        XCTAssertEqual(restored.droppedDocPaths.map { Array($0.utf8) }, [Array(nfd.utf8)])
+        XCTAssertTrue(restored.docs.isEmpty)
+    }
 }

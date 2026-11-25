@@ -3,10 +3,10 @@ import Foundation
 import TarmacKit
 
 /// A card's identity on a board: a terminal card by its daemon `term_id`, a
-/// doc card by its registry path.
+/// doc card by its registry path, compared as bytes (spec 2611.0034).
 enum CardID: Hashable {
     case term(String)
-    case doc(String)
+    case doc(DocPath)
 }
 
 /// Where a card is in the world: `x,y,w,h` in world units and `z` for

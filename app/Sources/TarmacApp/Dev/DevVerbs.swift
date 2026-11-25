@@ -233,7 +233,7 @@
         }
 
         private func docBody(_ path: String) throws -> any DocCardBody {
-            guard let body = board.card(.doc(path))?.docBody else {
+            guard let body = board.card(.doc(DocPath(path)))?.docBody else {
                 throw DevError(.driverThrew, "no document behind \(path)")
             }
             return body
@@ -378,7 +378,7 @@
         // MARK: - targets
 
         private func cardView(_ id: String) throws -> CardView {
-            guard let card = board.cards.values.first(where: { $0.id.wireID == id }) else {
+            guard let card = board.cards.values.first(where: { DocPath($0.id.wireID) == DocPath(id) }) else {
                 throw DevError(.driverThrew, "card \(id) left the board mid-verb")
             }
             return card

@@ -20,6 +20,8 @@
 // D22 (#315) switches boards with `board` and makes one with `board --new`.
 // "QA smoke run inbox jump" (spec 2611.0013, #364) opens the inbox with ⌘I, jumps to a report on
 // another board with ↵, and closes the panel with escape (`press` plain keys).
+// "Recreated name in the other form shows a second card" (spec 2611.0034, #314)
+// opens an NFC name, makes the file again under the NFD name and opens it again.
 // The cases that END the app are `make qa-quit` (`quit.mjs`).
 //
 // Every scenario that types mints its OWN sentinel from a per-run nonce, and the
@@ -30,7 +32,7 @@
 // Run:  make qa          (pins TARMAC_DEV_SOCKET and TARMAC_SOCKET to this worktree's .dev/)
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   ROOT,
@@ -630,6 +632,31 @@ async function main() {
     dev("press", "escape");
     const closed = waitFor(term, "inbox.open == false");
     eq(closed.active_element.card, term, "escape gave the keys back to the first board's terminal");
+  });
+
+  console.log("\nRecreated name in the other form shows a second card (2611.0034, #314)");
+  check("the snapshot lists one doc card for the NFC bytes and one for the NFD bytes", () => {
+    reset(term);
+    const dir = resolve(FIXTURES, `forms-${NONCE}`);
+    mkdirSync(dir, { recursive: true });
+    const nfc = `${realpathSync(dir)}/caf\u00e9.md`;
+    const nfd = `${realpathSync(dir)}/cafe\u0301.md`;
+    writeFileSync(nfc, "# NFC\n");
+    openFixture(nfc);
+    unlinkSync(nfc);
+    writeFileSync(nfd, "# NFD\n");
+    open(nfd);
+    // `cards[<id>]` compares an id by its scalars, so this waits for the NFD card.
+    const snap = waitFor(null, `cards[${nfd}].screen_rect != null`, "--timeout", "3000");
+    const bytes = (id) => Buffer.from(id, "utf8");
+    const docs = snap.cards.filter((c) => c.kind === "doc");
+    for (const [name, path] of [["NFC", nfc], ["NFD", nfd]]) {
+      const same = docs.filter((c) => bytes(c.id).equals(bytes(path)));
+      eq(same.length, 1, `doc cards with the ${name} bytes ${bytes(path).toString("hex")}`);
+    }
+    // The refresh of both cards is a hand check: a write here could land before
+    // either card first loads, and then shows nothing about a refresh.
+    console.log(`    by hand: edit ${nfd}, then capture the dev window; both cards must show the edit`);
   });
 
   run.finish();

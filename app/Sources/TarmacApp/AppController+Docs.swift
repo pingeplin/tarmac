@@ -12,9 +12,9 @@ extension AppController {
     func handleDocOpened(_ doc: RestoreDoc) {
         let board = doc.termID.flatMap { ownerBoard(ofTerm: $0) } ?? activeBoard
         let path = doc.path
-        let existing = board.view.card(.doc(path))
+        let existing = board.view.card(.doc(DocPath(path)))
         board.store.applyDocOpened(doc)
-        board.docOwner[path] = DocLanding.owner(opened: doc.termID, current: board.docOwner[path])
+        board.docOwner[DocPath(path)] = DocLanding.owner(opened: doc.termID, current: board.docOwner[DocPath(path)])
 
         switch DocLanding.decide(
             onBoard: existing != nil, via: doc.via, termID: doc.termID, wasFresh: existing?.fresh ?? false
@@ -39,7 +39,7 @@ extension AppController {
         path: String, frame: CardFrame, attached: Bool, fresh: Bool, sidebar: DocSidebar.Stored = DocSidebar.Stored(),
         on board: Board
     ) -> CardView {
-        let card = board.view.addCard(id: .doc(path), worldFrame: frame)
+        let card = board.view.addCard(id: .doc(DocPath(path)), worldFrame: frame)
         card.docSidebar = sidebar
         card.attached = attached
         card.setFresh(fresh)
@@ -70,14 +70,14 @@ extension AppController {
     /// terminal that opened it.
     private func bind(_ card: CardView, path: String, on board: Board) {
         if let doc = board.store.doc(for: path) { card.apply(doc: doc) }
-        card.ownerTermID = board.docOwner[path].map(CardID.term)
+        card.ownerTermID = board.docOwner[DocPath(path)].map(CardID.term)
         card.setOwnerChip(ownerChipLabel(for: card, on: board))
     }
 
     /// The first free slot beside the doc's owner terminal (`Placement`), on
     /// top of every card on the board.
     private func freeSlot(for path: String, on board: Board) -> CardFrame {
-        let owner = board.docOwner[path].flatMap { board.view.card(.term($0)) }
+        let owner = board.docOwner[DocPath(path)].flatMap { board.view.card(.term($0)) }
         let anchor = DocLanding.anchor(owner: owner?.worldFrame.rect, prime: board.primeTermCard?.worldFrame.rect)
         let cards = board.view.cards.values
         return CardFrame(
@@ -117,12 +117,12 @@ extension AppController {
     func handleFileEvent(path: String, mtimeMs: UInt64) {
         for board in boards.values where board.store.doc(for: path) != nil {
             board.store.applyFileEvent(path: path, mtimeMs: mtimeMs)
-            guard let card = board.view.card(.doc(path)) else { continue }
+            guard let card = board.view.card(.doc(DocPath(path))) else { continue }
             if let doc = board.store.doc(for: path) { card.apply(doc: doc) }
             card.docBody?.refresh(lastChangedMs: mtimeMs)
         }
         for named in dataFiles.cards(reading: path) {
-            boards[named.boardID]?.view.card(.doc(named.path))?.htmlBody?.dataChanged()
+            boards[named.boardID]?.view.card(.doc(DocPath(named.path)))?.htmlBody?.dataChanged()
         }
     }
 
@@ -130,7 +130,7 @@ extension AppController {
     /// that has built one; the session decides whether its document takes it.
     func handleDocEvent(path: String, value: String) {
         for board in boards.values {
-            board.view.card(.doc(path))?.htmlBody?.event(value)
+            board.view.card(.doc(DocPath(path)))?.htmlBody?.event(value)
         }
     }
 
@@ -143,12 +143,12 @@ extension AppController {
     /// The header `✕` and ⌘W on a doc: the card, its registry entry and a
     /// borrow on it go, and the daemon forgets and unwatches the doc.
     func closeDocCard(_ path: String) {
-        let id = CardID.doc(path)
+        let id = CardID.doc(DocPath(path))
         borrow.closed(id)
         if focusedCardID == id { defocus() }
         activeBoard.view.removeCard(id: id)
         dataFiles.set(nil, for: CardDataRegistrations.Card(boardID: activeBoardID, path: path))
-        activeBoard.docOwner[path] = nil
+        activeBoard.docOwner[DocPath(path)] = nil
         activeBoard.store.remove(path)
         client.docClose(path: path)
         persistLayout(for: activeBoard)
@@ -174,7 +174,7 @@ extension AppController {
     /// the window title and the status bar's link word with the app.
     func refreshChrome() {
         for path in activeBoard.boardDocPaths {
-            guard let card = activeBoard.view.card(.doc(path)) else { continue }
+            guard let card = activeBoard.view.card(.doc(DocPath(path))) else { continue }
             if let doc = store.doc(for: path) { card.apply(doc: doc) }
         }
         refreshOwnerChips(on: activeBoard)

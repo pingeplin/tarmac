@@ -137,10 +137,10 @@ extension AppController {
 
         board.docOwner = [:]
         for doc in docs {
-            board.docOwner[doc.path] = doc.termID
+            board.docOwner[DocPath(doc.path)] = doc.termID
         }
         for doc in plan.docs {
-            board.docOwner[doc.path] = doc.ownerTermID
+            board.docOwner[DocPath(doc.path)] = doc.ownerTermID
             landDocCard(
                 path: doc.path, frame: CardFrame(rect: doc.frame, z: doc.z), attached: doc.attached, fresh: false,
                 sidebar: doc.sidebar, on: board
@@ -254,7 +254,7 @@ extension AppController {
             )
         }
         let docs = board.boardDocPaths.compactMap { path -> LayoutTiles.DocInput? in
-            guard let card = board.view.card(.doc(path)) else { return nil }
+            guard let card = board.view.card(.doc(DocPath(path))) else { return nil }
             return LayoutTiles.DocInput(
                 path: path, frame: card.worldFrame.rect, z: Double(card.worldFrame.z), attached: card.attached,
                 sidebar: card.docSidebar
