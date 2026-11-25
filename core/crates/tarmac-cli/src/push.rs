@@ -213,7 +213,7 @@ mod tests {
         Line::Value(text.into())
     }
 
-    // S3
+    // "Push arguments pick the input mode"
     #[test]
     fn a_value_argument_is_one_value_and_a_bare_dash_is_a_stream() {
         let one = args(&["/p", r#"{"n":1}"#]);
@@ -224,7 +224,7 @@ mod tests {
         assert!(matches!(parse(&minus_one), Some(("/p", Mode::One("-1")))));
     }
 
-    // S3
+    // "Push arguments pick the input mode"
     #[test]
     fn any_other_argument_count_is_a_usage_error() {
         for list in [&[][..], &["/p"], &["/p", "1", "2"], &["/p", "-", "x", "y"]] {
@@ -232,21 +232,21 @@ mod tests {
         }
     }
 
-    // S4
+    // "Final newline of input is optional"
     #[test]
     fn lines_end_at_a_newline_and_the_last_needs_none() {
         assert_eq!(lines_of(&b"a\nb\n"[..], 8), vec![value("a"), value("b")]);
         assert_eq!(lines_of(&b"a\nb"[..], 8), vec![value("a"), value("b")]);
     }
 
-    // S5
+    // "Carriage returns are dropped from lines"
     #[test]
     fn one_carriage_return_before_the_newline_is_dropped() {
         assert_eq!(lines_of(&b"a\r\nb\r\n"[..], 8), vec![value("a"), value("b")]);
         assert_eq!(lines_of(&b"a\r\r\n"[..], 8), vec![value("a\r")]);
     }
 
-    // S6
+    // "Blank lines are skipped but counted"
     #[test]
     fn blank_lines_are_given_as_blank() {
         assert_eq!(lines_of(&b"a\n\n \t\nb\n"[..], 8), vec![value("a"), Line::Blank, Line::Blank, value("b")]);
@@ -282,13 +282,13 @@ mod tests {
         assert_eq!(lines_of(&b" 1 \t\n"[..], 8), vec![value(" 1 \t")]);
     }
 
-    // S7
+    // "Invalid UTF-8 line is refused alone"
     #[test]
     fn a_line_that_is_not_utf8_is_refused_and_the_next_is_read() {
         assert_eq!(lines_of(&b"1\n\xff\xfe\n2\n"[..], 8), vec![value("1"), Line::NotUtf8, value("2")]);
     }
 
-    // S8
+    // "Over-limit line is refused with bounded memory"
     #[test]
     fn a_line_over_the_limit_is_refused_with_no_more_than_the_limit_held() {
         let mut lines = Lines::new(&b"123456789\nabcdefgh\n"[..], 8);
@@ -298,7 +298,7 @@ mod tests {
         assert!(lines.next().is_none());
     }
 
-    // S8
+    // "Over-limit line is refused with bounded memory"
     #[test]
     fn a_long_line_is_held_to_the_limit_whatever_the_read_size() {
         let long = vec![b'7'; 64 * 1024];
@@ -307,13 +307,13 @@ mod tests {
         assert_eq!(lines.held.len(), 8);
     }
 
-    // S8
+    // "Over-limit line is refused with bounded memory"
     #[test]
     fn a_line_over_the_limit_that_is_not_utf8_is_refused_as_over_the_limit() {
         assert_eq!(lines_of(&b"\xff\xfe\xff\xfe\xff\xfe\xff\xfe\xff\n"[..], 8), vec![Line::OverLimit]);
     }
 
-    // S8: the carriage return is not part of the line.
+    // "Over-limit line is refused with bounded memory": the carriage return is not part of the line.
     #[test]
     fn a_line_of_the_limit_with_a_carriage_return_is_read_whole() {
         assert_eq!(lines_of(&b"abcdefgh\r\n"[..], 8), vec![value("abcdefgh")]);
@@ -331,7 +331,7 @@ mod tests {
         }
     }
 
-    // S5, S7, S8 with every line split across reads.
+    // "Carriage returns are dropped from lines", "Invalid UTF-8 line is refused alone", "Over-limit line is refused with bounded memory" with every line split across reads.
     #[test]
     fn lines_split_across_reads_are_read_as_whole_lines() {
         let input = b"a\r\nabcdefgh\r\nx\xe2\x82\xacy\n123456789\nlast";
@@ -341,7 +341,7 @@ mod tests {
         );
     }
 
-    // S5: a `\r` is dropped only before a `\n`.
+    // "Carriage returns are dropped from lines": a `\r` is dropped only before a `\n`.
     #[test]
     fn a_carriage_return_at_the_end_of_input_stays_in_the_line() {
         assert_eq!(lines_of(&b"a\r"[..], 8), vec![value("a\r")]);
@@ -374,7 +374,7 @@ mod tests {
         }
     }
 
-    // S9
+    // "Empty input gives no line"
     #[test]
     fn empty_input_has_no_line() {
         assert_eq!(lines_of(&b""[..], 8), vec![]);
@@ -401,7 +401,7 @@ mod tests {
         }
     }
 
-    // S55
+    // "Stdin read error ends the stream"
     #[test]
     fn a_read_error_comes_after_the_lines_before_it_and_ends_the_lines() {
         let mut lines = Lines::new(FailsAfter { input: b"1\n", failed: false }, 8);
@@ -410,7 +410,7 @@ mod tests {
         assert!(lines.next().is_none());
     }
 
-    // S42
+    // "Frame size check allows exactly the limit"
     #[test]
     fn a_push_of_exactly_the_limit_passes_and_one_byte_more_does_not() {
         let limit = proto::encode(&Msg::Push { path: "/p".into(), value: "x".repeat(100) }).unwrap().len();
@@ -426,7 +426,7 @@ mod tests {
         (cli, daemon)
     }
 
-    // S16: the binary's own run of this, with the real 5 s, is in tests/push.rs.
+    // "Unanswered push times out": the binary's own run of this, with the real 5 s, is in tests/push.rs.
     #[test]
     fn no_answer_in_the_read_timeout_is_worded_as_no_answer() {
         let (mut cli, _daemon) = silent_daemon(std::time::Duration::from_millis(100));
@@ -434,7 +434,7 @@ mod tests {
         assert_eq!(exchange(&mut cli, &payload), Sent::Ended(NO_ANSWER.clone()));
     }
 
-    // S16
+    // "Unanswered push times out"
     #[test]
     fn a_stream_with_no_answer_ends_at_that_line() {
         let (mut cli, mut daemon) = silent_daemon(std::time::Duration::from_millis(100));

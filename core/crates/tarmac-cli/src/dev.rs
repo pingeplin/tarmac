@@ -308,10 +308,10 @@ mod tests {
         parses_to(&["key", "t-1", "ctrl+c"], &DevRequest::Key { card: "t-1".into(), combo: "ctrl+c".into() });
     }
 
-    /// S34: two arguments, `restore_card` is the absent card, and the control
+    /// "Dev click CLI parses and rejects usage": two arguments, `restore_card` is the absent card, and the control
     /// is sent as it is: the app owns the names.
     #[test]
-    fn s34_click_parses_a_card_or_the_restore_card_and_any_control_name() {
+    fn click_parses_a_card_or_the_restore_card_and_any_control_name() {
         parses_to(
             &["click", "t-1", "resume"],
             &DevRequest::Click { card: Some("t-1".into()), control: "resume".into() },

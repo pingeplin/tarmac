@@ -24,9 +24,9 @@ fn has(bytes: &[u8], needle: &[u8]) -> bool {
     bytes.windows(needle.len()).any(|w| w == needle)
 }
 
-// S6
+// "CLI report sends kind and text"
 #[test]
-fn s6_a_report_is_sent_for_the_calling_terminal_and_success_prints_nothing() {
+fn a_report_is_sent_for_the_calling_terminal_and_success_prints_nothing() {
     let daemon = OneAnswer::acking();
     let out = daemon.run("report", &["blocked", "May I?"]);
 
@@ -34,9 +34,9 @@ fn s6_a_report_is_sent_for_the_calling_terminal_and_success_prints_nothing() {
     assert_eq!(proto::decode(&daemon.sent()).unwrap(), report("blocked", Some("May I?")));
 }
 
-// S6
+// "CLI report sends kind and text"
 #[test]
-fn s6_clear_and_a_report_with_no_or_an_empty_text_send_no_text_key() {
+fn clear_and_a_report_with_no_or_an_empty_text_send_no_text_key() {
     for (args, kind) in
         [(&["clear"][..], "clear"), (&["done"], "done"), (&["done", ""], "done"), (&["clear", ""], "clear")]
     {
@@ -50,9 +50,9 @@ fn s6_clear_and_a_report_with_no_or_an_empty_text_send_no_text_key() {
     }
 }
 
-// S22
+// "CLI usage errors exit 2 without connecting"
 #[test]
-fn s22_a_usage_error_exits_2_and_does_not_connect() {
+fn a_usage_error_exits_2_and_does_not_connect() {
     for args in [&[][..], &["later"], &["clear", "x"], &["done", "a", "b"], &["clear", "", ""]] {
         let out = no_daemon(Some("t9"), args);
 
@@ -61,9 +61,9 @@ fn s22_a_usage_error_exits_2_and_does_not_connect() {
     }
 }
 
-// S23
+// "CLI without terminal id exits 1"
 #[test]
-fn s23_no_terminal_exits_1_and_does_not_connect() {
+fn no_terminal_exits_1_and_does_not_connect() {
     for term_id in [None, Some("")] {
         let out = no_daemon(term_id, &["done", "x"]);
 
@@ -86,18 +86,18 @@ fn a_usage_error_comes_before_the_terminal_check() {
     assert_eq!((out.code(), out.stderr.as_str()), (Some(2), USAGE));
 }
 
-// S24
+// "CLI daemon errors exit 1"
 #[test]
-fn s24_the_daemons_refusal_is_printed_and_exits_1() {
+fn the_daemons_refusal_is_printed_and_exits_1() {
     let daemon = OneAnswer::start(Answer::Reply(Msg::Err { msg: "unknown terminal: t9".into() }));
     let out = daemon.run("report", &["done"]);
 
     assert_eq!((out.code(), out.stderr.as_str()), (Some(1), "tarmac: unknown terminal: t9\n"));
 }
 
-// S24
+// "CLI daemon errors exit 1"
 #[test]
-fn s24_no_daemon_is_the_no_daemon_line() {
+fn no_daemon_is_the_no_daemon_line() {
     let sock = common::scratch().join("absent.sock");
     let out = Report::of(tarmac_at(&sock).env("TARMAC_TERM_ID", "t9").args(["report", "done"]));
 
@@ -105,9 +105,9 @@ fn s24_no_daemon_is_the_no_daemon_line() {
     assert_eq!(out.stderr, no_daemon_line(&sock));
 }
 
-// S24
+// "CLI daemon errors exit 1"
 #[test]
-fn s24_a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
+fn a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
     let daemon = OneAnswer::start(Answer::Silence);
     let started = Instant::now();
     let out = daemon.run("report", &["done"]);
@@ -115,9 +115,9 @@ fn s24_a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
     assert_no_answer(&out, started);
 }
 
-// S25
+// "CLI caps long report text"
 #[test]
-fn s25_the_cli_caps_a_long_text() {
+fn the_cli_caps_a_long_text() {
     let daemon = OneAnswer::acking();
     // Three bytes a char: a cap by bytes would keep 93 chars, or split one.
     let out = daemon.run("report", &["blocked", &"中".repeat(400)]);

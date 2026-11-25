@@ -1,5 +1,5 @@
 {
- "_comment": "Spec 2611.0011 S31: the resume command check. Each case's command is its parts, each part's text repeated its count. Read by tarmac-protocol's tests and the Swift ResumeCommandTests, so both languages check the same table.",
+ "_comment": "Spec 2611.0011 Command check agrees in Rust and Swift: the resume command check. Each case's command is its parts, each part's text repeated its count. Read by tarmac-protocol's tests and the Swift ResumeCommandTests, so both languages check the same table.",
  "cases": [
   {
    "parts": [

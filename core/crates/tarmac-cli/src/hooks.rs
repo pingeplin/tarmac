@@ -163,8 +163,9 @@ fn path_tarmac() -> String {
 mod tests {
     use super::*;
 
+    /// "Config dir and project scope pick the file".
     #[test]
-    fn s13_user_scope_follows_claude_config_dir_and_project_scope_is_the_local_file() {
+    fn user_scope_follows_claude_config_dir_and_project_scope_is_the_local_file() {
         let env = Env { home: "/home/u".into(), claude_config_dir: None, cwd: "/work/repo".into() };
         assert_eq!(claude_settings_path(Scope::User, &env), Path::new("/home/u/.claude/settings.json"));
         assert_eq!(claude_settings_path(Scope::Project, &env), Path::new("/work/repo/.claude/settings.local.json"));

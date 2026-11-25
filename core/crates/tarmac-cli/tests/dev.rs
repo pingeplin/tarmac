@@ -51,7 +51,7 @@ fn ok_reply(body: &str) -> dev::DevReply {
     dev::DevReply { ok: true, body: body.into() }
 }
 
-/// S59 — a successful reply: exit 0, body on stdout with exactly one newline,
+/// "Ok reply prints body and exits 0" — a successful reply: exit 0, body on stdout with exactly one newline,
 /// stderr empty.
 #[test]
 fn a_successful_reply_goes_to_stdout_and_exits_zero() {
@@ -62,7 +62,7 @@ fn a_successful_reply_goes_to_stdout_and_exits_zero() {
     assert_eq!(out.stderr, "");
 }
 
-/// S60 — a failing reply: exit 1, body on STDERR, stdout untouched, so
+/// "Failed reply goes to stderr and exits 1" — a failing reply: exit 1, body on STDERR, stdout untouched, so
 /// `tarmac dev snapshot | jq` is never fed an error object.
 #[test]
 fn a_failing_reply_goes_to_stderr_and_exits_one() {
@@ -74,7 +74,7 @@ fn a_failing_reply_goes_to_stderr_and_exits_one() {
     assert_eq!(out.stderr, format!("{body}\n"));
 }
 
-/// S61 — `body` is opaque. A body that is not JSON prints verbatim and the exit
+/// "Non-JSON body prints verbatim" — `body` is opaque. A body that is not JSON prints verbatim and the exit
 /// code still follows `ok`; the CLI never parses it.
 #[test]
 fn the_body_is_never_parsed() {
@@ -89,7 +89,7 @@ fn the_body_is_never_parsed() {
     assert_eq!(out.stderr, "also not json\n");
 }
 
-/// S62 — no listener: exit 1 and ONE line of plain text naming the path. This is
+/// "Missing listener gives one-line error" — no listener: exit 1 and ONE line of plain text naming the path. This is
 /// the CLI's own error, not the app's, so it is not JSON.
 #[test]
 fn no_listener_is_a_clear_one_line_error() {
@@ -102,7 +102,7 @@ fn no_listener_is_a_clear_one_line_error() {
     assert!(!err.contains('{'), "CLI-side errors are plain text, got: {err}");
 }
 
-/// S63 — exactly one frame leaves the CLI, and it is the request.
+/// "Focus verb sends only one frame" — exactly one frame leaves the CLI, and it is the request.
 #[test]
 fn exactly_one_request_frame_is_sent() {
     let fake = Fake::start(Reply::Now(ok_reply("{}")));
@@ -113,7 +113,7 @@ fn exactly_one_request_frame_is_sent() {
     assert_eq!(dev::decode_request(&frames[0]).unwrap(), dev::DevRequest::Focus { card: Some("t-1".into()) },);
 }
 
-/// S64 — an over-long socket path is refused before anything is dialled.
+/// "Overlong socket path exits 1" — an over-long socket path is refused before anything is dialled.
 #[test]
 fn an_over_long_socket_path_is_refused_before_dialling() {
     let fake = Fake::start(Reply::Now(ok_reply("{}")));
@@ -148,10 +148,10 @@ fn a_usage_error_exits_two_before_dialling() {
     assert!(fake.0.received.lock().unwrap().is_empty());
 }
 
-/// S73(b) — the load-bearing half. The CLI's read deadline is the app's budget
+/// "Round trip read deadline adds 3000 ms" (b) — the load-bearing half. The CLI's read deadline is the app's budget
 /// plus 3 s, so a healthy app that takes 5.5 s to answer `--timeout 10000` is
 /// still heard. An implementation that reuses the handshake path's fixed 5 s
-/// passes S73(a) and fails here.
+/// passes "Round trip read deadline adds 3000 ms" (a) and fails here.
 #[test]
 fn a_slow_but_healthy_app_is_still_heard() {
     let fake = Fake::start(Reply::After(Duration::from_millis(5_500), ok_reply("{\"v\":1}")));
@@ -160,7 +160,7 @@ fn a_slow_but_healthy_app_is_still_heard() {
     assert_eq!(out.stdout, "{\"v\":1}\n");
 }
 
-/// S73(b) — and the deadline really is a deadline. With `--timeout 100` the CLI
+/// "Round trip read deadline adds 3000 ms" (b) — and the deadline really is a deadline. With `--timeout 100` the CLI
 /// gives up at 3.1 s; the 4 s bound is deliberately below a hard-coded 5 s
 /// timeout's return, which "under 5 s" would sit exactly on.
 #[test]
@@ -175,12 +175,12 @@ fn a_silent_app_is_given_up_on_within_the_deadline() {
     assert!(!err.contains('{'), "CLI-side errors are plain text, got: {err}");
 }
 
-/// S58 — `--help` documents the family, the dev-build gate, and the notes that are
+/// "Help documents the dev family" — `--help` documents the family, the dev-build gate, and the notes that are
 /// otherwise folklore. This suite only ever runs in a debug build, which is the
 /// build that should document it; that a RELEASE `--help` says nothing about `dev`
 /// is Q1's to observe, and it does.
 ///
-/// The needle list is also what discharges the DOCS half of S16 and S77.
+/// The needle list is also what discharges the DOCS half of "Contextmenu plans mousemove then contextmenu" and "Kitty flag 8 types as key event".
 /// Each of those scenarios asks for a statement in the help text as well as a
 /// plan — what `contextmenu` leaves behind, and what
 /// kitty flag 8 does to `type` — and a kit test cannot see whether the statement
@@ -203,10 +203,10 @@ fn help_documents_the_dev_family_and_its_limits() {
         "Edit-menu",
         "bare printable",
         "mouse reporting",
-        // S16: what the right-click leaves behind.
+        // "Contextmenu plans mousemove then contextmenu": what the right-click leaves behind.
         "contextmenu",
         "helper textarea",
-        // S77: the kitty flag 8 consequence for `type`.
+        // "Kitty flag 8 types as key event": the kitty flag 8 consequence for `type`.
         "kitty flag",
         "mode: key",
     ] {

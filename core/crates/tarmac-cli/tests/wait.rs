@@ -22,9 +22,9 @@ fn subscribe(kinds: &[&str]) -> Msg {
     Msg::Subscribe { kinds: Some(kinds.iter().map(ToString::to_string).collect()), term_id: Some("t9".into()) }
 }
 
-// S9
+// "Wait exit prints code or signal"
 #[test]
-fn s9_an_exit_prints_its_code() {
+fn an_exit_prints_its_code() {
     for (frames, stdout) in [
         (vec![Msg::Ack, exit("t9", Some(3))], "{\"code\":3}\n"),
         (vec![Msg::Ack, exit("t9", None)], "{\"signal\":true}\n"),
@@ -39,9 +39,9 @@ fn s9_an_exit_prints_its_code() {
     }
 }
 
-// S10
+// "Wait report prints the matching report"
 #[test]
-fn s10_a_report_of_the_kind_prints_it_and_others_are_skipped() {
+fn a_report_of_the_kind_prints_it_and_others_are_skipped() {
     let blocked = term_report("t9", Some("blocked"), Some("May I?"), Some("claude"), true);
     for frames in [
         vec![
@@ -74,9 +74,9 @@ fn a_report_with_no_text_or_proc_has_no_key_for_them() {
     assert_eq!(out.stdout, "{\"kind\":\"done\",\"at_ms\":1700000000000,\"read\":false}\n");
 }
 
-// S11
+// "Wait bell exits on first bell"
 #[test]
-fn s11_a_bell_ends_the_wait_and_prints_nothing() {
+fn a_bell_ends_the_wait_and_prints_nothing() {
     let daemon = Streamer::holding(vec![Msg::Ack, bell("t9")]);
 
     let out = daemon.run(&["wait", "--bell", "t9"]);
@@ -94,9 +94,9 @@ fn frames_of_another_terminal_are_skipped() {
     assert_eq!(out.stdout, "{\"code\":2}\n");
 }
 
-// S29
+// "Unknown terminal or kind is refused"
 #[test]
-fn s29_an_unknown_terminal_is_printed_and_exits_1() {
+fn an_unknown_terminal_is_printed_and_exits_1() {
     let daemon = Streamer::writing(vec![Msg::Err { msg: "unknown terminal: t9".into() }]);
 
     let out = daemon.run(&["wait", "--exit", "t9"]);
@@ -104,9 +104,9 @@ fn s29_an_unknown_terminal_is_printed_and_exits_1() {
     assert_eq!((out.code(), out.stderr.as_str()), (Some(1), "tarmac: unknown terminal: t9\n"));
 }
 
-// S30
+// "Wait for an ended terminal exits 1"
 #[test]
-fn s30_an_exit_ends_a_wait_for_a_bell_or_a_report() {
+fn an_exit_ends_a_wait_for_a_bell_or_a_report() {
     for args in [&["--bell", "t9"][..], &["--report", "done", "--term", "t9"]] {
         let daemon = Streamer::holding(vec![Msg::Ack, exit("t9", Some(0))]);
 
@@ -146,21 +146,21 @@ fn assert_times_out_at_300_ms(daemon: impl Fn() -> Double, stderr: &str) {
     assert!(times.iter().min().is_some_and(|t| *t < Duration::from_millis(800)), "{times:?}");
 }
 
-// S31
+// "Wait timeouts exit 124"
 #[test]
-fn s31_a_timeout_after_the_ack_exits_124_with_nothing_printed() {
+fn a_timeout_after_the_ack_exits_124_with_nothing_printed() {
     assert_times_out_at_300_ms(|| Streamer::holding(vec![Msg::Ack]).double, "");
 }
 
-// S31
+// "Wait timeouts exit 124"
 #[test]
-fn s31_a_timeout_before_the_ack_exits_124_with_one_line() {
+fn a_timeout_before_the_ack_exits_124_with_one_line() {
     assert_times_out_at_300_ms(|| Streamer::start(vec![], Then::Hold).double, NOT_ANSWERED);
 }
 
-// S31
+// "Wait timeouts exit 124"
 #[test]
-fn s31_with_no_timeout_a_daemon_that_never_answers_is_the_no_answer_line() {
+fn with_no_timeout_a_daemon_that_never_answers_is_the_no_answer_line() {
     assert_never_answered(&["wait", "--exit", "t9"]);
 }
 
@@ -171,9 +171,9 @@ fn a_timeout_longer_than_the_5_s_wait_still_gives_the_no_answer_line() {
     assert_never_answered(&["wait", "--exit", "t9", "--timeout", "6000"]);
 }
 
-// S31, in the handshake: no `hello_ok` is the same as no `ack`.
+// "Wait timeouts exit 124", in the handshake: no `hello_ok` is the same as no `ack`.
 #[test]
-fn s31_a_daemon_silent_to_hello_is_a_timeout_or_the_no_answer_line() {
+fn a_daemon_silent_to_hello_is_a_timeout_or_the_no_answer_line() {
     let daemon = Double::start("tarmacd.sock", |peer| peer.hold());
     let started = Instant::now();
     assert_no_answer(&Report::of(tarmac_at(&daemon.sock).args(["wait", "--exit", "t9"])), started);
@@ -205,9 +205,9 @@ fn a_wait_quiet_for_longer_than_5_s_goes_on() {
     assert_eq!((out.code(), out.stdout.as_str(), out.stderr.as_str()), (Some(0), "{\"code\":0}\n", ""));
 }
 
-// S32
+// "Lost daemon connection exits 1"
 #[test]
-fn s32_the_daemon_going_away_or_a_lag_exits_1() {
+fn the_daemon_going_away_or_a_lag_exits_1() {
     let lost = Streamer::writing(vec![Msg::Ack]);
     let out = lost.run(&["wait", "--exit", "t9"]);
     assert_eq!(out.code(), Some(1));
@@ -221,9 +221,9 @@ fn s32_the_daemon_going_away_or_a_lag_exits_1() {
     );
 }
 
-// S33: the whole matrix is `parse`'s unit test.
+// "Bad wait usage exits 2": the whole matrix is `parse`'s unit test.
 #[test]
-fn s33_a_usage_error_exits_2_with_no_connection() {
+fn a_usage_error_exits_2_with_no_connection() {
     let daemon = Streamer::writing(vec![Msg::Ack]);
 
     let out = Report::of(tarmac_at(&daemon.double.sock).args(["wait", "--report", "later", "--term", "t1"]));
@@ -274,9 +274,9 @@ fn stdout(out: &Output) -> &str {
     std::str::from_utf8(&out.stdout).unwrap()
 }
 
-// S13
+// "Wait changed detects each kind of change"
 #[test]
-fn s13_a_change_of_the_file_ends_the_wait() {
+fn a_change_of_the_file_ends_the_wait() {
     let dir = scratch();
     #[expect(clippy::type_complexity, reason = "predates the lint; a design change, not part of #468")]
     let cases: Vec<(&str, Box<dyn FnOnce(&Path)>, &str)> = vec![
@@ -313,9 +313,9 @@ fn s13_a_change_of_the_file_ends_the_wait() {
     }
 }
 
-// S13 (c)
+// "Wait changed detects each kind of change" (c)
 #[test]
-fn s13_a_missing_file_that_is_made_ends_the_wait() {
+fn a_missing_file_that_is_made_ends_the_wait() {
     let file = scratch().join("later.txt");
 
     let (out, _) =
@@ -324,9 +324,9 @@ fn s13_a_missing_file_that_is_made_ends_the_wait() {
     assert_eq!((out.status.code(), stdout(&out)), (Some(0), "{\"deleted\":false}\n"));
 }
 
-// S27
+// "Wait changed polls and settles on time"
 #[test]
-fn s27_a_change_in_the_slow_stage_ends_the_wait() {
+fn a_change_in_the_slow_stage_ends_the_wait() {
     let dir = scratch();
     let file = old_file(&dir, "slow.txt");
 
@@ -343,9 +343,9 @@ fn s27_a_change_in_the_slow_stage_ends_the_wait() {
     assert!(late < Duration::from_millis(1250), "the exit came {late:?} after the rename");
 }
 
-// S27
+// "Wait changed polls and settles on time"
 #[test]
-fn s27_settle_waits_for_the_last_change() {
+fn settle_waits_for_the_last_change() {
     let file = old_file(&scratch(), "settle.txt");
 
     let (out, took) =
@@ -370,7 +370,7 @@ fn file_at_half_second(dir: &Path, name: &str) -> (PathBuf, SystemTime) {
     (path, mtime)
 }
 
-// S27: each fact of a sample counts alone.
+// "Wait changed polls and settles on time": each fact of a sample counts alone.
 #[test]
 fn a_change_of_the_size_alone_or_of_the_mtime_below_a_second_ends_the_wait() {
     let dir = scratch();
@@ -410,9 +410,9 @@ fn a_path_below_a_file_is_missing() {
     assert_eq!((out.status.code(), stdout(&out), String::from_utf8_lossy(&out.stderr).as_ref()), (Some(124), "", ""));
 }
 
-// S28
+// "Change before the start does not count"
 #[test]
-fn s28_a_change_before_the_start_does_not_count() {
+fn a_change_before_the_start_does_not_count() {
     let file = scratch().join("before.txt");
     std::fs::write(&file, "a").unwrap();
 
@@ -421,9 +421,9 @@ fn s28_a_change_before_the_start_does_not_count() {
     assert_eq!((out.status.code(), stdout(&out)), (Some(124), ""));
 }
 
-// S44
+// "Timeout wins while change is settling"
 #[test]
-fn s44_a_timeout_while_it_settles_exits_124() {
+fn a_timeout_while_it_settles_exits_124() {
     let file = old_file(&scratch(), "unsettled.txt");
 
     let (out, took) =
@@ -445,9 +445,9 @@ impl Drop for Mode {
     }
 }
 
-// S34
+// "Wait changed stat error exits 1"
 #[test]
-fn s34_a_stat_error_that_is_not_missing_exits_1() {
+fn a_stat_error_that_is_not_missing_exits_1() {
     use std::os::unix::fs::PermissionsExt;
     let dir = scratch().join("closed");
     std::fs::create_dir(&dir).unwrap();

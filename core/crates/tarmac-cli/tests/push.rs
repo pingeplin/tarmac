@@ -99,7 +99,7 @@ fn push_msg(path: &str, value: &str) -> Msg {
     Msg::Push { path: path.into(), value: value.into() }
 }
 
-// S10
+// "One-value push sends one frame"
 #[test]
 fn one_value_is_one_push_and_success_prints_nothing() {
     let daemon = PushDaemon::acking();
@@ -109,7 +109,7 @@ fn one_value_is_one_push_and_success_prints_nothing() {
     assert_eq!(daemon.pushes(), vec![push_msg("/a/dash.html", r#"{"n":1}"#)]);
 }
 
-// S10: getcwd gives /private/var for /var.
+// "One-value push sends one frame": getcwd gives /private/var for /var.
 #[test]
 fn a_relative_path_is_sent_made_absolute_against_the_cwd() {
     let dir = scratch();
@@ -121,7 +121,7 @@ fn a_relative_path_is_sent_made_absolute_against_the_cwd() {
     assert_eq!(daemon.pushes(), vec![push_msg(expected.to_str().unwrap(), "1")]);
 }
 
-// S3
+// "Push arguments pick the input mode"
 #[test]
 fn any_other_argument_count_is_a_usage_error() {
     for args in [&["push"][..], &["push", "/p"], &["push", "/p", "1", "2"]] {
@@ -135,7 +135,7 @@ fn any_other_argument_count_is_a_usage_error() {
     }
 }
 
-// S11
+// "Stream push keeps order on one connection"
 #[test]
 fn a_thousand_lines_are_a_thousand_pushes_in_order_on_one_connection() {
     let daemon = PushDaemon::acking();
@@ -148,7 +148,7 @@ fn a_thousand_lines_are_a_thousand_pushes_in_order_on_one_connection() {
     assert_eq!(daemon.pushes(), expected);
 }
 
-// S12
+// "Daemon error names the stream line"
 #[test]
 fn a_line_the_daemon_refuses_is_named_and_the_stream_goes_on() {
     let daemon = PushDaemon::start(|n| if n == 1 { err("not one JSON value: x") } else { ack() });
@@ -162,7 +162,7 @@ fn a_line_the_daemon_refuses_is_named_and_the_stream_goes_on() {
     );
 }
 
-// S6 and S12 through the binary: blank lines are counted and not sent.
+// "Blank lines are skipped but counted" and "Daemon error names the stream line" through the binary: blank lines are counted and not sent.
 #[test]
 fn a_refused_line_is_named_by_its_number_counting_blank_lines() {
     let daemon = PushDaemon::start(|n| if n == 1 { err("x") } else { ack() });
@@ -173,7 +173,7 @@ fn a_refused_line_is_named_by_its_number_counting_blank_lines() {
     assert_eq!(daemon.pushes(), vec![push_msg("/p", "1"), push_msg("/p", "not json")]);
 }
 
-// S6 through the binary: a blank line is neither sent nor refused.
+// "Blank lines are skipped but counted" through the binary: a blank line is neither sent nor refused.
 #[test]
 fn blank_lines_are_skipped_without_a_word() {
     let daemon = PushDaemon::acking();
@@ -183,7 +183,7 @@ fn blank_lines_are_skipped_without_a_word() {
     assert_eq!(daemon.pushes(), vec![push_msg("/p", "1"), push_msg("/p", "2")]);
 }
 
-// S13
+// "Daemon error is shown without a line number"
 #[test]
 fn one_value_the_daemon_refuses_prints_its_text() {
     let daemon = PushDaemon::start(|_| err("not an open doc: /p"));
@@ -193,7 +193,7 @@ fn one_value_the_daemon_refuses_prints_its_text() {
     assert_eq!(out.code(), Some(1));
 }
 
-// S14
+// "Refused stream line does not stop later lines"
 #[test]
 fn a_line_that_is_not_utf8_is_refused_by_the_cli_and_not_sent() {
     let daemon = PushDaemon::acking();
@@ -204,7 +204,7 @@ fn a_line_that_is_not_utf8_is_refused_by_the_cli_and_not_sent() {
     assert_eq!(daemon.pushes(), vec![push_msg("/p", "1"), push_msg("/p", "3")]);
 }
 
-// S8 and S42 through the pipe: a line over the limit, and a line of the limit
+// "Over-limit line is refused with bounded memory" and "Frame size check allows exactly the limit" through the pipe: a line over the limit, and a line of the limit
 // whose `push` is over it, are refused; neither is sent.
 #[test]
 fn a_line_over_the_frame_limit_is_refused_by_the_cli_and_not_sent() {
@@ -224,7 +224,7 @@ fn a_line_over_the_frame_limit_is_refused_by_the_cli_and_not_sent() {
     assert_eq!(daemon.pushes(), vec![push_msg("/p", "3")]);
 }
 
-// S15
+// "No daemon gives the open message"
 #[test]
 fn no_daemon_is_the_message_open_gives() {
     let sock = scratch().join("absent.sock");
@@ -234,7 +234,7 @@ fn no_daemon_is_the_message_open_gives() {
     assert_eq!(out.stderr, no_daemon_line(&sock));
 }
 
-// S15: stdin stays open and holds nothing, so a cli that read first would
+// "No daemon gives the open message": stdin stays open and holds nothing, so a cli that read first would
 // never exit.
 #[test]
 fn no_daemon_ends_a_stream_before_stdin_is_read() {
@@ -246,7 +246,7 @@ fn no_daemon_ends_a_stream_before_stdin_is_read() {
     assert_eq!(out.stderr, no_daemon_line(&sock));
 }
 
-// S16
+// "Unanswered push times out"
 #[test]
 fn one_value_with_no_answer_ends_after_the_read_timeout() {
     let daemon = PushDaemon::start(|_| Answer::Silence);
@@ -279,7 +279,7 @@ fn a_stream_against_a_daemon_silent_to_hello_is_the_no_answer_line() {
     assert_eq!((out.code(), out.stderr), (Some(1), format!("tarmac: {NO_ANSWER}\n")));
 }
 
-// S43
+// "Lost connection is reported"
 #[test]
 fn one_value_on_a_lost_connection_says_so() {
     let daemon = PushDaemon::start(|_| Answer::Close);
@@ -289,7 +289,7 @@ fn one_value_on_a_lost_connection_says_so() {
     assert_eq!(out.code(), Some(1));
 }
 
-// S43
+// "Lost connection is reported"
 #[test]
 fn a_lost_connection_ends_a_stream_with_lines_still_to_come() {
     let daemon = PushDaemon::start(|_| Answer::Close);
@@ -300,7 +300,7 @@ fn a_lost_connection_ends_a_stream_with_lines_still_to_come() {
     assert_eq!(daemon.pushes(), vec![push_msg("/p", "1")]);
 }
 
-// S44
+// "Stream waits for each answer"
 #[test]
 fn the_next_line_is_sent_only_after_the_answer() {
     let wait = Duration::from_millis(300);
@@ -312,7 +312,7 @@ fn the_next_line_is_sent_only_after_the_answer() {
     assert_eq!(daemon.early.load(Ordering::SeqCst), 0, "a frame came while an answer was owed");
 }
 
-// S52
+// "Unrelated answers are skipped"
 #[test]
 fn an_answer_that_is_not_ack_or_err_is_skipped() {
     let daemon = PushDaemon::start(|_| Answer::Reply(vec![hello_ok(None, None, None, None), Msg::Ack]));
@@ -321,7 +321,7 @@ fn an_answer_that_is_not_ack_or_err_is_skipped() {
     assert_eq!((out.code(), out.stderr.as_str()), (Some(0), ""));
 }
 
-// S53: the double is dropped before `received` is read, and a connection the
+// "Empty path is refused before connecting": the double is dropped before `received` is read, and a connection the
 // cli made would be accepted first.
 #[test]
 fn an_empty_path_is_refused_with_no_connection() {
@@ -335,7 +335,7 @@ fn an_empty_path_is_refused_with_no_connection() {
     assert!(received.lock().unwrap().is_empty(), "the cli connected");
 }
 
-// S54
+// "Blank value is sent byte for byte"
 #[test]
 fn one_value_sends_a_blank_argument_as_it_is() {
     for blank in ["", " "] {
@@ -347,7 +347,7 @@ fn one_value_sends_a_blank_argument_as_it_is() {
     }
 }
 
-// S55
+// "Stdin read error ends the stream"
 #[test]
 fn a_read_error_on_stdin_ends_the_stream_and_names_stdin() {
     let daemon = PushDaemon::acking();

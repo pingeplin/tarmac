@@ -135,7 +135,7 @@ fn unknown_command_exits_with_usage_error() {
     assert!(out.stderr.contains("unknown command"));
 }
 
-// S25: the daemon owns the missing-file text; the cli relays it.
+// "CLI without daemon says no daemon running": the daemon owns the missing-file text; the cli relays it.
 #[test]
 fn missing_file_is_a_clear_one_line_error() {
     let daemon = OpenDaemon::start(Msg::Err {
@@ -147,7 +147,7 @@ fn missing_file_is_a_clear_one_line_error() {
     assert_eq!(daemon.opened().as_deref(), Some("/definitely/not/here.md"));
 }
 
-// S25: with no file-system call in the cli, no daemon is what it reports.
+// "CLI without daemon says no daemon running": with no file-system call in the cli, no daemon is what it reports.
 #[test]
 fn missing_file_with_no_daemon_says_no_daemon() {
     let out = Report::of(tarmac().args(["open", "/definitely/not/here.md"]));
@@ -155,7 +155,7 @@ fn missing_file_with_no_daemon_says_no_daemon() {
     assert!(out.one_stderr_line().contains("no tarmac daemon running"), "got: {}", out.stderr);
 }
 
-// S22: the path is sent as given, not resolved through the symlink.
+// "CLI sends the symlinked path as given": the path is sent as given, not resolved through the symlink.
 #[test]
 fn open_sends_a_symlinked_path_as_given() {
     let dir = scratch();
@@ -172,7 +172,7 @@ fn open_sends_a_symlinked_path_as_given() {
     assert_eq!(out.stdout, format!("opened {given}\n"));
 }
 
-// S23: getcwd gives /private/var for /var.
+// "CLI sends relative path as absolute": getcwd gives /private/var for /var.
 #[test]
 fn open_makes_a_relative_path_absolute_against_the_cwd() {
     let dir = scratch();
@@ -186,7 +186,7 @@ fn open_makes_a_relative_path_absolute_against_the_cwd() {
     assert_eq!(out.stdout, format!("opened {expected}\n"));
 }
 
-// S24: the daemon's error text is relayed as one line, exit 1.
+// "CLI prints daemon error as one line": the daemon's error text is relayed as one line, exit 1.
 #[test]
 fn open_relays_the_daemons_error_text() {
     let daemon = OpenDaemon::start(Msg::Err { msg: "cannot open /x: did not answer in 1s".into() });

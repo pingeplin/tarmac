@@ -373,7 +373,7 @@ mod tests {
         );
     }
 
-    /// Spec 2611.0015 S33: `click` is tagged `click`, the restore card is an
+    /// Spec 2611.0015 "Dev click wire frames match in both codecs": `click` is tagged `click`, the restore card is an
     /// absent `card`, and these are the bytes `DevMessagesTests` pins.
     #[test]
     fn click_bytes_are_what_the_swift_codec_is_pinned_to() {

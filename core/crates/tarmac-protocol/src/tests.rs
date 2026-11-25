@@ -647,8 +647,9 @@ fn conformance_vector_44_doc_tile_sidebar() {
     );
 }
 
+/// "Rust frame with one sidebar key matches".
 #[test]
-fn s2611_0024_s2_the_built_doc_tile_carries_one_sidebar_key_after_loose() {
+fn the_built_doc_tile_carries_one_sidebar_key_after_loose() {
     assert_frame(
         "83 a1 74 a6 6c 61 79 6f 75 74 a4 64 6f 63 6b 91 a5 2f 63 2e 6d 64 a5 74 \
          69 6c 65 73 91 89 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 63 2e \
@@ -689,8 +690,9 @@ fn s2611_0024_a_sidebar_key_follows_term_id() {
     );
 }
 
+/// "Rust rejects wrong-typed sidebar keys".
 #[test]
-fn s2611_0024_s4_a_sidebar_key_of_the_wrong_type_fails_the_frame() {
+fn a_sidebar_key_of_the_wrong_type_fails_the_frame() {
     let width = "cb 40 72 c8 00 00 00 00 00";
     let open = "ac 73 69 64 65 62 61 72 5f 6f 70 65 6e c2";
     assert!(decode(&unhex(VECTOR_44)).is_ok());
@@ -699,8 +701,9 @@ fn s2611_0024_s4_a_sidebar_key_of_the_wrong_type_fails_the_frame() {
     assert!(decode(&unhex(&VECTOR_44.replace(open, int_open))).is_err(), "sidebar_open as an integer");
 }
 
+/// "Invalid command is refused by CLI and daemon".
 #[test]
-fn s19_the_term_new_command_check() {
+fn the_term_new_command_check() {
     let refused = [
         ("", "empty"),
         ("   ", "empty"),
@@ -720,8 +723,9 @@ fn s19_the_term_new_command_check() {
     assert_eq!(refuse_term_new_cmd("").unwrap_err(), "term new command refused: empty");
 }
 
+/// "Resume push is not an event".
 #[test]
-fn s21_term_resume_is_not_an_event() {
+fn term_resume_is_not_an_event() {
     assert_eq!(EventKind::of(&term_resume(Some("echo HI"))), None);
     assert_eq!(EventKind::of(&term_resume(None)), None);
 }
@@ -803,7 +807,7 @@ fn a_nil_resume_and_a_nil_cmd_are_not_on_the_wire() {
     assert!(!has(&encode(&resume(None)).unwrap(), b"cmd"));
 }
 
-/// S31's table, `tests/fixtures/resume_cmd_cases.json`, which the Swift
+/// The table of "Command check agrees in Rust and Swift", `tests/fixtures/resume_cmd_cases.json`, which the Swift
 /// `ResumeCommandTests` reads too: each command and the cause it is refused
 /// for, or none.
 fn resume_cmd_cases() -> Vec<(String, Result<(), String>)> {
@@ -821,14 +825,16 @@ fn resume_cmd_cases() -> Vec<(String, Result<(), String>)> {
     table["cases"].as_array().unwrap().iter().map(case).collect()
 }
 
+/// "Command check agrees in Rust and Swift".
 #[test]
-fn s31_the_table_has_each_kind_of_case() {
+fn the_table_has_each_kind_of_case() {
     let cases = resume_cmd_cases();
     let combining = &cases[3].0;
     assert_eq!((combining.chars().count(), combining.contains('\u{301}')), (256, true));
     assert!(cases.iter().any(|(_, w)| w.is_ok()) && cases.iter().any(|(_, w)| w.is_err()));
 }
 
+/// "Command check agrees in Rust and Swift".
 #[test]
 fn s31_the_resume_command_check() {
     for (cmd, want) in resume_cmd_cases() {

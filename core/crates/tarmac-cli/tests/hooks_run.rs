@@ -80,8 +80,8 @@ fn fastest<S>(runs: usize, mut setup: impl FnMut() -> S, mut run: impl FnMut(&S)
 /// (it connects to nothing and only prints), with every result of `run` and
 /// how much longer its fastest run took than the fastest control. The fastest
 /// of each side leaves out the runs that load or a first start slowed, so an
-/// absolute limit on `run` is not tripped by a slow machine. s21 and s24 stay
-/// absolute: s21 also checks a floor of 450 ms, and both have about 0.5 s of
+/// absolute limit on `run` is not tripped by a slow machine. "Silent daemon ends after the deadline" and "Bad hook input never fails" stay
+/// absolute: "Silent daemon ends after the deadline" also checks a floor of 450 ms, and both have about 0.5 s of
 /// headroom over their waits. The control spawns as the runs do, one child at
 /// a time (#190). Times are as in `fastest`.
 fn beyond_control<S>(
@@ -119,8 +119,9 @@ fn report(kind: &str, text: Option<&str>) -> Msg {
     Msg::Report { term_id: "t9".into(), kind: kind.into(), text: text.map(str::to_string) }
 }
 
+/// "Hooks run sends the mapped report".
 #[test]
-fn s6_hooks_run_sends_the_message_of_its_input() {
+fn hooks_run_sends_the_message_of_its_input() {
     for (input, want, case) in [
         (stop_input("Done.\n\n  All   tests pass.\n"), report("done", Some("Done. All tests pass.")), "stop"),
         (fixture("stop"), report("done", Some("You picked red.")), "captured stop"),
@@ -148,8 +149,9 @@ fn s6_hooks_run_sends_the_message_of_its_input() {
     }
 }
 
+/// "No daemon is fast and silent".
 #[test]
-fn s20_no_daemon_is_fast_silent_and_says_so_on_stderr() {
+fn no_daemon_is_fast_silent_and_says_so_on_stderr() {
     let dead = sandbox().join("dead.sock");
     drop(std::os::unix::net::UnixListener::bind(&dead).unwrap());
     for sock in [sandbox().join("absent.sock"), dead] {
@@ -166,8 +168,9 @@ fn s20_no_daemon_is_fast_silent_and_says_so_on_stderr() {
     }
 }
 
+/// "Silent daemon ends after the deadline".
 #[test]
-fn s21_a_daemon_that_never_answers_is_given_up_on_at_the_deadline() {
+fn a_daemon_that_never_answers_is_given_up_on_at_the_deadline() {
     // Whichever phase the deadline ends in, the line is the same.
     let daemons: [fn() -> Double; 3] = [
         || OneAnswer::start(Answer::Silence).double,
@@ -205,8 +208,9 @@ fn one_deadline_spans_the_handshake_and_the_answer() {
     assert!(beyond <= ONE_DEADLINE, "the fastest run took {beyond:?} more than a control");
 }
 
+/// "Daemon refusal still exits 0".
 #[test]
-fn s22_a_refusal_is_a_stderr_line_and_exit_0() {
+fn a_refusal_is_a_stderr_line_and_exit_0() {
     let daemon = OneAnswer::start(Answer::Reply(Msg::Err { msg: "unknown terminal: t9".into() }));
     let out = run_against(&daemon.double, stop_input("Done."));
 
@@ -214,8 +218,9 @@ fn s22_a_refusal_is_a_stderr_line_and_exit_0() {
     assert!(out.one_stderr_line().contains("unknown terminal: t9"), "{}", out.stderr);
 }
 
+/// "Missing terminal id exits fast with no connection".
 #[test]
-fn s23_no_terminal_exits_at_once_without_reading_stdin() {
+fn no_terminal_exits_at_once_without_reading_stdin() {
     for term_id in [None, Some("")] {
         let (beyond, outs) = beyond_control(5, sandbox, |dir| {
             let mut cmd = hooks_cmd(dir);
@@ -246,6 +251,7 @@ fn a_term_id_that_is_not_utf8_is_no_terminal() {
     assert_no_connection(&out, "no terminal");
 }
 
+/// "Bad hook input never fails".
 #[test]
 fn s24_bad_input_exits_0_without_connecting() {
     for (input, case) in [
@@ -267,18 +273,19 @@ fn s24_bad_input_exits_0_without_connecting() {
     }
 }
 
+/// "Bad hook input never fails".
 // The words name the size, so a cut input is not read as one that ends early.
 #[test]
-fn s24_an_input_one_byte_over_4_mib_is_refused_by_its_size() {
+fn an_input_one_byte_over_4_mib_is_refused_by_its_size() {
     let out = Report::of_input(&mut run_claude(&sandbox()), stop_input_of_len((4 << 20) + 1));
 
     assert_silent_success(&out, "over 4 MiB");
     assert_eq!(out.one_stderr_line(), "tarmac: hooks run: the input is over 4194304 bytes\n");
 }
 
-// 2611.0011 S23
+// 2611.0011 "Refused session id does not connect"
 #[test]
-fn spec_0011_s23_a_refused_session_id_says_so_and_does_not_connect() {
+fn a_refused_session_id_says_so_and_does_not_connect() {
     let mut input: serde_json::Value = serde_json::from_slice(&fixture("session-start")).unwrap();
     input["session_id"] = "a;b".into();
     let out = Report::of_input(&mut run_claude(&sandbox()), serde_json::to_vec(&input).unwrap());
@@ -288,17 +295,19 @@ fn spec_0011_s23_a_refused_session_id_says_so_and_does_not_connect() {
     assert_no_connection(&out, "a;b");
 }
 
+/// "Bad hook input never fails".
 // The control of the limit case, so that one cannot pass on a parse failure.
 #[test]
-fn s24_an_input_of_exactly_4_mib_is_sent() {
+fn an_input_of_exactly_4_mib_is_sent() {
     let out = Report::of_input(&mut run_claude(&sandbox()), stop_input_of_len(4 << 20));
 
     assert_silent_success(&out, "4 MiB");
     assert!(out.stderr.contains(NO_DAEMON), "{}", out.stderr);
 }
 
+/// "Bad hook input never fails".
 #[test]
-fn s24_a_stdin_that_never_closes_ends_within_the_wait() {
+fn a_stdin_that_never_closes_ends_within_the_wait() {
     let (best, outs) = fastest(3, sandbox, |dir| {
         Report::with_open_stdin(&mut run_claude(dir), Duration::from_secs(5)).expect("it exits")
     });
@@ -310,8 +319,9 @@ fn s24_a_stdin_that_never_closes_ends_within_the_wait() {
     assert!(best <= Duration::from_millis(1500), "the fastest run took {best:?}");
 }
 
+/// "Bad hook arguments never fail".
 #[test]
-fn s25_bad_arguments_exit_0_with_one_stderr_line() {
+fn bad_arguments_exit_0_with_one_stderr_line() {
     for args in [&["run"][..], &["run", "codex"], &["run", "cursor"], &["run", "claude", "extra"]] {
         let out = Report::of_input(hooks_cmd(&sandbox()).env("TARMAC_TERM_ID", "t9").args(args), stop_input("Done."));
 
@@ -322,8 +332,9 @@ fn s25_bad_arguments_exit_0_with_one_stderr_line() {
     }
 }
 
+/// "Bad hook arguments never fail".
 #[test]
-fn s25_an_agent_other_than_claude_is_named_as_unknown() {
+fn an_agent_other_than_claude_is_named_as_unknown() {
     let out =
         Report::of_input(hooks_cmd(&sandbox()).env("TARMAC_TERM_ID", "t9").args(["run", "codex"]), stop_input("Done."));
 

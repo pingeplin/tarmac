@@ -64,7 +64,7 @@ fn full_reply() -> Msg {
     hello_ok(Some("9.9.9"), Some(4242), Some("8.8.8"), Some(true))
 }
 
-// S10 / S11 / S23: the whole report, byte-for-byte. The cli line carries this
+// "Version report shows daemon and app lines" / "Version report shows cli own version" / "Version report matches exact five lines": the whole report, byte-for-byte. The cli line carries this
 // binary's real version — which differs from the daemon's 9.9.9, so the skew
 // this verb exists to expose is visible in the output itself.
 #[test]
@@ -90,7 +90,7 @@ fn the_report_is_five_exact_lines() {
     );
 }
 
-// S12: an observed-absent app renders as absent — and no digit of the daemon's
+// "No app shows not connected": an observed-absent app renders as absent — and no digit of the daemon's
 // version leaks onto the app line.
 #[test]
 fn an_absent_app_is_reported_as_not_connected() {
@@ -101,7 +101,7 @@ fn an_absent_app_is_reported_as_not_connected() {
     assert_eq!(report.line("app"), "not connected");
 }
 
-// S32: the case app_connected exists for. An app that reported no version is
+// "Silent app shows connected without version": the case app_connected exists for. An app that reported no version is
 // still an observed app; rendering it as absent would be the false negative
 // this whole feature exists to prevent. An implementation that ignores
 // app_connected passes the test above and fails this one.
@@ -114,7 +114,7 @@ fn a_connected_app_that_reported_no_version_is_not_called_absent() {
     assert_eq!(report.line("app"), "connected (version not reported)");
 }
 
-// S33: a daemon older than these keys — the motivating skew itself, a freshly
+// "Old daemon shows app unknown": a daemon older than these keys — the motivating skew itself, a freshly
 // upgraded CLI against a still-running old daemon. Its version is still
 // reported; the app is neither invented nor declared absent.
 #[test]
@@ -127,7 +127,7 @@ fn a_pre_key_daemon_yields_an_unknown_app_not_an_absent_one() {
     assert_eq!(report.line("app"), "unknown (daemon predates this key)");
 }
 
-// S17: a missing daemon version does not suppress the app line.
+// "Missing daemon version keeps app line": a missing daemon version does not suppress the app line.
 #[test]
 fn a_version_less_daemon_still_reports_its_app() {
     let fake = Fake::start(Reply::Frame(hello_ok(None, Some(4242), Some("8.8.8"), Some(true))));
@@ -138,7 +138,7 @@ fn a_version_less_daemon_still_reports_its_app() {
     assert_eq!(report.line("app"), "8.8.8 (running)");
 }
 
-// S29: a pre-`daemon_pid` daemon renders no empty `(pid )` suffix.
+// "Missing daemon pid omits pid suffix": a pre-`daemon_pid` daemon renders no empty `(pid )` suffix.
 #[test]
 fn a_pid_less_daemon_renders_the_version_alone() {
     let fake = Fake::start(Reply::Frame(hello_ok(Some("9.9.9"), None, None, Some(false))));
@@ -146,7 +146,7 @@ fn a_pid_less_daemon_renders_the_version_alone() {
     assert_eq!(fake.version().line("daemon"), "9.9.9");
 }
 
-// S16: a rejected handshake is still exit 0, and a multi-line rejection is
+// "Daemon rejection gives five line report": a rejected handshake is still exit 0, and a multi-line rejection is
 // flattened so the report stays five lines.
 #[test]
 fn a_rejected_handshake_is_reported_not_fatal() {
@@ -161,7 +161,7 @@ fn a_rejected_handshake_is_reported_not_fatal() {
     assert_eq!(report.line("app"), "unknown (daemon unreachable)");
 }
 
-// S25: a peer that accepts and hangs up without replying is unreachable, not
+// "Daemon closing without reply reports unreachable": a peer that accepts and hangs up without replying is unreachable, not
 // absent — something was listening.
 #[test]
 fn a_peer_that_closes_without_replying_is_unreachable() {
@@ -173,7 +173,7 @@ fn a_peer_that_closes_without_replying_is_unreachable() {
     assert_eq!(report.line("app"), "unknown (daemon unreachable)");
 }
 
-// S34: the read timeout. The only failure mode where a bug hangs the CLI
+// "Silent open peer times out unreachable": the read timeout. The only failure mode where a bug hangs the CLI
 // forever instead of printing something wrong, so it is worth its ~5s.
 #[test]
 fn a_silent_peer_times_out_instead_of_hanging() {
@@ -186,7 +186,7 @@ fn a_silent_peer_times_out_instead_of_hanging() {
     assert!(started.elapsed() < Duration::from_secs(15), "must not hang: {:?}", started.elapsed());
 }
 
-// S24: the CLI names itself `cli`, never stamps app_version (that key belongs
+// "Version run sends only the cli hello": the CLI names itself `cli`, never stamps app_version (that key belongs
 // to the app alone), and sends nothing after the handshake.
 #[test]
 fn the_cli_sends_exactly_one_version_less_hello() {
@@ -205,7 +205,7 @@ fn the_cli_sends_exactly_one_version_less_hello() {
     );
 }
 
-// S13 / S14: no daemon is exit 0 — unlike `open` — and the report still names
+// "No daemon still exits zero" / "Absent daemon report names channel and socket": no daemon is exit 0 — unlike `open` — and the report still names
 // the channel and socket it resolved, which is what makes a shadowing dev CLI
 // pointed at the wrong socket self-evident.
 #[test]
@@ -236,7 +236,7 @@ fn with_no_socket_override_the_socket_is_under_home() {
     assert_eq!(report.line("socket"), want.display().to_string());
 }
 
-// S15: an over-long socket path is a misconfiguration, not an absent daemon —
+// "Over-long socket path reports unreachable": an over-long socket path is a misconfiguration, not an absent daemon —
 // nothing was ever dialled, so "not running" would be a claim about a process
 // the CLI never observed. `open` errors out here; `--version` must not.
 #[test]
@@ -252,7 +252,7 @@ fn an_over_long_socket_path_is_unreachable_not_absent() {
     assert_eq!(report.line("socket"), sock.display().to_string());
 }
 
-// S26: wrong arity stays a usage error, like every other verb.
+// "Extra version argument exits two": wrong arity stays a usage error, like every other verb.
 #[test]
 fn extra_arguments_are_a_usage_error() {
     let out = Report::of(tarmac().args(["--version", "extra"]));
@@ -262,7 +262,7 @@ fn extra_arguments_are_a_usage_error() {
     assert!(out.stderr.contains("usage"), "a usage error must say so on stderr, like every other verb");
 }
 
-// S18: --help carries the verb and its exit-status exception.
+// "Help lists version and its exit status": --help carries the verb and its exit-status exception.
 #[test]
 fn help_lists_the_version_verb_and_its_exit_status() {
     let out = Report::of(tarmac().arg("--help"));
@@ -276,7 +276,7 @@ fn help_lists_the_version_verb_and_its_exit_status() {
     );
 }
 
-// S27: the handshake was extracted out of `open`, so `open`'s reject path needs
+// "Open still shows daemon rejection error": the handshake was extracted out of `open`, so `open`'s reject path needs
 // re-pinning — it must still be exit 1 with the same one-line message.
 #[test]
 fn open_still_fails_on_a_rejected_handshake() {

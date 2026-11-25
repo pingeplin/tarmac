@@ -128,8 +128,9 @@ mod tests {
         add_current(&mut root);
         root
     }
+    /// "Only our handler forms count as ours".
     #[test]
-    fn s9_ours_is_an_exact_command_on_a_command_handler_with_no_args() {
+    fn ours_is_an_exact_command_on_a_command_handler_with_no_args() {
         for h in &ours_handlers() {
             assert!(is_ours(h), "{h}");
         }
@@ -138,8 +139,9 @@ mod tests {
         }
     }
 
+    /// "Only our handler forms count as ours".
     #[test]
-    fn s9_a_removal_keeps_every_foreign_handler_in_its_order() {
+    fn a_removal_keeps_every_foreign_handler_in_its_order() {
         let foreign = foreign_handlers();
         let mut all = ours_handlers();
         all.extend(foreign.iter().cloned());
@@ -209,8 +211,9 @@ mod tests {
             .count()
     }
 
+    /// "Old forms are replaced by the current form".
     #[test]
-    fn s10_an_old_form_is_not_current_and_install_makes_it_current() {
+    fn an_old_form_is_not_current_and_install_makes_it_current() {
         for (name, mut root) in old_forms() {
             assert!(!is_current(&root), "({name}) is current");
             remove_ours(&mut root);
@@ -220,8 +223,9 @@ mod tests {
         }
     }
 
+    /// "Old forms are replaced by the current form".
     #[test]
-    fn s10_ours_leaves_a_users_group_for_a_group_of_its_own() {
+    fn ours_leaves_a_users_group_for_a_group_of_its_own() {
         let (_, mut root) = old_forms().into_iter().find(|(n, _)| *n == "d").unwrap();
         remove_ours(&mut root);
         add_current(&mut root);
@@ -231,8 +235,9 @@ mod tests {
         );
     }
 
+    /// "Prune removes only what uninstall emptied".
     #[test]
-    fn s11_a_container_that_was_already_empty_stays() {
+    fn a_container_that_was_already_empty_stays() {
         let mut root = json!({"hooks": {"Stop": []}});
         assert!(!remove_ours(&mut root));
         assert_eq!(root, json!({"hooks": {"Stop": []}}));
@@ -246,16 +251,18 @@ mod tests {
         assert_eq!(root, json!({"hooks": {"Stop": [{"hooks": []}]}}));
     }
 
+    /// "Prune removes only what uninstall emptied".
     #[test]
-    fn s11_a_group_keeps_its_matcher_while_it_has_another_handler() {
+    fn a_group_keeps_its_matcher_while_it_has_another_handler() {
         let foreign = json!({"type": "command", "command": "say x"});
         let mut root = json!({"hooks": {"Stop": [{"matcher": "x", "hooks": [current_handler(), foreign.clone()]}]}});
         remove_ours(&mut root);
         assert_eq!(root, json!({"hooks": {"Stop": [{"matcher": "x", "hooks": [foreign]}]}}));
     }
 
+    /// "Prune removes only what uninstall emptied".
     #[test]
-    fn s11_a_group_and_the_hooks_key_go_when_the_removal_empties_them() {
+    fn a_group_and_the_hooks_key_go_when_the_removal_empties_them() {
         let mut root = json!({"model": "x", "hooks": {"Stop": [{"matcher": "x", "hooks": [current_handler()]}]}});
         remove_ours(&mut root);
         assert_eq!(root, json!({"model": "x"}));
@@ -267,9 +274,9 @@ mod tests {
 
     const F_ODD: &str = "{\n  \"u\": \"\\u00e9\",\n  \"d\": \"first\",\n  \"s\": \"a\\/b\",\n  \"n\": 1.50,\n  \"e\": 1e3,\n  \"arr\": [1, 2, 3],\n  \"o\": { },\n  \"d\": \"last\"\n}\n";
 
-    // The accepted changes of a parse and a re-write, predicted by hand.
+    // "Formatting outside the merge is preserved": the accepted changes of a parse and a re-write, predicted by hand.
     #[test]
-    fn s17_an_odd_file_changes_only_as_the_accepted_list_says() {
+    fn an_odd_file_changes_only_as_the_accepted_list_says() {
         let mut root: Value = serde_json::from_str(F_ODD).unwrap();
         add_current(&mut root);
         let installed_text = render(&root, Some(F_ODD));

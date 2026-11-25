@@ -16,9 +16,9 @@ fn row(cwd: Option<&str>, proc: Option<&str>) -> TermInfo {
     }
 }
 
-// S14
+// "Terms CLI prints one line per terminal"
 #[test]
-fn s14_each_row_is_one_json_line_in_the_daemons_order() {
+fn each_row_is_one_json_line_in_the_daemons_order() {
     let daemon = Streamer::writing(vec![Msg::Terms { terms: vec![row(Some("/w"), Some("zsh")), row(None, None)] }]);
 
     let out = daemon.run(&["terms"]);
@@ -31,9 +31,9 @@ fn s14_each_row_is_one_json_line_in_the_daemons_order() {
     assert_eq!(daemon.request().0, Msg::TermsList);
 }
 
-// S14
+// "Terms CLI prints one line per terminal"
 #[test]
-fn s14_no_terminal_prints_nothing() {
+fn no_terminal_prints_nothing() {
     let daemon = Streamer::writing(vec![Msg::Terms { terms: vec![] }]);
 
     let out = daemon.run(&["terms"]);
@@ -50,15 +50,15 @@ fn a_refusal_is_printed_and_exits_1() {
     assert_eq!((out.code(), out.stderr.as_str()), (Some(1), "tarmac: no\n"));
 }
 
-// S31
+// "Wait timeouts exit 124"
 #[test]
-fn s31_a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
+fn a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
     assert_never_answered(&["terms"]);
 }
 
-// S33
+// "Bad wait usage exits 2"
 #[test]
-fn s33_an_argument_is_a_usage_error_with_no_connection() {
+fn an_argument_is_a_usage_error_with_no_connection() {
     let daemon = Streamer::writing(vec![]);
 
     assert_usage(&Report::of(tarmac_at(&daemon.double.sock).args(["terms", "extra"])), "terms");

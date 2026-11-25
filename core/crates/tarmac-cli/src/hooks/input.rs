@@ -178,8 +178,9 @@ mod tests {
         }
     }
 
+    /// "Claude event maps to report kind and text".
     #[test]
-    fn s5_a_permission_notification_is_blocked_with_its_message() {
+    fn a_permission_notification_is_blocked_with_its_message() {
         let input = json!({
             "hook_event_name": "Notification",
             "notification_type": "permission_prompt",
@@ -188,7 +189,7 @@ mod tests {
         assert_eq!(message_of(input.clone()), Some(msg("blocked", Some("Claude needs your permission to use Bash"))));
     }
 
-    // The inputs that Claude Code 2.1.325 sent.
+    // "Claude event maps to report kind and text": the inputs that Claude Code 2.1.325 sent.
     #[test]
     fn s5_the_captured_inputs_map_as_the_table_says() {
         assert_eq!(
@@ -220,13 +221,15 @@ mod tests {
         );
     }
 
+    /// "Claude event maps to report kind and text".
     #[test]
-    fn s5_stop_is_done_with_its_text_folded() {
+    fn stop_is_done_with_its_text_folded() {
         assert_eq!(done_text(&json!("Done.\n\n  All   tests pass.\n")), Some("Done. All tests pass.".into()));
     }
 
+    /// "Claude event maps to report kind and text".
     #[test]
-    fn s5_a_prompt_clears_and_a_session_start_with_no_id_is_refused() {
+    fn a_prompt_clears_and_a_session_start_with_no_id_is_refused() {
         let prompt = json!({"hook_event_name": "UserPromptSubmit", "prompt": "x".repeat(10_000)});
         assert_eq!(message_of(prompt), Some(msg("clear", None)));
         assert_eq!(refusal_of(json!({"hook_event_name": "SessionStart", "source": "startup"})), "session_id refused");
@@ -240,16 +243,18 @@ mod tests {
         input
     }
 
+    /// "Session id check accepts safe ids only".
     #[test]
-    fn s22_a_session_id_from_the_safe_set_gives_its_resume_command() {
+    fn a_session_id_from_the_safe_set_gives_its_resume_command() {
         for id in ["00000000-0000-0000-0000-000000000000", "ab_12", &format!("a{}", "b".repeat(127))] {
             let want = Msg::Resume { term_id: "t9".into(), cmd: Some(format!("claude --resume {id}")) };
             assert_eq!(message_of(session_start(json!(id))), Some(want), "{id}");
         }
     }
 
+    /// "Session id check accepts safe ids only".
     #[test]
-    fn s22_any_other_session_id_gives_nothing() {
+    fn any_other_session_id_gives_nothing() {
         let too_long = json!(format!("a{}", "b".repeat(128)));
         for id in [
             json!("-rf"),
@@ -270,15 +275,16 @@ mod tests {
         }
     }
 
-    // The idle notification that Claude Code 2.1.325 sent 60 s after a Stop.
+    // "Other notification types give no report": the idle notification that Claude Code 2.1.325 sent 60 s after a Stop.
     #[test]
-    fn s19_the_captured_idle_notification_is_nothing() {
+    fn the_captured_idle_notification_is_nothing() {
         assert_eq!(fixture("notification-idle")["notification_type"], "idle_prompt");
         assert_eq!(message_of(fixture("notification-idle")), None);
     }
 
+    /// "Other notification types give no report".
     #[test]
-    fn s19_other_notifications_are_nothing() {
+    fn other_notifications_are_nothing() {
         for kind in [json!("idle_prompt"), json!("elicitation_dialog"), Value::Null] {
             let mut input = json!({"hook_event_name": "Notification", "message": "Claude is waiting for your input"});
             if !kind.is_null() {
@@ -295,53 +301,61 @@ mod tests {
         }
     }
 
+    /// "Report text is normalized and capped".
     #[test]
-    fn s18_a_long_text_is_capped_to_280_chars() {
+    fn a_long_text_is_capped_to_280_chars() {
         let text = done_text(&json!("a".repeat(400))).unwrap();
         assert_eq!(text.chars().count(), REPORT_TEXT_MAX);
         assert!(text.ends_with('…'));
     }
 
+    /// "Report text is normalized and capped".
     #[test]
-    fn s18_no_text_when_it_is_blank_or_not_a_string() {
+    fn no_text_when_it_is_blank_or_not_a_string() {
         for message in [json!(" \n\t "), json!(""), json!(7)] {
             assert_eq!(done_text(&message), None, "{message}");
         }
         assert_eq!(message_of(json!({"hook_event_name": "Stop"})), Some(msg("done", None)));
     }
 
+    /// "Report text is normalized and capped".
     #[test]
-    fn s18_the_ends_are_trimmed() {
+    fn the_ends_are_trimmed() {
         assert_eq!(done_text(&json!(" \n\t Done. \n")), Some("Done.".into()));
     }
 
+    /// "Report text is normalized and capped".
     #[test]
-    fn s18_every_kind_of_whitespace_folds() {
+    fn every_kind_of_whitespace_folds() {
         assert_eq!(done_text(&json!("a\t\r\n\u{000b}\u{000c}b")), Some("a b".into()));
     }
 
+    /// "Report text is normalized and capped".
     #[test]
-    fn s18_control_characters_are_removed_and_nothing_else_changes() {
+    fn control_characters_are_removed_and_nothing_else_changes() {
         assert_eq!(done_text(&json!("a\u{001b}[31mb\u{0007}c\u{009b}d")), Some("a[31mbcd".into()));
         assert_eq!(done_text(&json!("a \u{001b} b")), Some("a b".into()));
         assert_eq!(done_text(&json!("\u{001b}\u{0007}")), None);
     }
 
+    /// "Report text is normalized and capped".
     #[test]
-    fn s18_the_cap_counts_the_text_after_the_fold() {
+    fn the_cap_counts_the_text_after_the_fold() {
         let text = format!("a{}", "   \n b".repeat(200));
         let folded = format!("a{}", " b".repeat(200));
         assert_eq!(done_text(&json!(text)), Some(cap_report_text(&folded)));
         assert_eq!(done_text(&json!(text)).unwrap().chars().count(), REPORT_TEXT_MAX);
     }
 
+    /// "Report text is normalized and capped".
     #[test]
-    fn s18_unicode_whitespace_folds_and_is_not_removed() {
+    fn unicode_whitespace_folds_and_is_not_removed() {
         assert_eq!(done_text(&json!("a\u{000b}b\u{000c}c\u{0085}d\u{00a0}e")), Some("a b c d e".into()));
     }
 
+    /// "Report text is normalized and capped".
     #[test]
-    fn s18_the_cap_counts_the_text_after_removal() {
+    fn the_cap_counts_the_text_after_removal() {
         let letters = "a".repeat(REPORT_TEXT_MAX);
         let with_esc = format!("{}\u{001b}{}", &letters[..140], &letters[140..]);
         assert_eq!(done_text(&json!(with_esc)), Some(letters));
