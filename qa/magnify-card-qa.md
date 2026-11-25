@@ -196,8 +196,7 @@ a relayout that can no longer happen.
 <!-- "Incapable engine falls back to reveal" removed in #94: the macOS 26
      floor (packaging/Casks/tarmac.rb, `depends_on macos: :tahoe`) leaves no
      zoom-incapable target, so the capability probe it tested no longer exists.
-     The label is not reused — it is a spec 2607.0006 scenario title, which
-     tests and the spec both cite. -->
+     The label is not reused for another scenario. -->
 
 ## Self-posted zoom message is ignored — Nested/forged zoom messages rejected (event.source guard)
 
