@@ -12,9 +12,9 @@ async fn forwarded(app: &mut mpsc::Receiver<Msg>) -> u64 {
     tokio::time::timeout(Duration::from_secs(5), wait).await.expect("the app gets the term_new")
 }
 
-// S28: the daemon's own bound, set short; the spec's 4 s is TERM_NEW_APP_WAIT.
+// "Silent app makes daemon answer at its bound": the daemon's own bound, set short; the spec's 4 s is TERM_NEW_APP_WAIT.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn s28_an_app_that_never_answers_is_no_answer_at_the_bound_and_a_late_answer_is_dropped() {
+async fn an_app_that_never_answers_is_no_answer_at_the_bound_and_a_late_answer_is_dropped() {
     let mut r = rig("term-new-wait").await;
     let daemon = r.daemon.clone();
     let cwd = r.dir.to_string_lossy().into_owned();
@@ -60,9 +60,9 @@ async fn notices(app: &mut mpsc::Receiver<Msg>, quiet: Duration) -> Vec<String> 
     notices
 }
 
-// S33: the app's notice for a dropped held input, with HOLD_DEADLINE short.
+// "Held input deadline sends small and refuses large": the app's notice for a dropped held input, with HOLD_DEADLINE short.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn s33_a_dropped_held_input_gives_the_app_one_err_notice() {
+async fn a_dropped_held_input_gives_the_app_one_err_notice() {
     let mut r = rig("held-notice").await;
     let handle = canonical_term(&r, Duration::from_millis(200)).await;
 

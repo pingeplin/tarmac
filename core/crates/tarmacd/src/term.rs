@@ -678,9 +678,9 @@ mod tests {
         }
     }
 
-    // S33: HOLD_DEADLINE set short.
+    // "Held input deadline sends small and refuses large": HOLD_DEADLINE set short.
     #[test]
-    fn s33_a_short_held_input_is_written_at_the_deadline_to_a_canonical_child() {
+    fn a_short_held_input_is_written_at_the_deadline_to_a_canonical_child() {
         let dir = crate::fixtures::tmp_dir("hold-short");
         let out = dir.join("out");
         let (master, mut child) = canonical_child(&out);
@@ -694,9 +694,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // S33
+    // "Held input deadline sends small and refuses large"
     #[test]
-    fn s33_a_held_input_over_1000_bytes_is_dropped_at_the_deadline_with_one_notice() {
+    fn a_held_input_over_1000_bytes_is_dropped_at_the_deadline_with_one_notice() {
         let dir = crate::fixtures::tmp_dir("hold-long");
         let out = dir.join("out");
         let (master, mut child) = canonical_child(&out);

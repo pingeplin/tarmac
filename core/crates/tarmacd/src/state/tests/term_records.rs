@@ -27,7 +27,7 @@ async fn until_recorded(daemon: &Daemon, term_id: &str, dir: &Path) {
     .await;
 }
 
-// 2611.0007 S24
+// 2611.0007 "Cwd is read only when the pid changes"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_idle_terminal_reads_its_cwd_no_more() {
     let r = rig_with("idle-cwd", None, LIMIT).await;
@@ -41,7 +41,7 @@ async fn an_idle_terminal_reads_its_cwd_no_more() {
     r.end().await;
 }
 
-// 2611.0007 S25
+// 2611.0007 "Move keeps the value when read is empty"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_moved_record_keeps_its_cwd_through_a_read_with_no_answer() {
     let seeded = serde_json::json!({"boards": [{"board_id": "board-0", "term_records": {"T": {"last_cwd": "/b"}}}]});
@@ -57,7 +57,7 @@ async fn a_moved_record_keeps_its_cwd_through_a_read_with_no_answer() {
     r.end().await;
 }
 
-// 2611.0007 S17
+// 2611.0007 "Slow cwd read at shutdown is cut off"
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_held_cwd_read_ends_the_shutdown_save_at_its_budget() {
     let r = rig_with("shutdown-save", None, LONG_LIMIT).await;
@@ -106,7 +106,7 @@ async fn returned(r: &mut Rig) {
     tokio::time::sleep(TICK).await;
 }
 
-// 2611.0007 S23 (a)
+// 2611.0007 "Late cwd read stores nothing" (a)
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_late_read_after_a_close_stores_nothing() {
     let mut r = late_read("late-close").await;
@@ -119,7 +119,7 @@ async fn a_late_read_after_a_close_stores_nothing() {
     r.end().await;
 }
 
-// 2611.0007 S23 (b)
+// 2611.0007 "Late cwd read stores nothing" (b)
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_late_read_after_a_board_delete_stores_nothing() {
     let mut r = late_read("late-delete").await;

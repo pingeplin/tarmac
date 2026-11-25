@@ -49,7 +49,7 @@ async fn restart_with_gone(tag: &str) -> Restart {
     Restart { tmp, gone, stuck, doc, daemon, fs, calls, release: Some(release), took }
 }
 
-// 2610.0012 S17
+// 2610.0012 "Hung dir does not block startup"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_restart_waits_two_limits_at_most_for_the_docs_that_do_not_answer() {
     let r = restart_with_gone("restart-gone").await;
@@ -84,7 +84,7 @@ async fn look_after_the_release(r: &mut Restart) {
     assert!(r.fs.calls(Call::Stamp) >= reads + 3, "the look read every doc");
 }
 
-// 2610.0012 S18
+// 2610.0012 "Released startup read pushes no false event"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_restored_doc_that_was_not_read_is_taken_as_it_is_when_it_answers() {
     let mut r = restart_with_gone("restart-unread").await;
@@ -106,7 +106,7 @@ async fn a_restored_doc_that_was_not_read_is_taken_as_it_is_when_it_answers() {
     let _ = std::fs::remove_dir_all(&r.tmp);
 }
 
-// 2610.0012 S19 (D10): a first reading of no file ends `unread` too.
+// 2610.0012 "File deleted while held pushes when rewritten" (D10): a first reading of no file ends `unread` too.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_restored_doc_whose_file_went_while_it_was_not_read_is_gone() {
     let mut r = restart_with_gone("restart-unread-gone").await;
@@ -122,7 +122,7 @@ async fn a_restored_doc_whose_file_went_while_it_was_not_read_is_gone() {
     let _ = std::fs::remove_dir_all(&r.tmp);
 }
 
-// 2610.0012 S19 (D10): a refresh ends `unread`.
+// 2610.0012 "File deleted while held pushes when rewritten" (D10): a refresh ends `unread`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_refresh_of_a_restored_doc_that_was_not_read_pushes_as_before() {
     let mut r = restart_with_gone("restart-unread-refresh").await;
@@ -139,7 +139,7 @@ async fn a_refresh_of_a_restored_doc_that_was_not_read_pushes_as_before() {
     let _ = std::fs::remove_dir_all(&r.tmp);
 }
 
-// 2610.0012 S19: a file that is missing at the start is read, and gone.
+// 2610.0012 "File deleted while held pushes when rewritten": a file that is missing at the start is read, and gone.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_restored_doc_whose_file_is_missing_is_told_when_it_comes() {
     let tmp = canon_tmp("restart-missing-file");
@@ -158,7 +158,7 @@ async fn a_restored_doc_whose_file_is_missing_is_told_when_it_comes() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S20: the repo comes through the gate, one walk per dir.
+// 2610.0012 "Startup asks for one repo per dir": the repo comes through the gate, one walk per dir.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_restart_walks_once_for_the_repo_of_each_dir() {
     let tmp = canon_tmp("restart-walks");
@@ -254,7 +254,7 @@ async fn a_background_doc_that_was_not_read_is_read_when_it_answers() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S20, on a board in the background.
+// 2610.0012 "Startup asks for one repo per dir", on a board in the background.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_restart_gives_a_background_board_s_docs_their_repo() {
     let tmp = canon_tmp("restart-background-repo");

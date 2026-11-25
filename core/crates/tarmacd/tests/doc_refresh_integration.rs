@@ -34,7 +34,7 @@ fn open_on_background_board(app: &mut Conn, path: &str) {
     app.open_on("board-1", path);
 }
 
-// S3: a refresh after a real edit pushes the file's CURRENT mtime, and no
+// "Refresh pushes file event with real mtime": a refresh after a real edit pushes the file's CURRENT mtime, and no
 // doc_opened accompanies it. The watcher's own event for the edit is consumed
 // first, so the event under assertion can only be the refresh's — without that,
 // an empty handler would pass.
@@ -63,7 +63,7 @@ fn doc_refresh_pushes_the_files_current_mtime() {
     );
 }
 
-// S4: the mtime is recorded, not just announced — it survives to state.json and
+// "Refresh records mtime and keeps other fields": the mtime is recorded, not just announced — it survives to state.json and
 // back out through Restore after a daemon restart. The rest of the doc entry
 // (read/via/last_opened_ms) and the dock are untouched: a refresh is not a re-open.
 #[test]
@@ -116,7 +116,7 @@ fn doc_refresh_records_the_mtime_durably_and_changes_nothing_else() {
     assert_eq!(entry.last_changed_ms, Some(pushed), "the refreshed mtime must survive a daemon restart");
 }
 
-// S5: scoping. A doc parked on a background board is not refreshable; the same
+// "Refresh on background board pushes nothing": scoping. A doc parked on a background board is not refreshable; the same
 // message after switching to that board is. The positive half is what makes the
 // silence meaningful — it proves the first refresh was scoped out, not mis-set-up.
 #[test]
@@ -151,7 +151,7 @@ fn doc_refresh_is_scoped_to_the_active_board() {
     );
 }
 
-// S6: the always-push contract. An unchanged file still gets a file_event, and it
+// "Refresh of unchanged doc still pushes event": the always-push contract. An unchanged file still gets a file_event, and it
 // carries the mtime the earlier event reported — not `now`, and not nothing. This
 // is the scenario that kills both a now_ms() handler and a "skip if unchanged" one.
 #[test]
@@ -179,7 +179,7 @@ fn doc_refresh_pushes_even_when_the_mtime_is_unchanged() {
     );
 }
 
-// S7: a doc that nothing has written since it was opened still refreshes. The
+// "Refresh of never-edited doc pushes real mtime": a doc that nothing has written since it was opened still refreshes. The
 // file is as the daemon saw it at the open, so no look of the watcher pushes for
 // it; the drain below also lets the watcher go quiet. The file_event that follows
 // is the refresh's alone. This is the unconditional kill for a do-nothing handler
@@ -202,7 +202,7 @@ fn doc_refresh_works_on_a_doc_nothing_has_written_since_open() {
     wait_for_last_changed(&daemon, "last_changed_ms recorded", 0, &a, &json!(pushed));
 }
 
-// S8: repeat refreshes of an unchanged file are identical, not cumulative.
+// "Repeated refresh pushes identical mtime": repeat refreshes of an unchanged file are identical, not cumulative.
 #[test]
 fn doc_refresh_is_idempotent_on_repeat() {
     let daemon = TestDaemon::start();
@@ -222,7 +222,7 @@ fn doc_refresh_is_idempotent_on_repeat() {
     assert_eq!(first, mtime_ms(&a), "and both must be the file's real mtime");
 }
 
-// S9: an unknown path is a silent no-op — no push, no err — and an unrelated open
+// "Refresh of unregistered path pushes nothing": an unknown path is a silent no-op — no push, no err — and an unrelated open
 // doc is untouched (proved by refreshing it successfully afterwards).
 #[test]
 fn doc_refresh_unknown_path_is_a_silent_noop() {
@@ -234,7 +234,7 @@ fn doc_refresh_unknown_path_is_a_silent_noop() {
     app.recv_doc_opened();
 
     // A real file, canonicalized, that was never opened: the stat SUCCEEDS, so this
-    // exercises the registry-miss branch rather than the deleted-file branch S10
+    // exercises the registry-miss branch rather than the deleted-file branch "Refresh of deleted file pushes nothing"
     // already covers.
     let unopened = write_doc(&daemon.dir.join("docs/unopened.md"), "u\n");
     app.send(&Msg::DocRefresh { path: unopened.clone() });
@@ -251,7 +251,7 @@ fn doc_refresh_unknown_path_is_a_silent_noop() {
     assert_eq!(recv_refresh_event(&mut app, &a), mtime_ms(&a), "the unrelated open doc must still refresh normally");
 }
 
-// S10: an open doc whose file has been deleted emits nothing (watch_loop's
+// "Refresh of deleted file pushes nothing": an open doc whose file has been deleted emits nothing (watch_loop's
 // deleted-file rule), sends no err, and does not wedge the handler for other docs.
 #[test]
 fn doc_refresh_on_a_deleted_file_emits_nothing() {
@@ -283,6 +283,6 @@ fn doc_refresh_on_a_deleted_file_emits_nothing() {
     );
 }
 
-// S21 and S22 are `a_refresh_reports_a_change_that_no_wake_told_of` and
+// "Refresh delivers edit the watcher missed" and "Refresh re-stats instead of trusting registry" are `a_refresh_reports_a_change_that_no_wake_told_of` and
 // `a_refresh_stats_the_file_and_does_not_replay_what_is_recorded` in `src/state/tests/looks.rs`:
 // over the socket no change stays unseen long enough to refresh it.

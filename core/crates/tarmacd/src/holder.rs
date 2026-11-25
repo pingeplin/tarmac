@@ -128,8 +128,9 @@ mod tests {
     use super::*;
     use crate::fixtures::{L, S, facts, live};
 
+    /// "Holder liveness rejects a reused pid".
     #[test]
-    fn s12_an_agent_holder_lasts_while_its_process_with_that_start_time_lives() {
+    fn an_agent_holder_lasts_while_its_process_with_that_start_time_lives() {
         let agent = Holder::Agent { pid: 200, started: 11 };
         assert!(agent.alive(facts(&[(200, live(11))]), Some(L)));
         assert!(!agent.alive(facts(&[(200, live(12))]), Some(L)), "a reused pid");
@@ -138,15 +139,16 @@ mod tests {
         assert!(!agent.alive(facts(&[(200, Facts::Gone)]), None), "a failed leader read does not keep it");
     }
 
+    /// "Holder liveness rejects a reused pid".
     #[test]
-    fn s12_a_leader_holder_lasts_while_it_is_the_leader() {
+    fn a_leader_holder_lasts_while_it_is_the_leader() {
         let leader = Holder::Leader { pid: L };
         assert!(leader.alive(facts(&[]), Some(L)));
         assert!(leader.alive(facts(&[]), None));
         assert!(!leader.alive(facts(&[]), Some(S)));
     }
 
-    // The walk: S9 and S36, against the production `Holder::resolve`.
+    // The walk: "Agent walk resolves each parent chain case" and "Holder decision picks agent leader shell or none", against the production `Holder::resolve`.
     const CHILD: Pid = 100;
     const A: Pid = 200;
     const X: Pid = 300;
@@ -185,31 +187,36 @@ mod tests {
 
     const LEADER: Option<Holder> = Some(Holder::Leader { pid: L });
 
+    /// "Agent walk resolves each parent chain case" (a).
     #[test]
-    fn s9a_the_agent_is_the_member_just_below_the_shell() {
+    fn the_agent_is_the_member_just_below_the_shell() {
         assert_eq!(resolve(CALLER, false, CHAIN), agent(A));
     }
 
+    /// "Agent walk resolves each parent chain case" (b), "Holder decision picks agent leader shell or none".
     #[test]
-    fn s9b_s36_a_caller_whose_parent_is_the_shell_is_held_by_the_shell() {
+    fn a_caller_whose_parent_is_the_shell_is_held_by_the_shell() {
         let shell =
             Holder::resolve(Some(CALLER), Some(CHILD), false, table(&[(CALLER, CHILD)]), || panic!("no leader read"));
         assert_eq!(shell, Some(Holder::Shell { pid: CHILD, caller: CALLER }));
     }
 
+    /// "Agent walk resolves each parent chain case" (c).
     #[test]
-    fn s9c_the_shell_itself_as_the_caller_is_held_by_the_shell() {
+    fn the_shell_itself_as_the_caller_is_held_by_the_shell() {
         assert_eq!(resolve(CHILD, false, &[(CHILD, 1)]), Some(Holder::Shell { pid: CHILD, caller: CHILD }));
     }
 
+    /// "Agent walk resolves each parent chain case" (d, i).
     #[test]
-    fn s9d_s9i_a_child_spawned_as_cmd_is_the_agent_for_every_caller() {
+    fn a_child_spawned_as_cmd_is_the_agent_for_every_caller() {
         assert_eq!(resolve(CALLER, true, CHAIN), agent(CHILD));
         assert_eq!(resolve(CALLER, true, &[(CALLER, CHILD), (CHILD, 1)]), agent(CHILD));
     }
 
+    /// "Holder decision picks agent leader shell or none".
     #[test]
-    fn s36_a_cmd_child_whose_facts_are_not_live_falls_back_to_the_leader() {
+    fn a_cmd_child_whose_facts_are_not_live_falls_back_to_the_leader() {
         let parents = [(CALLER, CHILD)];
         for f in [Facts::Gone, Facts::Unread] {
             let facts_of = |pid| if pid == CHILD { f } else { table(&parents)(pid) };
@@ -217,27 +224,31 @@ mod tests {
         }
     }
 
+    /// "Agent walk resolves each parent chain case" (e).
     #[test]
-    fn s9e_a_caller_re_parented_to_launchd_falls_back_to_the_leader() {
+    fn a_caller_re_parented_to_launchd_falls_back_to_the_leader() {
         // A parent of pid 1 that leads to the child: only the guard stops there.
         assert_eq!(resolve(CALLER, false, &[(CALLER, X), (X, 1), (1, CHILD)]), LEADER);
     }
 
+    /// "Agent walk resolves each parent chain case" (f), "Holder decision picks agent leader shell or none".
     #[test]
-    fn s9f_s36_a_parent_gone_or_unread_on_the_way_falls_back_to_the_leader() {
+    fn a_parent_gone_or_unread_on_the_way_falls_back_to_the_leader() {
         assert_eq!(resolve(CALLER, false, &[(CALLER, X)]), LEADER);
         let unread = |pid| if pid == X { Facts::Unread } else { table(CHAIN)(pid) };
         assert_eq!(Holder::resolve(Some(CALLER), Some(CHILD), false, unread, || Some(L)), LEADER);
     }
 
+    /// "Agent walk resolves each parent chain case" (g).
     #[test]
-    fn s9g_no_caller_or_no_child_falls_back_to_the_leader() {
+    fn no_caller_or_no_child_falls_back_to_the_leader() {
         assert_eq!(Holder::resolve(None, Some(CHILD), false, table(CHAIN), || Some(L)), LEADER);
         assert_eq!(Holder::resolve(Some(CALLER), None, false, table(CHAIN), || Some(L)), LEADER);
     }
 
+    /// "Agent walk resolves each parent chain case" (h).
     #[test]
-    fn s9h_a_cycle_falls_back_to_the_leader() {
+    fn a_cycle_falls_back_to_the_leader() {
         assert_eq!(resolve(CALLER, false, &[(CALLER, X), (X, Y), (Y, X)]), LEADER);
     }
 
@@ -247,20 +258,23 @@ mod tests {
         (pids[0], pids.windows(2).map(|w| (w[0], w[1])).collect())
     }
 
+    /// "Agent walk resolves each parent chain case" (h).
     #[test]
-    fn s9h_a_chain_of_32_members_is_walked() {
+    fn a_chain_of_32_members_is_walked() {
         let (caller, parents) = chain_of(32);
         assert_eq!(resolve(caller, false, &parents), agent(parents[parents.len() - 1].0));
     }
 
+    /// "Agent walk resolves each parent chain case" (h).
     #[test]
-    fn s9h_a_chain_of_33_members_falls_back_to_the_leader() {
+    fn a_chain_of_33_members_falls_back_to_the_leader() {
         let (caller, parents) = chain_of(33);
         assert_eq!(resolve(caller, false, &parents), LEADER);
     }
 
+    /// "Holder decision picks agent leader shell or none".
     #[test]
-    fn s36_an_unplaced_caller_with_no_leader_has_no_holder() {
+    fn an_unplaced_caller_with_no_leader_has_no_holder() {
         assert_eq!(Holder::resolve(None, Some(CHILD), false, table(CHAIN), || None), None);
     }
 }

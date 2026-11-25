@@ -77,9 +77,9 @@ fn login_shell(daemon: &TestDaemon, log: &mut FrameLog) -> (Conn, String) {
     (app, shell)
 }
 
-// S1, S2
+// "Walk finds the agent below the shell", "Report ends when its agent exits"
 #[test]
-fn s1_s2_the_walk_finds_the_agent_below_the_shell_and_the_report_ends_with_it() {
+fn the_walk_finds_the_agent_below_the_shell_and_the_report_ends_with_it() {
     let daemon = TestDaemon::start_sh();
     let mut log = FrameLog::default();
     let (mut app, shell) = login_shell(&daemon, &mut log);
@@ -120,9 +120,9 @@ fn a_report_names_a_symlinked_holder_by_the_link() {
     assert_eq!(frame.proc.as_deref(), Some("claude"));
 }
 
-// S3
+// "Unattributed caller falls back to the foreground process"
 #[test]
-fn s3_an_unattributed_report_is_held_by_the_foreground_leader() {
+fn an_unattributed_report_is_held_by_the_foreground_leader() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T"]);
     app.type_line("T", "sleep 5");
@@ -141,9 +141,9 @@ fn s3_an_unattributed_report_is_held_by_the_foreground_leader() {
     assert!(after >= Duration::from_secs(4) && after <= Duration::from_millis(6500), "removed {after:?} after sleep 5");
 }
 
-// S4
+// "Cmd spawn makes the PTY child the agent"
 #[test]
-fn s4_a_child_spawned_as_cmd_is_the_agent() {
+fn a_child_spawned_as_cmd_is_the_agent() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let reporter = daemon.nc_reporter("r", &[hello_cli(), report("T", "blocked", None)]);
@@ -160,9 +160,9 @@ fn s4_a_child_spawned_as_cmd_is_the_agent() {
     assert!(none_within(&mut app, Duration::from_secs(2), |m| is_report_for(m, "T")));
 }
 
-// S5, S27
+// "Typed input marks the report read", "Old app input never marks a report read"
 #[test]
-fn s5_s27_only_typed_input_marks_a_report_read() {
+fn only_typed_input_marks_a_report_read() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T"]);
     let first = report_from_test(&daemon, &mut app, "T", "blocked", Some("ok?"));
@@ -177,9 +177,9 @@ fn s5_s27_only_typed_input_marks_a_report_read() {
     assert!(none_within(&mut app, Duration::from_secs(1), |m| is_report_for(m, "T")));
 }
 
-// S13
+// "Report is not saved to state file"
 #[test]
-fn s13_a_report_is_not_saved() {
+fn a_report_is_not_saved() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T"]);
     app.send(&Msg::Layout {
@@ -200,9 +200,9 @@ fn s13_a_report_is_not_saved() {
     assert!(!common::contains(&now, b"not-saved-text") && !common::contains(&now, b"report"));
 }
 
-// S14
+// "New app connection receives held reports"
 #[test]
-fn s14_a_new_app_connection_gets_every_report_after_its_restore() {
+fn a_new_app_connection_gets_every_report_after_its_restore() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T", "U"]);
     let first = report_from_test(&daemon, &mut app, "T", "blocked", Some("ok?"));
@@ -235,9 +235,9 @@ fn s14_a_new_app_connection_gets_every_report_after_its_restore() {
     assert!(first_output <= t_output.min(u_output));
 }
 
-// S15
+// "Background board restore replays its reports"
 #[test]
-fn s15_a_background_boards_reports_come_with_each_of_its_restores() {
+fn a_background_boards_reports_come_with_each_of_its_restores() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     app.create_board("board-1");
@@ -259,9 +259,9 @@ fn s15_a_background_boards_reports_come_with_each_of_its_restores() {
     assert_eq!(seen(&third).at_ms, first.at_ms);
 }
 
-// S32
+// "Removal with no app reaches the new app"
 #[test]
-fn s32_a_report_removed_while_no_app_is_connected_is_removed_at_the_next_restore() {
+fn a_report_removed_while_no_app_is_connected_is_removed_at_the_next_restore() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T", "U"]);
     app.type_line("T", "sleep 2");
@@ -288,9 +288,9 @@ fn s32_a_report_removed_while_no_app_is_connected_is_removed_at_the_next_restore
     }
 }
 
-// S16
+// "Exit ends the report and forgets it"
 #[test]
-fn s16_an_exit_ends_the_report_with_no_frame_and_leaves_no_entry() {
+fn an_exit_ends_the_report_with_no_frame_and_leaves_no_entry() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     app.spawn_term("T", &["/bin/sh", "-c", "echo READY; read _; exit 0"]);
@@ -311,9 +311,9 @@ fn s16_an_exit_ends_the_report_with_no_frame_and_leaves_no_entry() {
     assert!(is_removal_for(&frame, "T"), "the old entry survived the exit: {frame:?}");
 }
 
-// S17
+// "Clear with no report sends nothing"
 #[test]
-fn s17_clear_with_no_report_sends_nothing() {
+fn clear_with_no_report_sends_nothing() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T"]);
     assert_ack(&Conn::cli_report(&daemon.sock, "T", "clear", None));
@@ -329,9 +329,9 @@ fn clear_removes_a_report() {
     assert!(is_removal_for(&app.recv_report_for("T"), "T"));
 }
 
-// S18
+// "Report text is capped at 280 characters"
 #[test]
-fn s18_the_daemon_caps_a_raw_clients_text() {
+fn the_daemon_caps_a_raw_clients_text() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T"]);
     // Three bytes a char: a cap by bytes would keep 93 chars, or split one.
@@ -340,9 +340,9 @@ fn s18_the_daemon_caps_a_raw_clients_text() {
     assert_eq!(frame.text, Some(format!("{}…", "中".repeat(proto::REPORT_TEXT_MAX - 1))));
 }
 
-// S21
+// "Identical repeat is a new unread report"
 #[test]
-fn s21_an_identical_repeat_is_a_new_unread_report() {
+fn an_identical_repeat_is_a_new_unread_report() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T"]);
     let first = report_from_test(&daemon, &mut app, "T", "blocked", Some("ok?"));
@@ -359,9 +359,9 @@ fn s21_an_identical_repeat_is_a_new_unread_report() {
     assert!(seen(&app.recv_report_for("T")).read);
 }
 
-// S26
+// "Daemon refuses unknown terminal and bad kind"
 #[test]
-fn s26_the_daemon_refuses_an_unknown_terminal_or_kind_and_drops_an_empty_text() {
+fn the_daemon_refuses_an_unknown_terminal_or_kind_and_drops_an_empty_text() {
     let daemon = TestDaemon::start();
     let mut app = job_shell(&daemon, &["T"]);
     assert_err(&Conn::cli_report(&daemon.sock, "nobody", "done", None), "unknown terminal: nobody");
@@ -372,9 +372,9 @@ fn s26_the_daemon_refuses_an_unknown_terminal_or_kind_and_drops_an_empty_text() 
     assert_eq!(frame.text, None);
 }
 
-// S33
+// "Prompt report is held by the shell"
 #[test]
-fn s33_a_report_typed_at_the_prompt_is_held_by_the_shell() {
+fn a_report_typed_at_the_prompt_is_held_by_the_shell() {
     let daemon = TestDaemon::start_sh();
     let mut log = FrameLog::default();
     let (mut app, shell) = login_shell(&daemon, &mut log);
@@ -410,9 +410,9 @@ fn has_kind_for(msg: &Msg, term_id: &str) -> bool {
     matches!(msg, Msg::TermReport { term_id: t, kind: Some(_), .. } if t == term_id)
 }
 
-// S11
+// "Live report frame carries board and cwd"
 #[test]
-fn s11_a_report_frame_carries_its_board_and_folder_and_a_removal_neither() {
+fn a_report_frame_carries_its_board_and_folder_and_a_removal_neither() {
     let daemon = TestDaemon::start();
     let dir = canon_dir(&common::temp_dir().join("api"));
     let mut app = daemon.connect_app_drained();
@@ -431,10 +431,10 @@ fn s11_a_report_frame_carries_its_board_and_folder_and_a_removal_neither() {
     assert_eq!(place(&removal), (None, None));
 }
 
-// S11, with the terminal's board in the background: the place is its own
+// "Live report frame carries board and cwd", with the terminal's board in the background: the place is its own
 // board's, not the shown one's.
 #[test]
-fn s11_a_background_terminals_report_carries_its_own_board_and_folder() {
+fn a_background_terminals_report_carries_its_own_board_and_folder() {
     let daemon = TestDaemon::start();
     let dir = canon_dir(&common::temp_dir().join("api"));
     let mut app = daemon.connect_app_drained();
@@ -471,9 +471,9 @@ fn two_boards_with_a_read_report(daemon: &TestDaemon, dir: &str) -> Seen {
     first
 }
 
-// S12, S13
+// "Connect replay brings other boards' reports", "Report replay happens once per connection"
 #[test]
-fn s12_s13_a_new_connection_gets_other_boards_reports_once_after_its_first_restore() {
+fn a_new_connection_gets_other_boards_reports_once_after_its_first_restore() {
     let daemon = TestDaemon::start();
     let dir = canon_dir(&common::temp_dir().join("api"));
     let first = two_boards_with_a_read_report(&daemon, &dir);
@@ -519,9 +519,9 @@ fn s12_s13_a_new_connection_gets_other_boards_reports_once_after_its_first_resto
     assert!(log.reports_for("T", back).is_empty(), "the replay runs once per connection");
 }
 
-// S42
+// "Bell and exit frames carry the board"
 #[test]
-fn s42_a_bell_and_an_exit_carry_the_board_of_their_terminal() {
+fn a_bell_and_an_exit_carry_the_board_of_their_terminal() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     app.create_board("board-1");

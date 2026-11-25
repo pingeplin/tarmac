@@ -47,7 +47,7 @@ async fn end_source(daemon: &Arc<Daemon>, app: &mut mpsc::Receiver<Msg>) {
     printed(app, "src", None).await;
 }
 
-/// `cwd_out`, after a first spawn `t1` in its dir (S1).
+/// `cwd_out`, after a first spawn `t1` in its dir ("Held cwd check waits then uses home").
 async fn after_a_cwd_out(tag: &str) -> Rig {
     let mut r = cwd_out(tag).await;
     spawn_pwd(&r.daemon, "t1", Some(&r.dir), None).await;
@@ -55,7 +55,7 @@ async fn after_a_cwd_out(tag: &str) -> Rig {
     r
 }
 
-/// `inherit_out`, after a first spawn `t1` from `src` (S4).
+/// `inherit_out`, after a first spawn `t1` from `src` ("Held inherited cwd lookup falls back to home").
 async fn after_an_inherit_out(tag: &str) -> Rig {
     let mut r = inherit_out(tag).await;
     spawn_pwd(&r.daemon, "t1", None, Some("src")).await;
@@ -63,7 +63,7 @@ async fn after_an_inherit_out(tag: &str) -> Rig {
     r
 }
 
-// 2610.0013 S1
+// 2610.0013 "Held cwd check waits then uses home"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_spawn_whose_cwd_does_not_answer_runs_in_home() {
     let mut r = cwd_out("cwd-out").await;
@@ -76,7 +76,7 @@ async fn a_spawn_whose_cwd_does_not_answer_runs_in_home() {
     let _ = std::fs::remove_dir_all(&r.tmp);
 }
 
-// 2610.0013 S2: and a spawn with no cwd makes no `is_dir` call.
+// 2610.0013 "Missing cwd returns at once and uses home": and a spawn with no cwd makes no `is_dir` call.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_spawn_whose_cwd_is_not_there_runs_in_home_at_once() {
     let mut r = rig("cwd-missing").await;
@@ -94,7 +94,7 @@ async fn a_spawn_whose_cwd_is_not_there_runs_in_home_at_once() {
     let _ = std::fs::remove_dir_all(&r.tmp);
 }
 
-// 2610.0013 S3
+// 2610.0013 "Reachable cwd is used for the spawn"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_spawn_runs_in_its_cwd_that_answers() {
     let mut r = rig("cwd-live").await;
@@ -106,7 +106,7 @@ async fn a_spawn_runs_in_its_cwd_that_answers() {
     let _ = std::fs::remove_dir_all(&r.tmp);
 }
 
-// 2610.0013 S4
+// 2610.0013 "Held inherited cwd lookup falls back to home"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_spawn_whose_source_cwd_does_not_answer_runs_in_home() {
     let mut r = inherit_out("inherit-out").await;
@@ -120,7 +120,7 @@ async fn a_spawn_whose_source_cwd_does_not_answer_runs_in_home() {
     let _ = std::fs::remove_dir_all(&r.tmp);
 }
 
-// 2610.0013 S4b
+// 2610.0013 "Held check of inherited dir uses home"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_spawn_whose_inherited_cwd_does_not_answer_runs_in_home() {
     let mut r = rig("inherit-dir-out").await;
@@ -137,7 +137,7 @@ async fn a_spawn_whose_inherited_cwd_does_not_answer_runs_in_home() {
     let _ = std::fs::remove_dir_all(&r.tmp);
 }
 
-// 2610.0013 S5
+// 2610.0013 "Repeat spawn on held path returns at once"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_spawn_in_a_cwd_that_is_out_runs_in_home_at_once() {
     let mut r = after_a_cwd_out("cwd-out-again").await;
@@ -150,7 +150,7 @@ async fn a_spawn_in_a_cwd_that_is_out_runs_in_home_at_once() {
     let _ = std::fs::remove_dir_all(&r.tmp);
 }
 
-// 2610.0013 S5, from the same source terminal.
+// 2610.0013 "Repeat spawn on held path returns at once", from the same source terminal.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_spawn_from_a_source_whose_cwd_is_out_runs_in_home_at_once() {
     let mut r = after_an_inherit_out("inherit-out-again").await;
@@ -165,7 +165,7 @@ async fn a_spawn_from_a_source_whose_cwd_is_out_runs_in_home_at_once() {
     let _ = std::fs::remove_dir_all(&r.tmp);
 }
 
-// 2610.0013 S6
+// 2610.0013 "Released path is used by the next spawn"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_spawn_runs_in_its_cwd_again_once_the_call_returned() {
     let mut r = after_a_cwd_out("cwd-back").await;

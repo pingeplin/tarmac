@@ -297,7 +297,7 @@ async fn an_older_reading_is_never_taken_after_a_newer_one() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// doc_refresh, S21: it delivers a change that the daemon has not seen.
+// doc_refresh, "Refresh delivers edit the watcher missed": it delivers a change that the daemon has not seen.
 #[tokio::test]
 async fn a_refresh_reports_a_change_that_no_wake_told_of() {
     let (tmp, daemon, mut app) = silent_daemon("refresh-unseen").await;
@@ -312,7 +312,7 @@ async fn a_refresh_reports_a_change_that_no_wake_told_of() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// doc_refresh, S22: it stats the file. A handler that answers from the
+// doc_refresh, "Refresh re-stats instead of trusting registry": it stats the file. A handler that answers from the
 // recorded `last_changed_ms`, and stats only when there is none, passes
 // every test whose record is empty or agrees with the file. Here the record
 // is there and is old.

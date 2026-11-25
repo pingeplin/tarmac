@@ -85,7 +85,7 @@ fn cd_and_sleep(app: &mut Conn, b: &str, first: i64) {
     assert_ne!(pid, first, "the shell gave the sleep no process group of its own");
 }
 
-// S1
+// "Cwd change is recorded without shutdown"
 #[test]
 fn a_command_records_the_cwd_with_no_shutdown() {
     let daemon = TestDaemon::start();
@@ -97,7 +97,7 @@ fn a_command_records_the_cwd_with_no_shutdown() {
     probe_until_cwd(&daemon, "T", &b);
 }
 
-// S1: a new pid with the same name is read too.
+// "Cwd change is recorded without shutdown": a new pid with the same name is read too.
 #[test]
 fn a_new_pid_with_the_same_name_records_the_cwd() {
     let daemon = TestDaemon::start();
@@ -115,7 +115,7 @@ fn a_new_pid_with_the_same_name_records_the_cwd() {
     probe_until(&daemon, "the second sleep's cwd", deadline, |r| r.last_cwd("T") == Some(c.as_str()));
 }
 
-// S7
+// "Cwd change alone does not save state"
 #[test]
 fn a_cwd_change_does_not_save() {
     let daemon = TestDaemon::start();
@@ -147,7 +147,7 @@ fn moved_at_idle(daemon: &TestDaemon, a: &str, b: &str) -> Conn {
     app
 }
 
-// S2
+// "Idle cd is recorded at shutdown"
 #[test]
 fn an_idle_cd_is_saved_at_shutdown() {
     let mut daemon = TestDaemon::start();
@@ -164,7 +164,7 @@ fn an_idle_cd_is_saved_at_shutdown() {
     assert_eq!(restore.last_cwd("T"), Some(b.as_str()));
 }
 
-/// S18: the state is saved before the socket goes.
+/// "State is saved before the socket goes".
 fn saved_before_the_socket_goes(sig: libc::c_int) {
     let mut daemon = TestDaemon::start();
     let (a, b) = (canon_dir(&daemon.dir.join("a")), canon_dir(&daemon.dir.join("b")));
@@ -198,7 +198,7 @@ fn sigint_saves_before_the_socket_goes() {
     saved_before_the_socket_goes(libc::SIGINT);
 }
 
-// S3
+// "Spawn with succeeds moves the record"
 #[test]
 fn succeeds_moves_the_record_to_the_new_term() {
     let tmp = common::temp_dir();
@@ -233,7 +233,7 @@ fn succeeds_with_no_cwd_spawns_in_the_record_folder() {
     assert_eq!(restore.last_cwd("T2"), Some(dir.as_str()));
 }
 
-// S6
+// "Layout keeps the term records"
 #[test]
 fn a_layout_keeps_the_records() {
     let daemon = TestDaemon::start_seeded(&seeded(&json!({"T": {"last_cwd": "/seeded"}})));
@@ -264,7 +264,7 @@ fn saved_shells(daemon: &TestDaemon, shells: &[(&str, &str)]) -> Conn {
     app
 }
 
-// S8
+// "Term close deletes the record"
 #[test]
 fn term_close_deletes_the_record() {
     let daemon = TestDaemon::start();
@@ -278,7 +278,7 @@ fn term_close_deletes_the_record() {
     daemon.wait_for_state("no record of T", |v| !has_record(v, 0, "T"));
 }
 
-// S9
+// "Clean exit deletes record and failed exit keeps"
 #[test]
 fn a_clean_exit_deletes_the_record_and_a_failure_keeps_it() {
     let daemon = TestDaemon::start();
@@ -300,7 +300,7 @@ fn a_clean_exit_deletes_the_record_and_a_failure_keeps_it() {
     });
 }
 
-// S26
+// "Term close deletes an orphan record"
 #[test]
 fn term_close_deletes_the_record_of_a_term_that_is_not_live() {
     let daemon = TestDaemon::start_seeded(&seeded_on_board_1());
@@ -315,7 +315,7 @@ fn term_close_deletes_the_record_of_a_term_that_is_not_live() {
     assert!(!restore.term_records.contains_key("T"), "{:?}", restore.term_records);
 }
 
-// S13
+// "Old state file loads with empty records"
 #[test]
 fn an_old_state_file_loads_with_no_records_and_saves_none() {
     let old = json!({"boards": [{"board_id": "board-0", "tiles": [{"kind": "term", "term_id": "T"}]}, {"board_id": "board-1"}], "active": "board-0"});
@@ -332,7 +332,7 @@ fn an_old_state_file_loads_with_no_records_and_saves_none() {
     }
 }
 
-// S14
+// "Missing folder falls back to home"
 #[test]
 fn a_gone_folder_spawns_in_home() {
     let home_dir = common::temp_dir();
@@ -352,7 +352,7 @@ fn a_gone_folder_spawns_in_home() {
     let _ = std::fs::remove_dir_all(home_dir);
 }
 
-// S15 (a)
+// "Unusable succeeds spawns without error" (a)
 #[test]
 fn succeeds_naming_a_live_term_moves_nothing() {
     let daemon = TestDaemon::start();
@@ -366,7 +366,7 @@ fn succeeds_naming_a_live_term_moves_nothing() {
     assert!(restore.term_records.contains_key("L"), "{:?}", restore.term_records);
 }
 
-// S15 (b)
+// "Unusable succeeds spawns without error" (b)
 #[test]
 fn succeeds_naming_an_id_with_no_record_is_no_error() {
     let daemon = TestDaemon::start();
@@ -378,7 +378,7 @@ fn succeeds_naming_an_id_with_no_record_is_no_error() {
     assert!(no_err_frame(&mut app), "an err frame");
 }
 
-// S16
+// "Failed spawn moves no record"
 #[test]
 fn a_failed_spawn_moves_nothing() {
     let daemon = TestDaemon::start_seeded(&seeded(&json!({"T": {"last_cwd": "/seeded"}})));
@@ -394,7 +394,7 @@ fn a_failed_spawn_moves_nothing() {
     assert_eq!(restore.last_cwd("T"), Some("/seeded"));
 }
 
-// S16: a spawn that fails after its id was found free moves nothing.
+// "Failed spawn moves no record": a spawn that fails after its id was found free moves nothing.
 #[test]
 fn a_spawn_that_cannot_exec_moves_nothing() {
     let daemon = TestDaemon::start_seeded(&seeded(&json!({"T": {"last_cwd": "/seeded"}})));
@@ -414,7 +414,7 @@ fn a_spawn_that_cannot_exec_moves_nothing() {
     assert!(!restore.term_records.contains_key("X"), "{:?}", restore.term_records);
 }
 
-// S20
+// "Succeeds does not reach another board"
 #[test]
 fn succeeds_does_not_reach_another_board() {
     let daemon = TestDaemon::start_seeded(&seeded_on_board_1());
@@ -432,7 +432,7 @@ fn succeeds_does_not_reach_another_board() {
     assert_eq!(restore.last_cwd("T"), Some("/seeded"));
 }
 
-// S22
+// "Background board records in its own table"
 #[test]
 fn a_background_board_records_in_its_own_table() {
     let daemon = TestDaemon::start_seeded(&seeded_on_board_1());

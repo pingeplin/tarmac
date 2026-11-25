@@ -198,7 +198,7 @@ mod tests {
         msgs.iter().filter(|m| filter.admits(m)).cloned().collect()
     }
 
-    // S16
+    // "Event filter admits the right frames"
     #[test]
     fn no_filter_admits_the_four_event_frames_only() {
         let filter = Filter::new(None, None).unwrap();
@@ -208,7 +208,7 @@ mod tests {
         assert_eq!(admitted(&filter, &not_events()), vec![]);
     }
 
-    // S16
+    // "Event filter admits the right frames"
     #[test]
     fn a_kind_filter_admits_its_kinds_and_ignores_unknown_names() {
         let all = [exit("t1"), bell("t1"), file_event(), term_report("t1")];
@@ -223,7 +223,7 @@ mod tests {
         }
     }
 
-    // S16
+    // "Event filter admits the right frames"
     #[test]
     fn no_known_kind_is_refused() {
         for kinds in [names(&["later"]), names(&[])] {
@@ -231,7 +231,7 @@ mod tests {
         }
     }
 
-    // S16
+    // "Event filter admits the right frames"
     #[test]
     fn a_terminal_filter_admits_that_terminal_and_no_file_event() {
         let filter = Filter::new(None, Some("t1".into())).unwrap();
@@ -240,14 +240,14 @@ mod tests {
         assert_eq!(admitted(&filter, &all), vec![bell("t1"), exit("t1")]);
     }
 
-    // S16
+    // "Event filter admits the right frames"
     #[test]
     fn output_is_not_an_event() {
         assert!(!is_event(&not_events()[0]));
         assert!([exit("t1"), bell("t1"), file_event(), term_report("t1")].iter().all(is_event));
     }
 
-    // S17
+    // "Exit ring keeps the last 64 exits"
     #[test]
     fn the_ring_keeps_the_last_64_exits() {
         let mut ring = ExitRing::default();
@@ -260,7 +260,7 @@ mod tests {
         assert_eq!(ring.lookup("t65"), Some(Some(65)));
     }
 
-    // S17
+    // "Exit ring keeps the last 64 exits"
     #[test]
     fn the_ring_gives_the_latest_exit_of_an_id() {
         let mut ring = ExitRing::default();
@@ -306,7 +306,7 @@ mod tests {
         Ok(tarmac_protocol::decode(&payload).unwrap())
     }
 
-    // S20
+    // "Closed subscriber ends serve and ignores input"
     #[tokio::test]
     async fn serve_ends_when_the_client_goes() {
         let fanout = Fanout::new(8);
@@ -318,7 +318,7 @@ mod tests {
         assert_eq!(fanout.receiver_count(), 0);
     }
 
-    // S20
+    // "Closed subscriber ends serve and ignores input"
     #[tokio::test]
     async fn bytes_from_the_client_are_dropped_and_frames_go_on() {
         let fanout = Fanout::new(8);
@@ -336,7 +336,7 @@ mod tests {
         assert!(!task.is_finished());
     }
 
-    // S21
+    // "Lagged subscriber gets an error then EOF"
     #[tokio::test]
     async fn a_subscriber_that_falls_behind_is_told_lagged_and_closed() {
         let fanout = Fanout::new(2);
@@ -353,7 +353,7 @@ mod tests {
         task.await.unwrap();
     }
 
-    // S21: a client that reads nothing still has its stream closed, within
+    // "Lagged subscriber gets an error then EOF": a client that reads nothing still has its stream closed, within
     // the limit of the `lagged` write (D7).
     #[tokio::test]
     async fn the_lagged_write_has_a_limit_when_the_client_reads_nothing() {

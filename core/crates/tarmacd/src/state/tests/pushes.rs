@@ -75,7 +75,7 @@ fn nested(levels: usize) -> String {
     "[".repeat(levels) + &"]".repeat(levels)
 }
 
-// S17, and choice 14: each refusal as serde_json gives it.
+// "Data must be exactly one JSON value", and choice 14: each refusal as serde_json gives it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_text_that_is_not_one_json_value_is_refused_before_any_resolve() {
     let linked = Linked::open("push-not-json").await;
@@ -98,7 +98,7 @@ async fn a_text_that_is_not_one_json_value_is_refused_before_any_resolve() {
     assert_eq!(doc_events(&mut app), vec![]);
 }
 
-// S17, and choice 14: 127 levels are taken.
+// "Data must be exactly one JSON value", and choice 14: 127 levels are taken.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn one_json_value_is_taken_and_given_to_the_app_as_it_was_sent() {
     let linked = Linked::open("push-json").await;
@@ -111,7 +111,7 @@ async fn one_json_value_is_taken_and_given_to_the_app_as_it_was_sent() {
     assert_eq!(doc_events(&mut app), expected);
 }
 
-// S18
+// "Relative path is refused"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_relative_path_is_refused() {
     let linked = Linked::open("push-relative").await;
@@ -127,7 +127,7 @@ async fn a_relative_path_with_a_text_that_is_not_json_is_refused_for_the_text() 
     assert_eq!(answer, Err("not one JSON value: EOF while parsing an object at line 1 column 1".into()));
 }
 
-// S19
+// "Symlinked doc path is resolved"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_push_to_another_spelling_of_the_doc_names_the_registry_path() {
     let linked = Linked::open("push-symlink").await;
@@ -153,7 +153,7 @@ async fn an_event_names_the_registry_key_as_it_is_written() {
     assert_eq!(linked.fs.calls(Call::Resolve), 0);
 }
 
-// S20
+// "Resolve cache saves repeated resolves"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_connection_resolves_a_spelling_once() {
     let linked = Linked::open("push-cache").await;
@@ -183,7 +183,7 @@ async fn a_resolve_that_fails_is_made_again() {
     assert_eq!(linked.fs.calls(Call::Resolve), 2);
 }
 
-// S21
+// "Closed doc is refused despite the cache"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_doc_closed_mid_stream_is_refused_whatever_the_cache_holds() {
     let linked = Linked::open("push-closed").await;
@@ -198,7 +198,7 @@ async fn a_doc_closed_mid_stream_is_refused_whatever_the_cache_holds() {
     assert_eq!(doc_events(&mut app), vec![]);
 }
 
-// S22
+// "Background and shared docs get one event"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_doc_on_a_board_in_the_background_gets_its_event() {
     let linked = Linked::written("push-background", "dash.html").await;
@@ -211,7 +211,7 @@ async fn a_doc_on_a_board_in_the_background_gets_its_event() {
     assert_eq!(doc_events(&mut app), vec![(linked.key(), "1".into())]);
 }
 
-// S22
+// "Background and shared docs get one event"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_doc_on_two_boards_gets_one_event() {
     let linked = Linked::open("push-two-boards").await;
@@ -223,7 +223,7 @@ async fn a_doc_on_two_boards_gets_one_event() {
     assert_eq!(doc_events(&mut app), vec![(linked.key(), "1".into())]);
 }
 
-// S23: the daemon does not know a doc's kind as the app sees it.
+// "Markdown doc is acknowledged": the daemon does not know a doc's kind as the app sees it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_markdown_doc_gets_its_event_too() {
     let linked = Linked::written("push-markdown", "notes.md").await;
@@ -234,7 +234,7 @@ async fn a_markdown_doc_gets_its_event_too() {
     assert_eq!(doc_events(&mut app), vec![(linked.key(), "1".into())]);
 }
 
-// S47
+// "No app connected gives an error"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_push_with_no_app_is_refused() {
     let linked = Linked::open("push-no-app").await;
@@ -242,7 +242,7 @@ async fn a_push_with_no_app_is_refused() {
     assert_eq!(answer, Err("no app is connected".into()));
 }
 
-// S48
+// "Unknown or missing file is refused"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_file_that_is_not_an_open_doc_is_refused() {
     let linked = Linked::open("push-not-open").await;
@@ -254,7 +254,7 @@ async fn a_file_that_is_not_an_open_doc_is_refused() {
     assert_eq!(doc_events(&mut app), vec![]);
 }
 
-// S48
+// "Unknown or missing file is refused"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_path_with_no_file_gets_the_resolve_text() {
     let linked = Linked::open("push-missing").await;
@@ -264,7 +264,7 @@ async fn a_path_with_no_file_gets_the_resolve_text() {
     assert_eq!(answer, Err(format!("cannot open {}: No such file or directory (os error 2)", missing.display())));
 }
 
-// S49
+// "Stuck resolve gives a timeout error"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_push_whose_resolve_does_not_answer_fails_in_its_limit() {
     let linked = Linked::open("push-stuck").await;

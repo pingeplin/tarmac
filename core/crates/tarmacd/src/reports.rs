@@ -179,8 +179,9 @@ mod tests {
         Place { board_id: Some(board.into()), cwd: Some(cwd.into()) }
     }
 
+    /// "Store handles report clear read check and forget" (a).
     #[test]
-    fn s11a_a_first_report_is_pushed_unread() {
+    fn a_first_report_is_pushed_unread() {
         let mut reports = Reports::default();
         assert_eq!(
             blocked(&mut reports, 1000),
@@ -189,8 +190,9 @@ mod tests {
         assert!(reports.has(T) && reports.unread(T));
     }
 
+    /// "Store handles report clear read check and forget" (b).
     #[test]
-    fn s11b_an_identical_repeat_is_a_new_unread_report_with_the_new_holder() {
+    fn an_identical_repeat_is_a_new_unread_report_with_the_new_holder() {
         let mut reports = Reports::default();
         blocked(&mut reports, 1000);
         reports.mark_read(T);
@@ -211,8 +213,9 @@ mod tests {
         assert!(reports.unread(T));
     }
 
+    /// "Store handles report clear read check and forget" (c).
     #[test]
-    fn s11c_a_repeat_with_a_new_text_is_unread() {
+    fn a_repeat_with_a_new_text_is_unread() {
         let mut reports = Reports::default();
         blocked(&mut reports, 1000);
         reports.mark_read(T);
@@ -220,8 +223,9 @@ mod tests {
         assert_eq!(again, report_frame(T, "done", Some("new"), 1500, None, false, Place::default()));
     }
 
+    /// "Store handles report clear read check and forget" (d).
     #[test]
-    fn s11d_clear_pushes_a_removal_only_when_there_was_a_report() {
+    fn clear_pushes_a_removal_only_when_there_was_a_report() {
         let mut reports = Reports::default();
         assert_eq!(reports.clear(T), None);
         blocked(&mut reports, 1000);
@@ -230,8 +234,9 @@ mod tests {
         assert_eq!(reports.clear(T), None);
     }
 
+    /// "Store handles report clear read check and forget" (e).
     #[test]
-    fn s11e_mark_read_pushes_once() {
+    fn mark_read_pushes_once() {
         let mut reports = Reports::default();
         blocked(&mut reports, 1000);
         assert_eq!(
@@ -242,8 +247,9 @@ mod tests {
         assert_eq!(reports.mark_read(T), None);
     }
 
+    /// "Store handles report clear read check and forget" (f).
     #[test]
-    fn s11f_check_removes_a_report_whose_holder_is_gone_once() {
+    fn check_removes_a_report_whose_holder_is_gone_once() {
         let mut reports = Reports::default();
         blocked(&mut reports, 1000);
         assert_eq!(reports.check(T, |_| true), None);
@@ -253,8 +259,9 @@ mod tests {
         assert_eq!(reports.check(T, |_| false), None);
     }
 
+    /// "Store handles report clear read check and forget" (g).
     #[test]
-    fn s11g_forget_pushes_nothing_and_empties_the_store() {
+    fn forget_pushes_nothing_and_empties_the_store() {
         let mut reports = Reports::default();
         blocked(&mut reports, 1000);
         reports.forget(T);
@@ -262,8 +269,9 @@ mod tests {
         assert_eq!(reports.snapshot(&[T.into()]), vec![none_frame(T)]);
     }
 
+    /// "Store handles report clear read check and forget" (h).
     #[test]
-    fn s11h_a_shell_holder_lasts_while_the_leader_is_the_shell_or_the_caller() {
+    fn a_shell_holder_lasts_while_the_leader_is_the_shell_or_the_caller() {
         let mut reports = Reports::default();
         reports.report(T, ReportKind::Done, None, 1000, Holder::Shell { pid: S, caller: C }, None, Place::default());
         let no_facts = facts(&[]);
@@ -273,8 +281,9 @@ mod tests {
         assert_eq!(reports.check(T, |h| h.alive(&no_facts, Some(L))), Some(none_frame(T)));
     }
 
+    /// "Store handles report clear read check and forget" (i).
     #[test]
-    fn s11i_a_snapshot_has_one_frame_for_each_term() {
+    fn a_snapshot_has_one_frame_for_each_term() {
         let mut reports = Reports::default();
         blocked(&mut reports, 1000);
         assert_eq!(
@@ -286,17 +295,18 @@ mod tests {
         );
     }
 
+    /// "Holder liveness rejects a reused pid".
     #[test]
-    fn s12_check_removes_a_report_whose_agent_pid_was_reused() {
+    fn check_removes_a_report_whose_agent_pid_was_reused() {
         let mut reports = Reports::default();
         blocked(&mut reports, 1000);
         let reused = facts(&[(200, live(12))]);
         assert_eq!(reports.check(T, |h| h.alive(&reused, Some(L))), Some(none_frame(T)));
     }
 
-    // 2611.0013 S14
+    // 2611.0013 "Store replay set skips shown terminals"
     #[test]
-    fn s14_the_frame_carries_the_place_given_to_report_and_keeps_it_when_read() {
+    fn the_frame_carries_the_place_given_to_report_and_keeps_it_when_read() {
         let mut reports = Reports::default();
         let pushed = reports.report(T, ReportKind::Done, None, 1000, AGENT, None, on_board("board-1", "/w"));
         assert_eq!(pushed, report_frame(T, "done", None, 1000, None, false, on_board("board-1", "/w")));
@@ -307,9 +317,9 @@ mod tests {
         assert_eq!(reports.clear(T), Some(none_frame(T)), "a removal has no place");
     }
 
-    // 2611.0013 S14
+    // 2611.0013 "Store replay set skips shown terminals"
     #[test]
-    fn s14_elsewhere_gives_each_reported_term_not_shown_sorted_by_term_id() {
+    fn elsewhere_gives_each_reported_term_not_shown_sorted_by_term_id() {
         let mut reports = Reports::default();
         reports.report("u", ReportKind::Done, None, 2000, AGENT, None, on_board("board-2", "/u"));
         reports.report("t", ReportKind::Blocked, None, 1000, AGENT, None, on_board("board-1", "/t"));

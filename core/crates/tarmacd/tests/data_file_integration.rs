@@ -117,7 +117,7 @@ impl Card {
     }
 }
 
-// S36
+// "Doc data on active board gives file event"
 #[test]
 fn a_data_file_is_answered_with_a_file_event_for_the_data_file() {
     let daemon = TestDaemon::start();
@@ -128,7 +128,7 @@ fn a_data_file_is_answered_with_a_file_event_for_the_data_file() {
     assert_eq!(app.recv_file_event_for(&card.stats), mtime_ms(&card.stats), "the data file's mtime");
 }
 
-// S36a
+// "Unchanged data file gives no second event"
 #[test]
 fn the_answer_takes_the_data_file_as_seen() {
     let daemon = TestDaemon::start();
@@ -139,7 +139,7 @@ fn the_answer_takes_the_data_file_as_seen() {
     look_with_none_for(&mut app, &card.other, &[&card.stats]);
 }
 
-// S37
+// "One data write gives one file event"
 #[test]
 fn one_write_of_the_data_file_is_one_file_event() {
     let daemon = TestDaemon::start();
@@ -152,7 +152,7 @@ fn one_write_of_the_data_file_is_one_file_event() {
     assert!(quiet(&mut app, &card.stats), "one file_event for one write");
 }
 
-// S38
+// "Repeated doc data gives a new file event"
 #[test]
 fn the_same_data_file_again_is_answered_again() {
     let daemon = TestDaemon::start();
@@ -165,7 +165,7 @@ fn the_same_data_file_again_is_answered_again() {
     assert_eq!(app.recv_file_event_for(&card.stats), mtime_ms(&card.stats));
 }
 
-// S39
+// "Missing data file gives event once made"
 #[test]
 fn a_data_file_that_is_not_there_is_reported_when_it_is_made() {
     let daemon = TestDaemon::start();
@@ -181,7 +181,7 @@ fn a_data_file_that_is_not_there_is_reported_when_it_is_made() {
     assert!(quiet(&mut app, &later), "one file_event for one file made");
 }
 
-// S40
+// "Doc data with no name stops file events"
 #[test]
 fn a_data_file_with_no_file_clears_the_data_file() {
     let daemon = TestDaemon::start();
@@ -194,7 +194,7 @@ fn a_data_file_with_no_file_clears_the_data_file() {
     look_with_none_for(&mut app, &card.other, &[&card.stats]);
 }
 
-// S40a
+// "Doc data with another name switches the watch"
 #[test]
 fn a_data_file_with_another_file_replaces_the_data_file() {
     let daemon = TestDaemon::start();
@@ -210,10 +210,10 @@ fn a_data_file_with_another_file_replaces_the_data_file() {
     look_with_none_for(&mut app, &card.other, &[&card.stats]);
 }
 
-// S41. Each file that is refused is there, beside the doc when the daemon
+// "Data path outside the doc directory is refused". Each file that is refused is there, beside the doc when the daemon
 // resolves it: a daemon that took it would report it. The daemon's cwd is the
 // parent of the docs' directory, so that the relative name names a file too.
-// A file in a subdirectory is taken since 2611.0005 (S9).
+// A file in a subdirectory is taken since 2611.0005 ("Subdirectory data file gives file event").
 #[test]
 fn a_data_file_that_is_refused_records_nothing() {
     let cwd = temp_dir();
@@ -261,7 +261,7 @@ fn a_data_file_that_is_refused_records_nothing() {
     let _ = std::fs::remove_dir_all(&away);
 }
 
-// S42. `other` keeps the directory watched.
+// "Closed doc stops data file events". `other` keeps the directory watched.
 #[test]
 fn a_closed_doc_reads_its_data_file_no_more() {
     let daemon = TestDaemon::start();
@@ -274,7 +274,7 @@ fn a_closed_doc_reads_its_data_file_no_more() {
     look_with_none_for(&mut app, &card.other, &[&card.stats]);
 }
 
-// S43
+// "Shared data file gives one event"
 #[test]
 fn a_data_file_that_two_docs_read_is_one_file_event_for_a_change() {
     let daemon = TestDaemon::start();
@@ -292,7 +292,7 @@ fn a_data_file_that_two_docs_read_is_one_file_event_for_a_change() {
     assert!(quiet(&mut app, &card.stats), "one file_event for one write");
 }
 
-// S43, a data file that is also a doc of the board.
+// "Shared data file gives one event", a data file that is also a doc of the board.
 #[test]
 fn a_data_file_that_is_also_a_doc_is_one_file_event_for_a_change() {
     let daemon = TestDaemon::start();
@@ -320,7 +320,7 @@ fn card_in_the_background(daemon: &TestDaemon, app: &mut Conn) -> Card {
     card
 }
 
-// S44
+// "Background board gets event after restore"
 #[test]
 fn a_data_file_for_a_board_in_the_background_is_answered_at_its_switch() {
     let daemon = TestDaemon::start();
@@ -356,7 +356,7 @@ fn the_same_data_file_again_for_a_board_in_the_background_is_answered_at_its_swi
     assert_eq!(app.recv_file_event_for(&card.stats), mtime_ms(&card.stats));
 }
 
-// S45. A doc of board-1 beside the data file is changed after it, and its
+// "Board switch back gives event after restore". A doc of board-1 beside the data file is changed after it, and its
 // event awaited, so that the wake of the data file's write is spent before
 // the switch back: only the look of the switch can then report the change.
 #[test]
@@ -383,7 +383,7 @@ fn a_change_of_a_data_file_in_the_background_is_reported_at_the_switch() {
     assert_eq!(app.recv_file_event_for(&card.stats), edited);
 }
 
-// S46. `data_file` saves nothing itself, so a layout makes the save.
+// "Data path is not saved in state". `data_file` saves nothing itself, so a layout makes the save.
 #[test]
 fn the_data_file_is_not_in_the_state_file() {
     let daemon = TestDaemon::start();
@@ -411,7 +411,7 @@ fn card_reading_sub(daemon: &TestDaemon, app: &mut Conn) -> (Card, String) {
     (card, stats)
 }
 
-// S8. Each `data` is refused whole. The files they lead to are there, and a
+// "Escaping data paths give no file event". Each `data` is refused whole. The files they lead to are there, and a
 // file_event would carry the text as sent or the file it leads to. The
 // daemon's cwd is the card's directory, so that the relative name names a
 // file too.
@@ -472,7 +472,7 @@ fn a_data_file_that_is_not_a_clean_path_under_the_directory_is_refused() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
-// S34
+// "Hidden data files give no file event"
 #[test]
 fn a_data_file_with_a_hidden_name_below_the_directory_is_refused() {
     let daemon = TestDaemon::start();
@@ -500,7 +500,7 @@ fn a_data_file_with_a_hidden_name_below_the_directory_is_refused() {
     assert_eq!(app.recv_file_event_for(&data), mtime_ms(&data), "a doc's own directory may be hidden");
 }
 
-// S9
+// "Subdirectory data file gives file event"
 #[test]
 fn a_data_file_for_a_file_in_a_subdirectory_is_answered_with_a_file_event() {
     let daemon = TestDaemon::start();
@@ -512,7 +512,7 @@ fn a_data_file_for_a_file_in_a_subdirectory_is_answered_with_a_file_event() {
     assert_eq!(app.recv_file_event_for(&stats), mtime_ms(&stats));
 }
 
-// S10. No look is forced: only a watch of `sub` can report the write.
+// "One write gives one subdirectory event". No look is forced: only a watch of `sub` can report the write.
 #[test]
 fn one_write_of_a_data_file_in_a_subdirectory_is_one_file_event() {
     let daemon = TestDaemon::start();
@@ -539,7 +539,7 @@ fn file_events_until_quiet(app: &mut Conn, path: &str) -> Vec<u64> {
     seen
 }
 
-// S11
+// "Replacing by rename gives an event"
 #[test]
 fn a_data_file_in_a_subdirectory_replaced_by_a_rename_is_reported() {
     let daemon = TestDaemon::start();
@@ -553,7 +553,7 @@ fn a_data_file_in_a_subdirectory_replaced_by_a_rename_is_reported() {
     assert_eq!(events.last(), Some(&mtime_ms(&stats)), "{events:?}");
 }
 
-// S12
+// "Missing file in subdirectory gives event once made"
 #[test]
 fn a_data_file_that_is_not_there_in_a_subdirectory_is_reported_when_it_is_made() {
     let daemon = TestDaemon::start();
@@ -570,7 +570,7 @@ fn a_data_file_that_is_not_there_in_a_subdirectory_is_reported_when_it_is_made()
     assert!(quiet(&mut app, &new), "one file_event for one file made");
 }
 
-// S13. The write comes after the look that the `mkdir` wakes: a write in
+// "Subdirectory made later is picked up". The write comes after the look that the `mkdir` wakes: a write in
 // that look's window would be reported with no watch of `sub`.
 #[test]
 fn a_data_file_in_a_subdirectory_that_is_made_later_is_reported() {
@@ -587,7 +587,7 @@ fn a_data_file_in_a_subdirectory_that_is_made_later_is_reported() {
     assert_eq!(app.recv_file_event_for(&stats), mtime_ms(&stats));
 }
 
-// S15
+// "Deep data file gives one event"
 #[test]
 fn one_write_of_a_data_file_two_levels_down_is_one_file_event() {
     let daemon = TestDaemon::start();
@@ -602,7 +602,7 @@ fn one_write_of_a_data_file_two_levels_down_is_one_file_event() {
     assert!(quiet(&mut app, &stats), "one file_event for one write");
 }
 
-// S16
+// "Recreated subdirectory gives an event"
 #[test]
 fn a_subdirectory_removed_and_made_again_is_still_watched() {
     let daemon = TestDaemon::start();
@@ -617,7 +617,7 @@ fn a_subdirectory_removed_and_made_again_is_still_watched() {
     assert_eq!(app.recv_file_event_for(&stats), mtime_ms(&stats));
 }
 
-// S20a
+// "Remaining doc still gets one event per write"
 #[test]
 fn a_subdirectory_that_another_doc_still_reads_in_stays_watched() {
     let daemon = TestDaemon::start();
@@ -638,7 +638,7 @@ fn a_subdirectory_that_another_doc_still_reads_in_stays_watched() {
     assert!(quiet(&mut app, &b), "one file_event for one write");
 }
 
-// S25a: S44 with the file in `sub`.
+// "Background board gets event after restore": the 2611.0002 scenario of that title, with the file in `sub`.
 #[test]
 fn a_data_file_in_a_subdirectory_for_a_board_in_the_background_is_answered_at_its_switch() {
     let daemon = TestDaemon::start();
@@ -654,7 +654,7 @@ fn a_data_file_in_a_subdirectory_for_a_board_in_the_background_is_answered_at_it
     assert_eq!(app.recv_file_event_for(&stats), mtime_ms(&stats));
 }
 
-// S28, the state file. A layout makes the save.
+// "State file holds no data path", the state file. A layout makes the save.
 #[test]
 fn a_data_file_in_a_subdirectory_is_not_in_the_state_file() {
     let daemon = TestDaemon::start();
@@ -669,7 +669,7 @@ fn a_data_file_in_a_subdirectory_is_not_in_the_state_file() {
     assert!(!state.contains("stats.json") && !state.contains("/sub"), "no trace of the data file: {state}");
 }
 
-// S29. `self` leads to the card's own directory: the watch of that directory
+// "Dropping link name keeps sibling doc events". `self` leads to the card's own directory: the watch of that directory
 // must outlive the data file's registration.
 #[test]
 fn a_data_path_through_a_link_to_the_doc_directory_leaves_its_watch() {
@@ -694,7 +694,7 @@ fn through_link(card: &Card, name: &str, target: &Path, file: &str) -> String {
     card.beside(&format!("{name}/{file}"))
 }
 
-// S30a. The negative check is the point here: a forced look would stat the
+// "Link leaving the directory gives no later events". The negative check is the point here: a forced look would stat the
 // file through the link and report it.
 #[test]
 fn a_data_file_through_a_link_out_of_the_tree_is_seen_only_by_a_look() {
@@ -717,7 +717,7 @@ fn a_data_file_through_a_link_out_of_the_tree_is_seen_only_by_a_look() {
     let _ = std::fs::remove_dir_all(&away);
 }
 
-// S31
+// "Link inside the directory gives one event"
 #[test]
 fn one_write_through_a_link_in_the_tree_is_one_file_event_for_the_path_named() {
     let daemon = TestDaemon::start();
@@ -738,7 +738,7 @@ fn one_write_through_a_link_in_the_tree_is_one_file_event_for_the_path_named() {
     );
 }
 
-// S26b. The new app names no file: neither registration of the app that
+// "Reconnect drops old registrations". The new app names no file: neither registration of the app that
 // went is left.
 #[test]
 fn the_registrations_of_an_app_that_went_are_dropped() {
