@@ -15,7 +15,7 @@ final class AppPrefsTests: XCTestCase {
         return dir
     }
 
-    /// S24 — the place of release 0.16.0 and older, beside the socket, which
+    /// "Prefs path sits beside the daemon socket" — the place of release 0.16.0 and older, beside the socket, which
     /// `migrate` reads. It kept `make run` worktrees apart.
     func testThePrefsFileSitsBesideTheDaemonSocket() {
         XCTAssertEqual(AppPrefs.path(besideSocket: "/w/.dev/tarmacd.sock"), "/w/.dev/app-prefs.json")
@@ -23,7 +23,7 @@ final class AppPrefsTests: XCTestCase {
         XCTAssertEqual(AppPrefs.path(besideSocket: "tarmacd.sock"), "app-prefs.json")
     }
 
-    /// S25 — every way of not saying "off" leaves the guard on.
+    /// "Bad prefs content keeps warning on" — every way of not saying "off" leaves the guard on.
     func testOnlyAnExplicitFalseTurnsTheGuardOff() {
         let on: [Data?] = [
             nil,
@@ -40,7 +40,7 @@ final class AppPrefsTests: XCTestCase {
         XCTAssertFalse(AppPrefs.warnBeforeQuit(from: data(#"{"warn_before_quit":false,"later":1}"#)))
     }
 
-    /// S26 — the bytes QA reads in `.dev/config/app-prefs.json`, and the round trip.
+    /// "Prefs encode and decode exact bytes" — the bytes QA reads in `.dev/config/app-prefs.json`, and the round trip.
     func testTheSavedBytesAreExactAndReadBack() {
         let off = AppPrefs.Values(warnBeforeQuit: false)
         let on = AppPrefs.Values(warnBeforeQuit: true)
@@ -189,7 +189,7 @@ final class AppPrefsTests: XCTestCase {
 
     private typealias Values = AppPrefs.Values
 
-    /// S1 — the roles are written after the guard, in a fixed order.
+    /// "Prefs encode three font entries" — the roles are written after the guard, in a fixed order.
     func testTheFontChoicesAreWrittenAfterTheGuardInRoleOrder() {
         let values = Values(warnBeforeQuit: false, fonts: [.document: "Helvetica Neue", .terminal: "Menlo"])
         XCTAssertEqual(
@@ -205,13 +205,13 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// S3
+    /// "Prefs decode interface font alone"
     func testAFontKeyReadsAsThatRolesChoice() {
         let values = AppPrefs.decode(data(#"{"warn_before_quit":false,"interface_font":"Monaco"}"#))
         XCTAssertEqual(values, Values(warnBeforeQuit: false, fonts: [.interface: "Monaco"]))
     }
 
-    /// S4
+    /// "Prefs round-trip all three fonts"
     func testSavedFontChoicesReadBackFromDisk() throws {
         let dir = try scratchDirectory()
         let path = dir + "/app-prefs.json"
@@ -222,7 +222,7 @@ final class AppPrefsTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir), ["app-prefs.json"])
     }
 
-    /// S5 — one preference saved must not drop another.
+    /// "Guard change keeps fonts and the reverse" — one preference saved must not drop another.
     func testChangingOnePreferenceKeepsTheOthers() throws {
         let path = try scratchDirectory() + "/app-prefs.json"
         try data(#"{"warn_before_quit":true,"terminal_font":"Menlo"}"#).write(to: URL(fileURLWithPath: path))
@@ -241,7 +241,7 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// S20 — each key is read on its own.
+    /// "Wrong-typed font key is dropped alone" — each key is read on its own.
     func testAKeyOfTheWrongTypeDoesNotChangeHowTheOthersRead() {
         XCTAssertEqual(
             AppPrefs.decode(data(#"{"warn_before_quit":false,"terminal_font":7,"interface_font":"Monaco"}"#)),
@@ -253,7 +253,7 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// S21 — the files are valid JSON, so it is the key's own rule that drops
+    /// "Invalid font strings are dropped" — the files are valid JSON, so it is the key's own rule that drops
     /// the value.
     func testAFontValueThatIsNotAUsableNameIsNoChoice() {
         let unusable = [#""""#, "null", #"["Menlo"]"#, #""a\nb""#, #""a\u001fb""#, "\"a\u{7f}b\""]
@@ -264,7 +264,7 @@ final class AppPrefsTests: XCTestCase {
         }
     }
 
-    /// S22
+    /// "Quotes backslash and Chinese names survive"
     func testAwkwardFamilyNamesSurviveTheRoundTrip() {
         for name in [#"He said "hi""#, #"back\slash"#, "蘋方-繁"] {
             let values = Values(warnBeforeQuit: false, fonts: [.terminal: name, .document: name])
@@ -278,7 +278,7 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// S38 — a damaged file gives up its font choices with its guard.
+    /// "Damaged prefs file decodes to defaults" — a damaged file gives up its font choices with its guard.
     func testADamagedFileReadsAsAllDefaults() {
         let whole = #"{"warn_before_quit":false,"terminal_font":"Menlo"}"#
         XCTAssertEqual(AppPrefs.decode(data(whole)), Values(warnBeforeQuit: false, fonts: [.terminal: "Menlo"]))
@@ -288,7 +288,7 @@ final class AppPrefsTests: XCTestCase {
         }
     }
 
-    /// S49 — a name the reader would refuse is never written, so it cannot
+    /// "Empty and invalid names are not encoded" — a name the reader would refuse is never written, so it cannot
     /// damage the file and turn the guard back on.
     func testANameTheReaderRefusesIsNotWritten() {
         let values = Values(fonts: [.terminal: "", .interface: "a\nb", .document: "Georgia"])
@@ -307,7 +307,7 @@ final class AppPrefsTests: XCTestCase {
 
     // MARK: 2610.0006 — a size beside the Terminal and the Document family
 
-    /// S4 — every family is written before every size.
+    /// "Prefs encode families before sizes" — every family is written before every size.
     func testTheSizesAreWrittenAfterTheFamiliesInRoleOrder() {
         let values = Values(
             warnBeforeQuit: false, fonts: [.terminal: "Menlo", .document: "Georgia"],
@@ -322,7 +322,7 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// S5
+    /// "Prefs without sizes encode as before"
     func testWithNoSizeTheBytesAreThoseOfBefore() {
         XCTAssertEqual(AppPrefs.encode(Values(fontSizes: [:])), data(#"{"warn_before_quit":true}"#))
         XCTAssertEqual(
@@ -342,7 +342,7 @@ final class AppPrefsTests: XCTestCase {
         XCTAssertEqual(AppPrefs.decode(AppPrefs.encode(values)), values)
     }
 
-    /// S6 — one number, however the file spells it.
+    /// "Prefs decode sizes alone" — one number, however the file spells it.
     func testASizeKeyReadsAsThatRolesSize() {
         XCTAssertEqual(
             AppPrefs.decode(data(#"{"warn_before_quit":false,"terminal_font_size":13.5,"document_font_size":18}"#)),
@@ -355,7 +355,7 @@ final class AppPrefsTests: XCTestCase {
         }
     }
 
-    /// S7
+    /// "Prefs round-trip families and sizes"
     func testSavedSizesReadBackFromDisk() throws {
         let dir = try scratchDirectory()
         let path = dir + "/app-prefs.json"
@@ -368,7 +368,7 @@ final class AppPrefsTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir), ["app-prefs.json"])
     }
 
-    /// S8 — a role's family and its size are two choices, and the guard a third.
+    /// "Changing one setting keeps the other two" — a role's family and its size are two choices, and the guard a third.
     func testTheFamilyTheSizeAndTheGuardAreSavedApart() throws {
         let path = try scratchDirectory() + "/app-prefs.json"
         let saved = Values(warnBeforeQuit: false, fonts: [.terminal: "Menlo"], fontSizes: [.terminal: 20])
@@ -400,7 +400,7 @@ final class AppPrefsTests: XCTestCase {
         warnBeforeQuit: false, fonts: [.terminal: "Menlo"], fontSizes: [.document: 18]
     )
 
-    /// S23 — the files are valid JSON, so it is the key's own rule that drops
+    /// "Wrong-typed size key is dropped alone" — the files are valid JSON, so it is the key's own rule that drops
     /// the value. A lenient reader takes `true` for 1.
     func testASizeThatIsNotANumberIsNoSize() {
         for value in ["true", #""16""#, "null", "[16]", "{}"] {
@@ -410,7 +410,7 @@ final class AppPrefsTests: XCTestCase {
         }
     }
 
-    /// S24 — a number the app could not have written is not moved into the
+    /// "Out-of-range size is dropped per role" — a number the app could not have written is not moved into the
     /// range: it is not used.
     func testASizeOutOfItsRolesRangeOrOffTheStepIsNoSize() {
         for value in ["7.5", "32.5", "0", "-16", "1e9", "16.25", "13.3"] {
@@ -425,7 +425,7 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// S25 — a size the reader would refuse is never written.
+    /// "Interface size and invalid sizes are not stored" — a size the reader would refuse is never written.
     func testASizeTheReaderRefusesIsNotWritten() {
         let refused: [[FontRole: Double]] = [
             [.interface: 17, .terminal: 64, .document: 13.3],
@@ -462,7 +462,7 @@ final class AppPrefsTests: XCTestCase {
         XCTAssertEqual(AppPrefs.decode(data(#"{"interface_font_size":16}"#)).fontSizes, [.interface: 16])
     }
 
-    /// S36 — a damaged file gives up its sizes with its guard.
+    /// "Damaged prefs file decodes to defaults" — a damaged file gives up its sizes with its guard.
     func testADamagedFileHasNoSize() {
         let whole = #"{"warn_before_quit":false,"terminal_font_size":20}"#
         XCTAssertEqual(AppPrefs.decode(data(whole)), Values(warnBeforeQuit: false, fontSizes: [.terminal: 20]))
@@ -475,7 +475,7 @@ final class AppPrefsTests: XCTestCase {
 
     // MARK: 2610.0007 — the theme shares the file
 
-    /// S3 — the theme is the last member, after every size.
+    /// "Prefs encode theme after sizes" — the theme is the last member, after every size.
     func testTheThemeIsWrittenLast() {
         XCTAssertEqual(
             AppPrefs.encode(Values(warnBeforeQuit: false, fonts: [.terminal: "Menlo"], theme: .auto)),
@@ -493,19 +493,19 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// S4 — so the bytes of every file that exists today do not change.
+    /// "Dark theme is not written" — so the bytes of every file that exists today do not change.
     func testTheDarkThemeIsNotWritten() {
         XCTAssertEqual(AppPrefs.encode(Values(theme: .dark)), data(#"{"warn_before_quit":true}"#))
     }
 
-    /// S5
+    /// "Prefs decode each theme value"
     func testAThemeKeyReadsAsThatChoice() {
         XCTAssertEqual(AppPrefs.decode(data(#"{"warn_before_quit":true,"theme":"light"}"#)).theme, .light)
         XCTAssertEqual(AppPrefs.decode(data(#"{"warn_before_quit":true,"theme":"auto"}"#)).theme, .auto)
         XCTAssertEqual(AppPrefs.decode(data(#"{"warn_before_quit":true,"theme":"dark"}"#)).theme, .dark)
     }
 
-    /// S6
+    /// "Prefs round-trip theme with fonts"
     func testASavedThemeReadsBackFromDisk() throws {
         let path = try scratchDirectory() + "/app-prefs.json"
         let values = Values(fonts: [.terminal: "Menlo"], fontSizes: [.terminal: 20], theme: .light)
@@ -516,7 +516,7 @@ final class AppPrefsTests: XCTestCase {
         XCTAssertEqual(AppPrefs.load(from: path).theme, .light)
     }
 
-    /// S6
+    /// "Prefs round-trip theme with fonts"
     func testEveryChoiceSurvivesTheRoundTrip() {
         for choice in [ThemeChoice.auto, .light, .dark] {
             let values = Values(warnBeforeQuit: false, fonts: [.document: "Georgia"], theme: choice)
@@ -525,7 +525,7 @@ final class AppPrefsTests: XCTestCase {
         }
     }
 
-    /// S7 — another preference saved must not drop the theme.
+    /// "Theme and guard changes keep each other" — another preference saved must not drop the theme.
     func testChangingTheGuardKeepsTheTheme() throws {
         let path = try scratchDirectory() + "/app-prefs.json"
         try data(#"{"warn_before_quit":true,"theme":"light"}"#).write(to: URL(fileURLWithPath: path))
@@ -537,7 +537,7 @@ final class AppPrefsTests: XCTestCase {
         XCTAssertEqual(AppPrefs.load(from: path), Values(warnBeforeQuit: false, theme: .light))
     }
 
-    /// S7 — and the theme saved must not drop another preference.
+    /// "Theme and guard changes keep each other" — and the theme saved must not drop another preference.
     func testChangingTheThemeKeepsTheGuardAFontAndASize() throws {
         let path = try scratchDirectory() + "/app-prefs.json"
         try data(#"{"warn_before_quit":false,"terminal_font":"Menlo","terminal_font_size":20}"#)
@@ -557,7 +557,7 @@ final class AppPrefsTests: XCTestCase {
         data(#"{"warn_before_quit":false,"terminal_font":"Menlo","theme":"# + value + "}")
     }
 
-    /// S40 — the files are valid JSON and hold the theme where `"light"`
+    /// "Unknown theme value falls back to dark" — the files are valid JSON and hold the theme where `"light"`
     /// reads as one, so it is the key's own rule that drops the value. The
     /// raw values are compared exactly.
     func testAThemeThatIsNotOneOfTheThreeIsTheDarkOne() {
@@ -575,7 +575,7 @@ final class AppPrefsTests: XCTestCase {
         }
     }
 
-    /// S41 — a bad key beside the theme does not change the theme.
+    /// "Invalid keys leave a valid theme alone" — a bad key beside the theme does not change the theme.
     func testTheThemeIsReadBesideKeysOfTheWrongType() {
         let values = AppPrefs.decode(data(#"{"warn_before_quit":"yes","terminal_font":7,"theme":"light"}"#))
 
@@ -584,7 +584,7 @@ final class AppPrefsTests: XCTestCase {
         XCTAssertNil(values.fonts[.terminal])
     }
 
-    /// S54 — a damaged file gives up its theme with its guard. Whole, the file
+    /// "Damaged prefs file decodes to defaults" — a damaged file gives up its theme with its guard. Whole, the file
     /// reads as light with the guard off, so a lenient parser fails here.
     func testADamagedFileHasTheDarkTheme() {
         let whole = #"{"warn_before_quit":false,"theme":"light"}"#
@@ -599,7 +599,7 @@ final class AppPrefsTests: XCTestCase {
 
     // MARK: 2610.0008 — the theme of each appearance shares the file
 
-    /// S20 — after the appearance, light first.
+    /// "Prefs encode both theme keys exactly" — after the appearance, light first.
     func testTheThemesAreWrittenAfterTheAppearanceLightFirst() {
         XCTAssertEqual(
             AppPrefs.encode(Values(theme: .auto, themes: [.light: "solarized-light", .dark: "catppuccin-mocha"])),
@@ -619,7 +619,7 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// S20 — a dark theme for the light appearance, and one theme for both.
+    /// "Prefs encode both theme keys exactly" — a dark theme for the light appearance, and one theme for both.
     func testOneDarkThemeIsWrittenForBothAppearances() {
         XCTAssertEqual(
             AppPrefs.encode(Values(theme: .light, themes: [.light: "catppuccin-mocha", .dark: "catppuccin-mocha"])),
@@ -630,7 +630,7 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// S21 — so the bytes of every file that exists today do not change.
+    /// "Standard Breeze ids stay out of file" — so the bytes of every file that exists today do not change.
     func testTheStandardThemesAreNotWritten() {
         XCTAssertEqual(
             AppPrefs.encode(Values(themes: [.light: "breeze-light", .dark: "breeze-dark"])),
@@ -638,7 +638,7 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// S21 — a Breeze id is left out only where it is the standard theme of
+    /// "Standard Breeze ids stay out of file" — a Breeze id is left out only where it is the standard theme of
     /// that key's appearance.
     func testABreezeThemeIsWrittenForTheOtherAppearance() {
         XCTAssertEqual(
@@ -647,7 +647,7 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// 2610.0009 S31 — an id is resolved when it is used, so one that no
+    /// 2610.0009 "Prefs encode file ids with escapes" — an id is resolved when it is used, so one that no
     /// theme has is written as it is.
     func testAnIdNoThemeHasIsWritten() {
         XCTAssertEqual(
@@ -656,7 +656,7 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// 2610.0009 S31 — a file's name can hold a quote and a backslash.
+    /// 2610.0009 "Prefs encode file ids with escapes" — a file's name can hold a quote and a backslash.
     func testAThemeIdIsWrittenAsAJSONString() {
         let values = Values(themes: [.dark: #"file:a"b\c"#])
 
@@ -667,21 +667,21 @@ final class AppPrefsTests: XCTestCase {
         XCTAssertEqual(AppPrefs.decode(bytes), values)
     }
 
-    /// 2610.0009 S31
+    /// 2610.0009 "Prefs encode file ids with escapes"
     func testAThemeIdThatIsNotASCIISurvivesTheRoundTrip() {
         let values = Values(themes: [.light: "file:日本"])
 
         XCTAssertEqual(AppPrefs.decode(AppPrefs.encode(values)), values)
     }
 
-    /// 2610.0009 S32 — a save keeps an id that no theme has.
+    /// 2610.0009 "Prefs decode keeps any theme id string" — a save keeps an id that no theme has.
     func testAnIdNoThemeHasSurvivesASave() {
         let bytes = data(#"{"warn_before_quit":true,"theme_dark":"file:Gone"}"#)
 
         XCTAssertEqual(AppPrefs.encode(AppPrefs.decode(bytes)), bytes)
     }
 
-    /// S23
+    /// "Prefs decode both theme keys"
     func testAThemeKeyReadsAsTheThemeOfItsAppearance() {
         let file =
             #"{"warn_before_quit":false,"theme":"auto","theme_light":"github-light","#
@@ -700,7 +700,7 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// 2610.0009 S32 — any well-formed id is an entry, whether a theme has
+    /// 2610.0009 "Prefs decode keeps any theme id string" — any well-formed id is an entry, whether a theme has
     /// it or not.
     func testAnyWellFormedIdIsTheThemeOfTheLightAppearance() {
         for id in ["sepia", "GitHub-Light", "file:Gone", "catppuccin-mocha"] {
@@ -710,7 +710,7 @@ final class AppPrefsTests: XCTestCase {
         }
     }
 
-    /// S24, and 2610.0009 S32 — the files are valid JSON, so it is the key's
+    /// "Bad theme values in the file are ignored", and 2610.0009 "Prefs decode keeps any theme id string" — the files are valid JSON, so it is the key's
     /// own rule that drops the value.
     func testAValueThatIsNoIdOrTheStandardOneGivesNoEntry() {
         let withoutALightTheme = Values(fonts: [.terminal: "Menlo"], theme: .light, themes: [.dark: "github-dark"])
@@ -722,7 +722,7 @@ final class AppPrefsTests: XCTestCase {
         }
     }
 
-    /// S24 — a dark theme, the standard theme of the dark appearance, and the
+    /// "Bad theme values in the file are ignored" — a dark theme, the standard theme of the dark appearance, and the
     /// theme the dark appearance has too.
     func testAThemeOfTheOtherVariantReadsAsTheThemeOfTheLightAppearance() {
         for id in ["catppuccin-mocha", "breeze-dark", "github-dark"] {
@@ -734,7 +734,7 @@ final class AppPrefsTests: XCTestCase {
         }
     }
 
-    /// S24
+    /// "Bad theme values in the file are ignored"
     func testBreezeLightReadsAsTheThemeOfTheDarkAppearance() {
         XCTAssertEqual(
             AppPrefs.decode(data(#"{"warn_before_quit":true,"theme_dark":"breeze-light"}"#)).themes,
@@ -742,7 +742,7 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// S24 — bad keys beside a theme do not change the theme.
+    /// "Bad theme values in the file are ignored" — bad keys beside a theme do not change the theme.
     func testAThemeIsReadBesideKeysOfTheWrongType() {
         let values = AppPrefs.decode(
             data(#"{"warn_before_quit":"yes","theme":"sepia","theme_light":"github-light","theme_dark":7}"#)
@@ -753,7 +753,7 @@ final class AppPrefsTests: XCTestCase {
         XCTAssertTrue(values.warnBeforeQuit)
     }
 
-    /// S25 — each choice, with none or one of the seven other themes for each
+    /// "Prefs round trip for every theme pair" — each choice, with none or one of the seven other themes for each
     /// appearance: 3 × 8 × 8.
     func testEveryChoiceOfThemesSurvivesTheRoundTrip() {
         func themes(for variant: ThemeVariant) -> [String?] {
@@ -777,7 +777,7 @@ final class AppPrefsTests: XCTestCase {
         XCTAssertEqual(count, 192)
     }
 
-    /// S25
+    /// "Prefs round trip for every theme pair"
     func testSavedThemesReadBackFromDisk() throws {
         let path = try scratchDirectory() + "/app-prefs.json"
         let values = Values(
@@ -791,7 +791,7 @@ final class AppPrefsTests: XCTestCase {
         XCTAssertEqual(AppPrefs.load(from: path).themes, [.light: "catppuccin-mocha", .dark: "solarized-light"])
     }
 
-    /// S26 — another preference saved must not drop a theme.
+    /// "Saving one pref keeps the others" — another preference saved must not drop a theme.
     func testChangingTheGuardKeepsTheThemes() throws {
         let path = try scratchDirectory() + "/app-prefs.json"
         try data(#"{"warn_before_quit":true,"theme_light":"github-light","theme_dark":"github-dark"}"#)
@@ -807,7 +807,7 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// S26 — and a theme saved must not drop another preference.
+    /// "Saving one pref keeps the others" — and a theme saved must not drop another preference.
     func testChangingAThemeKeepsTheGuardAFontASizeTheAppearanceAndTheOtherTheme() throws {
         let path = try scratchDirectory() + "/app-prefs.json"
         let before =
@@ -828,7 +828,7 @@ final class AppPrefsTests: XCTestCase {
         )
     }
 
-    /// S27 — whole, the file reads with its themes and the guard off, so a
+    /// "Truncated prefs file decodes to defaults" — whole, the file reads with its themes and the guard off, so a
     /// lenient parser fails here.
     func testADamagedFileHasNoThemes() {
         let whole =
@@ -848,6 +848,7 @@ final class AppPrefsTests: XCTestCase {
 final class InboxPreviewHeightPrefsTests: XCTestCase {
     private func data(_ text: String) -> Data { Data(text.utf8) }
 
+    /// "Preview height prefs round trip".
     func testS15TheHeightIsWrittenLastAndReadsBack() {
         let values = AppPrefs.Values(fonts: [.terminal: "Menlo"], theme: .light, inboxPreviewHeight: 180)
         let bytes = AppPrefs.encode(values)
@@ -866,12 +867,14 @@ final class InboxPreviewHeightPrefsTests: XCTestCase {
         )
     }
 
+    /// "Absent preview height keeps old bytes".
     func testS16WithNoHeightTheBytesAreThoseOfBefore() {
         XCTAssertEqual(
             AppPrefs.encode(AppPrefs.Values(theme: .light)), data(#"{"warn_before_quit":true,"theme":"light"}"#))
     }
 
-    func testS23AHeightOutOfItsRangeOrNotANumberIsNoHeight() {
+    /// "Refused preview height values decode to nil".
+    func testAHeightOutOfItsRangeOrNotANumberIsNoHeight() {
         for value in ["50", "3000", #""236""#, "true", "null"] {
             let read = AppPrefs.decode(
                 data(#"{"warn_before_quit":false,"theme":"light","inbox_preview_height":\#(value)}"#))
@@ -883,7 +886,8 @@ final class InboxPreviewHeightPrefsTests: XCTestCase {
         XCTAssertEqual(AppPrefs.decode(data(#"{"inbox_preview_height":2000}"#)).inboxPreviewHeight, 2000)
     }
 
-    func testS24AResetWritesNoHeight() {
+    /// "Reset removes the preview height key".
+    func testAResetWritesNoHeight() {
         var values = AppPrefs.Values(inboxPreviewHeight: 300)
         values.inboxPreviewHeight = nil
         XCTAssertEqual(AppPrefs.encode(values), data(#"{"warn_before_quit":true}"#))
@@ -899,8 +903,8 @@ final class DocSidebarSidePrefsTests: XCTestCase {
 
     private func text(_ values: Values) -> String { String(decoding: AppPrefs.encode(values), as: UTF8.self) }
 
-    /// S3
-    func test2611_0025S3TheSideIsWrittenLastAndOnlyForTheRight() {
+    /// "Prefs write the side key only for Right"
+    func testTheSideIsWrittenLastAndOnlyForTheRight() {
         XCTAssertEqual(text(Values()), #"{"warn_before_quit":true}"#)
         XCTAssertEqual(text(Values(docSidebarSide: .left)), #"{"warn_before_quit":true}"#)
         XCTAssertEqual(text(Values(docSidebarSide: .right)), #"{"warn_before_quit":true,"doc_sidebar_side":"right"}"#)
@@ -915,8 +919,8 @@ final class DocSidebarSidePrefsTests: XCTestCase {
         )
     }
 
-    /// S4
-    func test2611_0025S4TheSideIsReadOnItsOwnAndAnythingButRightIsLeft() {
+    /// "Prefs read accepts only exact left or right"
+    func testTheSideIsReadOnItsOwnAndAnythingButRightIsLeft() {
         XCTAssertEqual(AppPrefs.decode(data(#"{"doc_sidebar_side":"right"}"#)).docSidebarSide, .right)
         for side in DocSidebar.Side.allCases {
             let values = Values(docSidebarSide: side)
@@ -934,8 +938,8 @@ final class DocSidebarSidePrefsTests: XCTestCase {
         XCTAssertEqual(AppPrefs.decode(data(#"{"doc_sidebar_side":"right",}"#)).docSidebarSide, .left)
     }
 
-    /// S5
-    func test2611_0025S5TheSideIsSavedApartFromTheOtherKeys() throws {
+    /// "Side is saved apart from other prefs"
+    func testTheSideIsSavedApartFromTheOtherKeys() throws {
         let dir = NSTemporaryDirectory() + "tarmac-app-prefs-" + UUID().uuidString
         try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(atPath: dir) }

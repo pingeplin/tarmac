@@ -28,7 +28,8 @@ final class DevPressTests: XCTestCase {
 
     // MARK: - the chord
 
-    func testS3AChordIsFlagsCharactersAndTheANSIKeyCode() {
+    /// "Chord parser gives flags chars and key code".
+    func testAChordIsFlagsCharactersAndTheANSIKeyCode() {
         XCTAssertEqual(DevPress.parse("cmd+q"), chord(cmd, "q", 12))
         XCTAssertEqual(DevPress.parse("cmd+v"), chord(cmd, "v", 9))
         XCTAssertEqual(DevPress.parse("cmd+t"), chord(cmd, "t", 17))
@@ -42,9 +43,10 @@ final class DevPressTests: XCTestCase {
         XCTAssertEqual(DevPress.parse("cmd+shift+1"), chord(cmd | shift, "1", 18))
     }
 
+    /// "Bad chords are unsupported or malformed".
     /// Every `bad_combo` rule runs before `cmd` is looked for, so
     /// `unsupported_combo` always means a well-formed chord without it.
-    func testS32AChordOutsideTheGrammarIsRefused() {
+    func testAChordOutsideTheGrammarIsRefused() {
         for combo in ["q", "shift+q", "alt+ctrl+q"] {
             XCTAssertEqual(code(DevPress.parse(combo)), .unsupportedCombo, combo)
         }
@@ -81,7 +83,8 @@ final class DevPressTests: XCTestCase {
         return DevPress.matchesItem(chord, keyEquivalent: keyEquivalent, mask: mask)
     }
 
-    func testS7AChordMatchesAnItemUnderTheGuardsOwnModifierRule() {
+    /// "Chord matches Quit item modifier bits".
+    func testAChordMatchesAnItemUnderTheGuardsOwnModifierRule() {
         XCTAssertTrue(matches("cmd+q", "q", cmd))
         XCTAssertTrue(matches("cmd+shift+q", "Q", cmd))
         XCTAssertTrue(matches("cmd+shift+q", "q", cmd | shift))

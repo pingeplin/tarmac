@@ -93,8 +93,8 @@ final class DevMessagesTests: XCTestCase {
         assertParity(.board(boardID: nil), "81 a1 74 a5 62 6f 61 72 64")
     }
 
-    /// 2611.0015 S33: the restore card is the absent `card`, with no sentinel.
-    func testS33ClickVerb() {
+    /// 2611.0015 "Dev click wire frames match in both codecs": the restore card is the absent `card`, with no sentinel.
+    func testClickVerb() {
         // DevRequest::Click { card: Some("t-1"), control: "resume" }
         assertParity(
             .click(card: "t-1", control: "resume"),
@@ -110,7 +110,8 @@ final class DevMessagesTests: XCTestCase {
         )
     }
 
-    func testS33AClickWithNoControlIsMalformed() {
+    /// "Dev click wire frames match in both codecs".
+    func testAClickWithNoControlIsMalformed() {
         XCTAssertThrowsError(try DevRequest.decode(.map(["t": .string("click"), "card": .string("t-1")]))) { error in
             XCTAssertEqual(error as? MessageError, .missingField("control"))
         }
@@ -135,7 +136,7 @@ final class DevMessagesTests: XCTestCase {
         )
     }
 
-    /// S2 (2609.0018): every `press` shape, and absent flags are absent keys,
+    /// "Press request round-trips without nil flags" (2609.0018): every `press` shape, and absent flags are absent keys,
     /// not nils.
     func testPress() {
         // DevRequest::Press { combo: "cmd+q", hold_ms: None, age_ms: None, busy_ms: None }
@@ -177,7 +178,7 @@ final class DevMessagesTests: XCTestCase {
         )
     }
 
-    /// S47: a verb this build does not know decodes to a value, so the app can
+    /// "Unknown key in dev request is ignored": a verb this build does not know decodes to a value, so the app can
     /// answer "unsupported" instead of dropping the frame.
     func testUnknownVerbDecodesToUnknown() throws {
         // What Rust writes for DevRequest::Unknown: {t:"unknown"}.
@@ -192,7 +193,7 @@ final class DevMessagesTests: XCTestCase {
         )
     }
 
-    /// S47 / S31: additive-only — an unknown key on a known request is ignored.
+    /// "Unknown key in dev request is ignored" / "Press frame with unknown key still decodes": additive-only — an unknown key on a known request is ignored.
     func testUnknownKeysAreIgnored() throws {
         XCTAssertEqual(
             try DevRequest.decode(.map(["t": .string("zoom"), "z": .double(0.5), "anchor": .string("pointer")])),
@@ -275,7 +276,7 @@ final class DevMessagesTests: XCTestCase {
         )
     }
 
-    /// S23 (2609.0018): the caller's own budget, where the verb has one —
+    /// "Press timeout follows busy flag" (2609.0018): the caller's own budget, where the verb has one —
     /// `snapshot` its `--timeout`, `press` its `--busy`. Both ends of the socket
     /// size their wait from it.
     func testTimeoutIsTheVerbsOwnBudget() {
@@ -298,7 +299,7 @@ final class DevMessagesTests: XCTestCase {
 
     // MARK: - Replies
 
-    /// S48: `body` is opaque — it survives byte for byte, JSON or not.
+    /// "Dev reply body survives byte for byte": `body` is opaque — it survives byte for byte, JSON or not.
     func testReply() {
         // DevReply { ok: true, body: "{\"v\":1}" }
         assertParity(DevReply(ok: true, body: "{\"v\":1}"), "82 a2 6f 6b c3 a4 62 6f 64 79 a7 7b 22 76 22 3a 31 7d")

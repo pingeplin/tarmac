@@ -8,11 +8,12 @@ import XCTest
 final class DevResizeGripTests: XCTestCase {
     private func size(_ w: CGFloat, _ h: CGFloat) -> CGSize { CGSize(width: w, height: h) }
 
+    /// "Grip delta scales into screen pixels".
     /// The handle's drag is divided by zoom to get back to world units, so a
     /// delta left in world units resizes by `1/zoom` of what was asked. The
     /// asymmetric row comes first: every `dx == dy` row is also satisfied by an
     /// implementation that swaps the two axes.
-    func testS43TheDeltaIsWorldUnitsScaledIntoScreenPoints() {
+    func testTheDeltaIsWorldUnitsScaledIntoScreenPoints() {
         let delta = { (from: CGSize, to: CGSize, zoom: CGFloat) in
             DevResizeGrip.delta(from: from, to: to, zoom: zoom, handle: .bottomRight)
         }
@@ -22,7 +23,8 @@ final class DevResizeGripTests: XCTestCase {
         XCTAssertEqual(delta(size(800, 600), size(600, 400), 2), CGVector(dx: -400, dy: -400))
     }
 
-    func testS44TheDragPressesAtTheHandleMovesByTheDeltaAndReleasesThere() {
+    /// "Resize plan is down move up on grip".
+    func testTheDragPressesAtTheHandleMovesByTheDeltaAndReleasesThere() {
         XCTAssertEqual(
             DevResizeGrip.drag(at: CGPoint(x: 300, y: 200), by: CGVector(dx: 100, dy: 50)),
             [
@@ -33,7 +35,8 @@ final class DevResizeGripTests: XCTestCase {
         )
     }
 
-    func testS44AShrinkingDragMovesUpAndLeft() {
+    /// "Resize plan is down move up on grip".
+    func testAShrinkingDragMovesUpAndLeft() {
         let steps = DevResizeGrip.drag(at: CGPoint(x: 300, y: 200), by: CGVector(dx: -590, dy: -390))
         XCTAssertEqual(
             steps.map(\.location),

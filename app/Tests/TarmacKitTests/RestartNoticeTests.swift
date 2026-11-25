@@ -21,7 +21,8 @@ final class RestartNoticeTests: XCTestCase {
         )
     }
 
-    func testS1NamesBothVersionsAndCountsTheLostTerminals() {
+    /// "Restart notice names versions and lost count".
+    func testNamesBothVersionsAndCountsTheLostTerminals() {
         XCTAssertEqual(
             notice(replaced, ["t1", "t2"]),
             RestartNotice(
@@ -31,61 +32,72 @@ final class RestartNoticeTests: XCTestCase {
         )
     }
 
-    func testS1ThePluralCountLeavesOutTerminalsThatCameBackLive() {
+    /// "Restart notice names versions and lost count".
+    func testThePluralCountLeavesOutTerminalsThatCameBackLive() {
         XCTAssertEqual(
             notice(replaced, ["t1", "t2", "t3"], live: ["t1"])?.body,
             "2 terminals on this board were restarted"
         )
     }
 
-    func testS1ThePluralBodyCarriesTheLostCountNotAFixedNumber() {
+    /// "Restart notice names versions and lost count".
+    func testThePluralBodyCarriesTheLostCountNotAFixedNumber() {
         XCTAssertEqual(
             notice(replaced, ["t1", "t2", "t3", "t4"], live: ["t1"])?.body,
             "3 terminals on this board were restarted"
         )
     }
 
-    func testS3AColdStartWithNoReplacedDaemonGetsNoNotice() {
+    /// "Cold start without replaced shows no notice".
+    func testAColdStartWithNoReplacedDaemonGetsNoNotice() {
         XCTAssertNil(notice(nil, ["t1"]))
     }
 
-    func testS4AFreshBoardWhoseTileHasNoPersistedIDGetsNoNotice() {
+    /// "Tile without terminal id shows no notice".
+    func testAFreshBoardWhoseTileHasNoPersistedIDGetsNoNotice() {
         XCTAssertNil(notice(replaced, [nil]))
     }
 
-    func testS5TerminalsThatCameBackLiveGetNoNotice() {
+    /// "Still live terminals show no notice".
+    func testTerminalsThatCameBackLiveGetNoNotice() {
         XCTAssertNil(notice(replaced, ["t1", "t2"], live: ["t1", "t2"]))
     }
 
-    func testS6CountsOnlyPersistedIDsThatAreNotLiveInTheSingularForOne() {
+    /// "Notice counts only lost terminals".
+    func testCountsOnlyPersistedIDsThatAreNotLiveInTheSingularForOne() {
         XCTAssertEqual(
             notice(replaced, ["t1", "t2", nil], live: ["t1"])?.body,
             "1 terminal on this board was restarted"
         )
     }
 
-    func testS6LiveIDsFromOtherBoardsDoNotReduceTheCountAndNilTilesNeverCount() {
+    /// "Notice counts only lost terminals".
+    func testLiveIDsFromOtherBoardsDoNotReduceTheCountAndNilTilesNeverCount() {
         XCTAssertEqual(
             notice(replaced, ["t1", "t2", nil, nil], live: ["t9"])?.body,
             "2 terminals on this board were restarted"
         )
     }
 
-    func testS7AReplacedDaemonThatReportedNoVersionReadsAsUnknown() {
+    /// "Unknown old version reads as unknown".
+    func testAReplacedDaemonThatReportedNoVersionReadsAsUnknown() {
         let replaced = RestartNotice.Replacement(from: nil, to: "0.12.3")
         XCTAssertEqual(notice(replaced, ["t1"])?.title, "tarmacd restarted: unknown → 0.12.3")
     }
 
-    func testS7bARespawnedDaemonThatReportedNoVersionReadsAsUnknown() {
+    /// "Unknown new version reads as unknown".
+    func testARespawnedDaemonThatReportedNoVersionReadsAsUnknown() {
         let replaced = RestartNotice.Replacement(from: "0.12.2", to: nil)
         XCTAssertEqual(notice(replaced, ["t1"])?.title, "tarmacd restarted: 0.12.2 → unknown")
     }
 
-    func testS8ARestartAlreadyNotifiedGetsNoSecondNotice() {
+    /// "Already notified shows no notice".
+    func testARestartAlreadyNotifiedGetsNoSecondNotice() {
         XCTAssertNil(notice(replaced, ["t1", "t2"], alreadyNotified: true))
     }
 
-    func testS9ABoardWithNoTerminalTilesGetsNoNotice() {
+    /// "Board with no tiles shows no notice".
+    func testABoardWithNoTerminalTilesGetsNoNotice() {
         XCTAssertNil(notice(replaced, []))
     }
 

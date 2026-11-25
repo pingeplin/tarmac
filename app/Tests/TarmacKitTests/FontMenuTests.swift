@@ -12,7 +12,7 @@ final class FontMenuTests: XCTestCase {
         [family("Menlo"), family("Helvetica", fixed: false), family("Andale Mono")]
     }
 
-    /// S6
+    /// "Terminal menu lists fixed pitch families only"
     func testAFixedPitchRoleListsOnlyFixedPitchFamilies() {
         for role in [FontRole.terminal, .interface] {
             let menu = FontMenu(role: role, installed: installed, saved: nil)
@@ -20,13 +20,13 @@ final class FontMenuTests: XCTestCase {
         }
     }
 
-    /// S7
+    /// "Document menu lists every family"
     func testTheDocumentRoleListsEveryFamily() {
         let menu = FontMenu(role: .document, installed: installed, saved: nil)
         XCTAssertEqual(menu.titles, ["System Default", "Andale Mono", "Helvetica", "Menlo"])
     }
 
-    /// S8
+    /// "Saved family selects its menu row"
     func testTheSavedFamilyIsSelected() {
         let menu = FontMenu(role: .terminal, installed: installed, saved: "Menlo")
         XCTAssertEqual(menu.selected, 2)
@@ -35,7 +35,7 @@ final class FontMenuTests: XCTestCase {
         XCTAssertNil(menu.choice(at: 0))
     }
 
-    /// S23
+    /// "System-internal font names are hidden"
     func testHiddenSystemFamiliesAreNotListed() {
         let menu = FontMenu(
             role: .terminal,
@@ -46,7 +46,7 @@ final class FontMenuTests: XCTestCase {
         XCTAssertEqual(menu.selected, 0)
     }
 
-    /// S24
+    /// "Duplicate family appears once"
     func testAFamilyIsListedOnce() {
         let menu = FontMenu(
             role: .terminal, installed: [family("Menlo"), family("Monaco"), family("Menlo")], saved: "Monaco")
@@ -54,7 +54,7 @@ final class FontMenuTests: XCTestCase {
         XCTAssertEqual(menu.selected, 2)
     }
 
-    /// S25 — the order is the same on every Mac and for every input order.
+    /// "Family order is stable and case-sensitive" — the order is the same on every Mac and for every input order.
     func testFamiliesAreOrderedWithoutRegardToCaseThenByCodePoint() {
         let names = ["menlo", "Menlo", "Andale Mono", "andale mono"]
         for rotation in 0..<names.count {
@@ -66,7 +66,7 @@ final class FontMenuTests: XCTestCase {
         }
     }
 
-    /// S26
+    /// "Unavailable saved family selects the default"
     func testASavedFamilyTheListDoesNotHoldSelectsTheSystemDefault() {
         XCTAssertEqual(FontMenu(role: .terminal, installed: installed, saved: "Fira Code").selected, 0)
         XCTAssertEqual(FontMenu(role: .terminal, installed: installed, saved: "Helvetica").selected, 0)
@@ -75,7 +75,7 @@ final class FontMenuTests: XCTestCase {
         XCTAssertEqual(FontMenu(role: .terminal, installed: installed, saved: nil).selected, 0)
     }
 
-    /// S27
+    /// "Menu choice is nil out of range"
     func testAnIndexOutsideTheListIsNoChoice() {
         let menu = FontMenu(role: .terminal, installed: installed, saved: nil)
         XCTAssertNil(menu.choice(at: -1))
@@ -83,7 +83,7 @@ final class FontMenuTests: XCTestCase {
         XCTAssertEqual(menu.choice(at: menu.titles.count - 1), "Menlo")
     }
 
-    /// S28
+    /// "Empty family list offers the default only"
     func testWithNoFamilyOnlyTheSystemDefaultIsListed() {
         let menu = FontMenu(role: .document, installed: [], saved: "Menlo")
         XCTAssertEqual(menu.titles, ["System Default"])

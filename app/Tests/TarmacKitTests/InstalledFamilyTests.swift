@@ -2,7 +2,7 @@ import XCTest
 
 @testable import TarmacKit
 
-/// 2610.0005 S51: which member of a family is its regular face, and so
+/// 2610.0005 "Family fixed pitch follows its upright members": which member of a family is its regular face, and so
 /// whether the family is fixed pitch.
 final class InstalledFamilyTests: XCTestCase {
     private typealias Face = InstalledFamily.Face

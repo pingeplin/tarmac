@@ -21,17 +21,19 @@ final class DevTypePlanTests: XCTestCase {
         return stroke
     }
 
-    // MARK: - S19 printables are inserted, one code point at a time
+    // MARK: - "Typed char plans inert bracket and insert" printables are inserted, one code point at a time
 
-    func testS19APrintableIsOneInsertPerCharacter() {
+    /// "Typed char plans inert bracket and insert".
+    func testAPrintableIsOneInsertPerCharacter() {
         let plan = DevTypePlan.plan(text: "ab", kittyFlags: 0)
         XCTAssertEqual(plan.mode, .insert)
         XCTAssertEqual(plan.steps, [.insert(index: 0, char: "a"), .insert(index: 1, char: "b")])
     }
 
-    // MARK: - S77 kitty flag 8 switches the whole delivery path
+    // MARK: - "Kitty flag 8 types as key event" kitty flag 8 switches the whole delivery path
 
-    func testS77TheInsertPathHoldsUnderFlagsThatDoNotReportAllKeys() {
+    /// "Kitty flag 8 types as key event".
+    func testTheInsertPathHoldsUnderFlagsThatDoNotReportAllKeys() {
         for flags: UInt8 in [0, 1, 2, 4, 5, 16, 23] {
             let plan = DevTypePlan.plan(text: "a", kittyFlags: flags)
             XCTAssertEqual(plan.mode, .insert, "flags \(flags)")
@@ -39,9 +41,10 @@ final class DevTypePlanTests: XCTestCase {
         }
     }
 
+    /// "Kitty flag 8 types as key event".
     /// Under flag 8 the program is sent every key as an escape code, which only a
     /// key press produces; inserted text would arrive as text it did not ask for.
-    func testS77FlagEightPlansAKeyStrokeAndNoInsert() {
+    func testFlagEightPlansAKeyStrokeAndNoInsert() {
         let plan = DevTypePlan.plan(text: "a", kittyFlags: 8)
         XCTAssertEqual(plan.mode, .key)
         XCTAssertEqual(
@@ -55,15 +58,17 @@ final class DevTypePlanTests: XCTestCase {
             ])
     }
 
-    func testS77FlagEightSwitchesWhereverItSitsInTheMask() {
+    /// "Kitty flag 8 types as key event".
+    func testFlagEightSwitchesWhereverItSitsInTheMask() {
         XCTAssertEqual(DevTypePlan.plan(text: "a", kittyFlags: 13).mode, .key)
         XCTAssertEqual(DevTypePlan.plan(text: "a", kittyFlags: 31).mode, .key)
         XCTAssertEqual(DevTypePlan.reportAllKeysAsEscapeCodes, 8)
     }
 
+    /// "Kitty flag 8 types as key event".
     /// kitty encodes the UNSHIFTED key plus a shift modifier, so `!` must be the
     /// `1` key with Shift, not a key of its own.
-    func testS77AShiftedPrintableIsItsUnshiftedKeyWithShift() {
+    func testAShiftedPrintableIsItsUnshiftedKeyWithShift() {
         XCTAssertEqual(
             steps("!A ", flags: 8),
             [
@@ -85,7 +90,8 @@ final class DevTypePlanTests: XCTestCase {
             ])
     }
 
-    func testS77EveryASCIIPrintableIsAKeyStrokeUnderFlagEight() {
+    /// "Kitty flag 8 types as key event".
+    func testEveryASCIIPrintableIsAKeyStrokeUnderFlagEight() {
         for value in UInt8(0x20)...0x7E {
             let char = String(UnicodeScalar(value))
             guard case .key(0, char, let stroke)? = steps(char, flags: 8).first else {
@@ -99,8 +105,9 @@ final class DevTypePlanTests: XCTestCase {
         }
     }
 
+    /// "Kitty flag 8 types as key event".
     /// No layout to read a key from, so nothing is pressed and the reply says so.
-    func testS77ACharacterWithNoKeyIsDroppedUnderFlagEight() {
+    func testACharacterWithNoKeyIsDroppedUnderFlagEight() {
         XCTAssertEqual(
             steps("a中\u{00}\u{1C}é", flags: 8),
             [
@@ -119,16 +126,18 @@ final class DevTypePlanTests: XCTestCase {
         )
     }
 
-    // MARK: - S20/S21/S22 control characters are key strokes in both modes
+    // MARK: - control characters are key strokes in both modes
 
-    func testS20ANewlineOrCarriageReturnIsTheEnterStroke() {
+    /// "Newline types as Enter key".
+    func testANewlineOrCarriageReturnIsTheEnterStroke() {
         for flags: UInt8 in [0, 8] {
             XCTAssertEqual(steps("\n", flags: flags), [.key(index: 0, char: "\n", stroke: comboStroke("enter"))])
             XCTAssertEqual(steps("\r", flags: flags), [.key(index: 0, char: "\r", stroke: comboStroke("enter"))])
         }
     }
 
-    func testS21TheOtherNamedControlsAreTheirKeys() {
+    /// "Tab char types as Tab key".
+    func testTheOtherNamedControlsAreTheirKeys() {
         for flags: UInt8 in [0, 8] {
             XCTAssertEqual(steps("\t", flags: flags), [.key(index: 0, char: "\t", stroke: comboStroke("tab"))])
             XCTAssertEqual(
@@ -138,9 +147,10 @@ final class DevTypePlanTests: XCTestCase {
         }
     }
 
+    /// "Control-C char types as Ctrl-C key".
     /// A rule rather than a list, so `\x03` is not a special case and no letter
     /// chord is missing.
-    func testS22TheRestOfC0IsTheControlChordItStandsFor() {
+    func testTheRestOfC0IsTheControlChordItStandsFor() {
         XCTAssertEqual(steps("\u{03}"), [.key(index: 0, char: "\u{03}", stroke: comboStroke("ctrl+c"))])
         XCTAssertEqual(steps("\u{04}", flags: 8), [.key(index: 0, char: "\u{04}", stroke: comboStroke("ctrl+d"))])
         let named: Set<UInt8> = [0x09, 0x0A, 0x0D]
@@ -160,9 +170,10 @@ final class DevTypePlanTests: XCTestCase {
         }
     }
 
-    // MARK: - S23 order, and what one step is
+    // MARK: - "Mixed text plans insert Enter insert" order, and what one step is
 
-    func testS23AMixedStringKeepsItsOrder() {
+    /// "Mixed text plans insert Enter insert".
+    func testAMixedStringKeepsItsOrder() {
         XCTAssertEqual(
             steps("a\nb"),
             [
@@ -200,15 +211,17 @@ final class DevTypePlanTests: XCTestCase {
             ])
     }
 
-    // MARK: - S24 a non-ASCII printable
+    // MARK: - "Non-ASCII char is inserted with bracket"
 
-    func testS24ANonASCIIPrintableIsInserted() {
+    /// "Non-ASCII char is inserted with bracket".
+    func testANonASCIIPrintableIsInserted() {
         XCTAssertEqual(steps("中"), [.insert(index: 0, char: "中")])
     }
 
-    // MARK: - S71 the reply is built from what the driver observed
+    // MARK: - "Type reply counts inserted and dropped chars" the reply is built from what the driver observed
 
-    func testS71AKeyStepCountsInCharsButIsNeitherInsertedNorDropped() {
+    /// "Type reply counts inserted and dropped chars".
+    func testAKeyStepCountsInCharsButIsNeitherInsertedNorDropped() {
         let plan = DevTypePlan.plan(text: "a\nb", kittyFlags: 0)
         XCTAssertEqual(
             DevTypePlan.summary(of: plan, inserted: [true, true]),
@@ -216,9 +229,10 @@ final class DevTypePlanTests: XCTestCase {
         )
     }
 
+    /// "Type reply counts inserted and dropped chars".
     /// `smoke.mjs`'s `typeAll` fails a scenario on a non-empty `dropped`; a
     /// summary that could not report one would make that check unfalsifiable.
-    func testS71ADroppedCharacterIsReportedByItsIndexInTheRequestedString() {
+    func testADroppedCharacterIsReportedByItsIndexInTheRequestedString() {
         let plan = DevTypePlan.plan(text: "a\nb", kittyFlags: 0)
         XCTAssertEqual(
             DevTypePlan.summary(of: plan, inserted: [true, false]),
@@ -230,7 +244,8 @@ final class DevTypePlanTests: XCTestCase {
         )
     }
 
-    func testS71AnInsertWithNoObservationCountsAsDropped() {
+    /// "Type reply counts inserted and dropped chars".
+    func testAnInsertWithNoObservationCountsAsDropped() {
         let plan = DevTypePlan.plan(text: "ab", kittyFlags: 0)
         XCTAssertEqual(
             DevTypePlan.summary(of: plan, inserted: [true]),
@@ -238,7 +253,8 @@ final class DevTypePlanTests: XCTestCase {
         )
     }
 
-    func testS71NothingIsInsertedUnderFlagEight() {
+    /// "Type reply counts inserted and dropped chars".
+    func testNothingIsInsertedUnderFlagEight() {
         XCTAssertEqual(
             DevTypePlan.summary(of: DevTypePlan.plan(text: "a\nb", kittyFlags: 8), inserted: []),
             ["chars": 3, "inserted": 0, "dropped": [], "mode": "key"]

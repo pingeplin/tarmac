@@ -27,9 +27,10 @@ final class DevKeyComboTests: XCTestCase {
 
     private func ansi(_ key: Character) -> UInt16 { VK.ansi[key]! }
 
-    // MARK: - S9–S12 the named keys
+    // MARK: - the named keys
 
-    func testS9EnterIsReturnWithNoModifiers() {
+    /// "Enter plans keydown and keyup only".
+    func testEnterIsReturnWithNoModifiers() {
         XCTAssertEqual(
             stroke("enter"),
             DevKeyStroke(
@@ -37,7 +38,8 @@ final class DevKeyComboTests: XCTestCase {
             ))
     }
 
-    func testS10ControlCCarriesTheControlCharacterAndThePlainLetter() {
+    /// "Ctrl-C plans keydown and keyup only".
+    func testControlCCarriesTheControlCharacterAndThePlainLetter() {
         XCTAssertEqual(
             stroke("ctrl+c"),
             DevKeyStroke(
@@ -45,7 +47,8 @@ final class DevKeyComboTests: XCTestCase {
             ))
     }
 
-    func testS11ShiftEnterSetsShiftOnTheSameKey() {
+    /// "Shift-Enter sets shift on both events".
+    func testShiftEnterSetsShiftOnTheSameKey() {
         XCTAssertEqual(
             stroke("shift+enter"),
             DevKeyStroke(
@@ -53,7 +56,8 @@ final class DevKeyComboTests: XCTestCase {
             ))
     }
 
-    func testS12EscapeIsTheEscapeKey() {
+    /// "Escape plans keydown and keyup only".
+    func testEscapeIsTheEscapeKey() {
         XCTAssertEqual(
             stroke("escape"),
             DevKeyStroke(
@@ -61,9 +65,10 @@ final class DevKeyComboTests: XCTestCase {
             ))
     }
 
+    /// "Alt-Left carries code and alt flag".
     /// The app's key bindings match on the key code and an exact modifier set
     /// (#21), so the planned stroke is fed to the real rule rather than restated.
-    func testS12bAltLeftIsTheStrokeTheWordMotionBindingMatches() throws {
+    func testAltLeftIsTheStrokeTheWordMotionBindingMatches() throws {
         let planned = try XCTUnwrap(stroke("alt+left"))
         XCTAssertEqual(
             planned,
@@ -78,10 +83,11 @@ final class DevKeyComboTests: XCTestCase {
         )
     }
 
+    /// "Alt-Tab plans normally and is documented".
     /// It cycles the prime terminal and so MOVES FOCUS, which breaks the
     /// `not_focused` precondition for a later verb; that is documented, not
     /// enforced by the grammar.
-    func testS12cAltTabPlansLikeAnyOtherCombo() {
+    func testAltTabPlansLikeAnyOtherCombo() {
         XCTAssertEqual(
             stroke("alt+tab"),
             DevKeyStroke(
@@ -89,7 +95,7 @@ final class DevKeyComboTests: XCTestCase {
             ))
     }
 
-    // MARK: - S13 the whole accepted set
+    // MARK: - "Every accepted combo plans without keypress" the whole accepted set
 
     private static let namedKeys = ["enter", "tab", "escape", "backspace", "up", "down", "left", "right"]
     private static let modifierSets: [(prefix: String, flags: DevKeyStroke.ModifierFlags)] = [
@@ -102,7 +108,8 @@ final class DevKeyComboTests: XCTestCase {
     }
     private static let intent: DevKeyStroke.ModifierFlags = [.shift, .control, .option]
 
-    func testS13EveryNamedKeyTakesEveryModifierSet() throws {
+    /// "Every accepted combo plans without keypress".
+    func testEveryNamedKeyTakesEveryModifierSet() throws {
         for key in Self.namedKeys {
             for (prefix, flags) in Self.modifierSets {
                 let planned = try XCTUnwrap(stroke(prefix + key))
@@ -114,7 +121,8 @@ final class DevKeyComboTests: XCTestCase {
         }
     }
 
-    func testS13ALetterOrDigitTakesEveryModifierSetThatHasControlOrOption() throws {
+    /// "Every accepted combo plans without keypress".
+    func testALetterOrDigitTakesEveryModifierSetThatHasControlOrOption() throws {
         for base in ["c", "7"] {
             for (prefix, flags) in Self.chordModifierSets {
                 let planned = try XCTUnwrap(stroke(prefix + base))
@@ -125,9 +133,10 @@ final class DevKeyComboTests: XCTestCase {
         }
     }
 
+    /// "Every accepted combo plans without keypress".
     /// The values, not just the shape: without this `up` could carry the down
     /// arrow's key code and send the wrong key with the whole suite green.
-    func testS13EachNamedKeyIsExactlyItsKeyCodeAndCharacter() {
+    func testEachNamedKeyIsExactlyItsKeyCodeAndCharacter() {
         let arrow: Flags = [.function, .numericPad]
         let rows: [(String, UInt16, String, Flags)] = [
             ("enter", VK.returnKey, "\r", []),
@@ -159,9 +168,10 @@ final class DevKeyComboTests: XCTestCase {
         XCTAssertEqual(stroke("shift+enter")?.characters, "\r")
     }
 
+    /// "Every accepted combo plans without keypress".
     /// `charactersIgnoringModifiers` keeps Shift: the capital, or the digit key's
     /// US symbol.
-    func testS13ShiftChangesTheFaceIgnoringModifiers() {
+    func testShiftChangesTheFaceIgnoringModifiers() {
         XCTAssertEqual(stroke("ctrl+shift+c")?.charactersIgnoringModifiers, "C")
         XCTAssertEqual(stroke("ctrl+c")?.charactersIgnoringModifiers, "c")
         XCTAssertEqual(stroke("ctrl+shift+7")?.charactersIgnoringModifiers, "&")
@@ -212,7 +222,8 @@ final class DevKeyComboTests: XCTestCase {
 
     // MARK: - S14 refusals with a reason
 
-    func testS14bABarePrintableIsRefusedWithTypeAsTheRemedy() {
+    /// "Bare printable combo is unsupported".
+    func testABarePrintableIsRefusedWithTypeAsTheRemedy() {
         for combo in ["a", "7", "shift+a", "shift+7"] {
             let error = refusal(combo)
             XCTAssertEqual(error?.code, .unsupportedCombo, combo)
@@ -220,7 +231,8 @@ final class DevKeyComboTests: XCTestCase {
         }
     }
 
-    func testS14CommandChordsAreRefusedAndPointAtPress() {
+    /// "Cmd-C and Cmd-V combos are unsupported".
+    func testCommandChordsAreRefusedAndPointAtPress() {
         for combo in ["cmd+c", "meta+v", "cmd+q", "meta+q", "ctrl+cmd+c"] {
             let error = refusal(combo)
             XCTAssertEqual(error?.code, .unsupportedCombo, combo)
@@ -237,10 +249,11 @@ final class DevKeyComboTests: XCTestCase {
         }
     }
 
-    // MARK: - S15 malformed combos
+    // MARK: - "Malformed combos give bad combo error"
 
+    /// "Malformed combos give bad combo error".
     /// `CTRL+C` pins that the grammar is lowercase-only rather than case-folded.
-    func testS15MalformedCombosAreBadComboNeverANeighbour() {
+    func testMalformedCombosAreBadComboNeverANeighbour() {
         for combo in ["ctrl+", "", "frobnicate", "CTRL+C", "ctrl+shift", "+", "ctrl++c", "ctrl+C", "ctrl+ab", "ctrl+é"]
         {
             XCTAssertEqual(refusal(combo)?.code, .badCombo, combo)
@@ -283,9 +296,10 @@ final class DevKeyComboTests: XCTestCase {
         XCTAssertEqual(refusal("ctrl+contextmenu")?.extra, ["combo": "ctrl+contextmenu"])
     }
 
-    // MARK: - S16 contextmenu
+    // MARK: - "Contextmenu plans mousemove then contextmenu"
 
-    func testS16ContextMenuIsItsOwnOutcomeAndTakesNoModifiers() {
+    /// "Contextmenu plans mousemove then contextmenu".
+    func testContextMenuIsItsOwnOutcomeAndTakesNoModifiers() {
         XCTAssertEqual(DevKeyCombo.parse("contextmenu"), .contextMenu)
         XCTAssertEqual(DevKeyCombo.contextMenu, "contextmenu")
         XCTAssertEqual(refusal("ctrl+contextmenu")?.code, .badCombo)

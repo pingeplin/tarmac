@@ -2,7 +2,7 @@ import XCTest
 
 @testable import TarmacKit
 
-/// 2610.0005 S50: which saved family a role really uses.
+/// 2610.0005 "Family in effect follows each role's rules": which saved family a role really uses.
 final class FontRoleTests: XCTestCase {
     private let menlo = InstalledFamily(name: "Menlo", fixedPitch: true)
     private let helvetica = InstalledFamily(name: "Helvetica", fixedPitch: false)
@@ -12,7 +12,7 @@ final class FontRoleTests: XCTestCase {
         XCTAssertEqual(FontRole.allCases.map(\.prefsKey), ["terminal_font", "interface_font", "document_font"])
     }
 
-    /// 2610.0006 S1, and #394: Interface has a size too.
+    /// 2610.0006 "Font roles define their size rules", and #394: Interface has a size too.
     func testEachRoleHasASizeRule() {
         XCTAssertEqual(FontRole.terminal.sizeRule, FontSizeRule(range: 8...32, standard: 16))
         XCTAssertEqual(FontRole.interface.sizeRule, FontSizeRule(range: 8...16, standard: 10.5))
@@ -23,7 +23,7 @@ final class FontRoleTests: XCTestCase {
         )
     }
 
-    /// S14 — the Settings rows, in their order.
+    /// "Settings window opens with three font rows" — the Settings rows, in their order.
     func testTheRolesAreTitledInRowOrder() {
         XCTAssertEqual(FontRole.allCases.map(\.title), ["Terminal", "Interface", "Document"])
     }

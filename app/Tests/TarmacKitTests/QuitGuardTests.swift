@@ -45,18 +45,18 @@ final class QuitGuardTests: XCTestCase {
 
     // MARK: - Routing
 
-    /// S4 (2609.0018) — the words the `quit-key` log line names a route by.
+    /// "Phase and route names are stable strings" (2609.0018) — the words the `quit-key` log line names a route by.
     func testRouteNamesAreTheLoggedWords() {
         XCTAssertEqual(QuitGuard.Route.guarded.name, "guard")
         XCTAssertEqual(QuitGuard.Route.terminateNow.name, "terminate")
     }
 
-    /// S1 — the keypress the whole feature exists for.
+    /// "Matching Quit keyDown is guarded" — the keypress the whole feature exists for.
     func testAFreshKeyboardQuitIsGuarded() {
         XCTAssertEqual(QuitGuard().route(cmdQ(), enabled: true), .guarded)
     }
 
-    /// S2 — a menu click carries a mouse event, and a gesture in progress must
+    /// "Menu click quits at once" — a menu click carries a mouse event, and a gesture in progress must
     /// not turn one into a guarded quit either.
     func testANonKeyEventTerminatesEvenMidGesture() {
         let click = cmdQ(isKeyDown: false)
@@ -69,7 +69,7 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(guardian.route(otherChord, enabled: true), .terminateNow)
     }
 
-    /// S3 — keyboard menu navigation ends in a bare Return, and a chord the item
+    /// "Modifier mismatch quits at once" — keyboard menu navigation ends in a bare Return, and a chord the item
     /// does not carry is somebody else's shortcut.
     func testAKeyDownWhoseModifiersDifferFromTheItemTerminates() {
         let guardian = QuitGuard()
@@ -77,7 +77,7 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(guardian.route(cmdQ(modifiers: option | command), enabled: true), .terminateNow)
     }
 
-    /// S4 — Caps Lock, Fn, NumericPad and Help are not part of a shortcut.
+    /// "Extra modifier bits still match" — Caps Lock, Fn, NumericPad and Help are not part of a shortcut.
     func testModifierBitsOutsideTheShortcutNeverBreakAMatch() {
         let guardian = QuitGuard()
         for extra: UInt64 in [1 << 16, 1 << 23, 1 << 21, 1 << 22] {
@@ -89,7 +89,7 @@ final class QuitGuardTests: XCTestCase {
         }
     }
 
-    /// S5 — a remap can store Shift in the key equivalent's character, in the
+    /// "Shifted item matches by shift bit" — a remap can store Shift in the key equivalent's character, in the
     /// mask, or in both.
     func testAnUppercaseKeyEquivalentImpliesShift() {
         let guardian = QuitGuard()
@@ -102,7 +102,7 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(guardian.route(both, enabled: true), .guarded)
     }
 
-    /// S6 — the item's live mask is the shortcut, so a user remap is guarded and
+    /// "Remapped Quit item is guarded" — the item's live mask is the shortcut, so a user remap is guarded and
     /// the stock chord is not.
     func testARemappedItemGuardsItsOwnChordOnly() {
         let guardian = QuitGuard()
@@ -113,7 +113,7 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(guardian.route(cmdQ(itemMask: option | command), enabled: true), .terminateNow)
     }
 
-    /// S7 — `currentEvent` is only trusted while it is fresh. A failed check
+    /// "Stale keyDown quits at once" — `currentEvent` is only trusted while it is fresh. A failed check
     /// costs an unguarded quit, never a stuck one. The bound is a literal, not
     /// `freshnessBoundMs ± 1`: an expectation recomputed from the constant would
     /// survive any change to it.
@@ -130,7 +130,7 @@ final class QuitGuardTests: XCTestCase {
         }
     }
 
-    /// S8 — the toggle only decides whether a gesture STARTS. One already running
+    /// "Disabled guard quits only from idle" — the toggle only decides whether a gesture STARTS. One already running
     /// stays guarded, or a mid-gesture flip would quit on the spot.
     func testTheToggleOffTerminatesOnlyFromIdle() {
         var guardian = QuitGuard()
@@ -142,7 +142,7 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(guardian.route(cmdQ(), enabled: false), .guarded)
     }
 
-    /// S23 — an item with no shortcut cannot have been triggered by a key, so
+    /// "Empty key equivalent quits at once" — an item with no shortcut cannot have been triggered by a key, so
     /// whatever `currentEvent` holds is somebody else's.
     func testAnItemWithoutAKeyEquivalentIsNeverAKeyboardQuit() {
         XCTAssertEqual(QuitGuard().route(cmdQ(keyEquivalent: ""), enabled: true), .terminateNow)
@@ -165,7 +165,7 @@ final class QuitGuardTests: XCTestCase {
 
     // MARK: - Shortcut
 
-    /// S22 — the notice names the shortcut AppKit actually matched.
+    /// "Shortcut label and notice text" — the notice names the shortcut AppKit actually matched.
     func testTheShortcutLabelReadsInApplesOrder() {
         XCTAssertEqual(QuitShortcut.label(keyEquivalent: "q", mask: command), "⌘Q")
         XCTAssertEqual(QuitShortcut.label(keyEquivalent: "q", mask: option | command), "⌥⌘Q")
@@ -178,7 +178,7 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(QuitShortcut.label(keyEquivalent: ".", mask: command), "⌘.")
     }
 
-    /// S22 — and the sentence around it.
+    /// "Shortcut label and notice text" — and the sentence around it.
     func testTheNoticeNamesTheLiveShortcut() {
         XCTAssertEqual(QuitShortcut.noticeText(keyEquivalent: "q", mask: command), "Hold ⌘Q to Quit")
         XCTAssertEqual(QuitShortcut.noticeText(keyEquivalent: "q", mask: option | command), "Hold ⌥⌘Q to Quit")
@@ -212,7 +212,7 @@ final class QuitGuardTests: XCTestCase {
 
     // MARK: - Gesture
 
-    /// S10 — the notice goes up and the poller follows the key that was pressed,
+    /// "First Quit press shows HUD and polls" — the notice goes up and the poller follows the key that was pressed,
     /// never a hard-coded Q.
     func testAFirstTapShowsTheNoticeAndPollsThePressedKey() {
         var guardian = QuitGuard()
@@ -230,7 +230,7 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(remapped.phase, .showing(startedMs: 10_000))
     }
 
-    /// S11 — released before the threshold: the notice lingers, nothing quits.
+    /// "Short tap fades HUD without quitting" — released before the threshold: the notice lingers, nothing quits.
     func testAReleaseBeforeTheHoldThresholdIsATap() {
         var guardian = showing(10_000)
         XCTAssertEqual(guardian.onPoll(sampledMs: 10_499, keyDown: true), [])
@@ -243,7 +243,7 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(guardian.phase, .idle(lastStartMs: 10_000))
     }
 
-    /// S12 — past the threshold the windows go, and the app exits only once Q is
+    /// "Hold past threshold quits on release" — past the threshold the windows go, and the app exits only once Q is
     /// up: quitting mid-hold would send the repeats to the next app.
     func testAHoldHidesTheWindowsAndExitsOnRelease() {
         var guardian = showing(10_000)
@@ -257,7 +257,7 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(guardian.phase, .idle(lastStartMs: nil))
     }
 
-    /// S13 — the first sample can arrive late (WebKit's round trip, or a stalled
+    /// "Stalled poller first poll decides" — the first sample can arrive late (WebKit's round trip, or a stalled
     /// poller). What it reads is what happened, not how long it took.
     func testTheFirstPollDecidesOnWhatItReadsHoweverLateItIs() {
         var released = showing(10_000)
@@ -284,7 +284,7 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(guardian.onPoll(sampledMs: 10_500, keyDown: true), [.hideWindows])
     }
 
-    /// S14 — Chromium's second tap, measured from the first PRESS.
+    /// "Second tap quits on release" — Chromium's second tap, measured from the first PRESS.
     func testASecondTapWithinTheWindowCommitsTheQuit() {
         var guardian = tapped(0, 400)
         XCTAssertEqual(
@@ -297,7 +297,7 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(guardian.phase, .idle(lastStartMs: nil))
     }
 
-    /// S15/S21 — the window is a strict 1 s from the previous press, not from its
+    /// "Second tap at window edge shows HUD"/"Second tap just inside window confirms" — the window is a strict 1 s from the previous press, not from its
     /// release.
     func testTheSecondTapWindowClosesOneSecondAfterThePreviousPress() {
         for press: UInt64 in [1_000, 1_050] {
@@ -318,7 +318,7 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(guardian.phase, .confirming)
     }
 
-    /// S21 — a press older than the last start (a clock that went backwards, or
+    /// "Second tap just inside window confirms" — a press older than the last start (a clock that went backwards, or
     /// an out-of-order delivery) is simply not recent.
     func testAPressOlderThanTheLastStartIsNotASecondTap() {
         var guardian = tapped(1_000, 1_100)
@@ -329,7 +329,7 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(guardian.phase, .showing(startedMs: 900))
     }
 
-    /// S16 — Q was re-pressed before a poll saw the release, so this is a second
+    /// "Re-press while showing confirms quit" — Q was re-pressed before a poll saw the release, so this is a second
     /// tap by another name. The poller is already running on the first chord's
     /// key, and keeps it.
     func testARePressWhileTheNoticeShowsCommitsWithoutASecondPoller() {
@@ -338,7 +338,7 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(guardian.phase, .confirming)
     }
 
-    /// S17 — once committed, another chord changes nothing.
+    /// "New press while confirming is ignored" — once committed, another chord changes nothing.
     func testARePressWhileConfirmingDoesNothing() {
         var guardian = showing(10_000)
         _ = guardian.onPoll(sampledMs: 10_500, keyDown: true)
@@ -346,7 +346,7 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(guardian.phase, .confirming)
     }
 
-    /// S18 — auto-repeat reaches the retargeted item too, and must never advance
+    /// "Repeats change nothing in any phase" — auto-repeat reaches the retargeted item too, and must never advance
     /// the gesture.
     func testAutoRepeatsAreIgnoredInEveryPhase() {
         var idle = tapped(10_000, 10_120)
@@ -363,7 +363,7 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(confirming.phase, .confirming)
     }
 
-    /// S18 — if key state is unreadable the first sample reads "up", so the hold
+    /// "Repeats change nothing in any phase" — if key state is unreadable the first sample reads "up", so the hold
     /// ends as a tap and the auto-repeats that follow cannot confirm it. A real
     /// second tap still can.
     func testAHoldWhoseFirstPollReadsUpEndsAsATapThatRepeatsCannotConfirm() {
@@ -382,7 +382,7 @@ final class QuitGuardTests: XCTestCase {
         XCTAssertEqual(second.phase, .confirming)
     }
 
-    /// S20 — WebKit re-sends the original `NSEvent`, so the same press can arrive
+    /// "Duplicate delivery of one press is ignored" — WebKit re-sends the original `NSEvent`, so the same press can arrive
     /// twice. Treating the second as a new chord would turn a tap into a quit.
     func testTheSameKeyDownDeliveredTwiceAdvancesNothing() {
         var guardian = showing(10_000)
@@ -401,7 +401,7 @@ final class QuitGuardTests: XCTestCase {
 
     // MARK: - Clock
 
-    /// S38 — the wiring never subtracts `UInt64`s itself: a future timestamp is a
+    /// "Event age and press time arithmetic" — the wiring never subtracts `UInt64`s itself: a future timestamp is a
     /// negative age, and a zero one is ancient.
     func testAnEventsAgeIsSignedAndItsTimestampIsWholeMilliseconds() {
         XCTAssertEqual(QuitGuard.ageMs(nowMs: 1_000, pressMs: 1_001), -1)
