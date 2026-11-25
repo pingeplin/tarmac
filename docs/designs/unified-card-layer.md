@@ -92,7 +92,7 @@ One screen-space layer, `.card-layer` (`position:absolute; inset:0; pointer-even
 **New tests:**
 - `layoutTiles.test.ts` round-trip currently does **not** assert `z` — add it for term and doc tiles.
 - Cross-type z ordering: doc `z=10` paints above term `z=5`; focused-on-top across types.
-- A `termZoom` pure module (parallel to `docZoom`) emitting the terminal wrapper box + `--card-*` vars; assert **translate-only, zoom-free inner box** (mirrors `docZoom.test.ts` S1/S2/S6).
+- A `termZoom` pure module (parallel to `docZoom`) emitting the terminal wrapper box + `--card-*` vars; assert **translate-only, zoom-free inner box** (mirrors the `docZoom.test.ts` tests of 2606.0011: "Wrapper box has screen size and translate-only position", "Box has no scale and no will-change" and "Box origin projects through world to view").
 - Assert the product of transforms on the xterm element equals `zoom/rs` (guards the BCR contract); and that a **docked** terminal skips the override (effective `s=1`) even when the board zoom ≠ 1.
 
 ## Success criteria
