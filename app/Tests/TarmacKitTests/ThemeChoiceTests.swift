@@ -5,8 +5,8 @@ import XCTest
 /// 2610.0007: the appearance the user can choose, and the variant each choice
 /// puts in effect.
 final class ThemeChoiceTests: XCTestCase {
-    /// S1 — the tiles, in their order, and the key the choice is saved under.
-    func testS1TheChoicesAreAutoLightAndDarkInTileOrder() {
+    /// "Theme choices have fixed names and standard" — the tiles, in their order, and the key the choice is saved under.
+    func testTheChoicesAreAutoLightAndDarkInTileOrder() {
         XCTAssertEqual(ThemeChoice.allCases, [.auto, .light, .dark])
         XCTAssertEqual(ThemeChoice.allCases.map(\.rawValue), ["auto", "light", "dark"])
         XCTAssertEqual(ThemeChoice.allCases.map(\.title), ["Auto", "Light", "Dark"])
@@ -14,21 +14,21 @@ final class ThemeChoiceTests: XCTestCase {
         XCTAssertEqual(ThemeChoice.prefsKey, "theme")
     }
 
-    /// S2
-    func testS2LightAndDarkDoNotFollowTheSystem() {
+    /// "Auto theme follows the system appearance"
+    func testLightAndDarkDoNotFollowTheSystem() {
         for systemIsDark in [true, false] {
             XCTAssertEqual(ThemeChoice.light.inEffect(systemIsDark: systemIsDark), .light, "\(systemIsDark)")
             XCTAssertEqual(ThemeChoice.dark.inEffect(systemIsDark: systemIsDark), .dark, "\(systemIsDark)")
         }
     }
 
-    /// S2
-    func testS2AutoIsTheVariantOfTheSystem() {
+    /// "Auto theme follows the system appearance"
+    func testAutoIsTheVariantOfTheSystem() {
         XCTAssertEqual(ThemeChoice.auto.inEffect(systemIsDark: true), .dark)
         XCTAssertEqual(ThemeChoice.auto.inEffect(systemIsDark: false), .light)
     }
 
-    /// 2610.0008 S6 — the key of the theme chosen for an appearance, and the
+    /// 2610.0008 "Theme variants have keys and titles" — the key of the theme chosen for an appearance, and the
     /// word a mark and a box name the appearance with.
     func testAnAppearanceHasAKeyForItsThemeAndATitle() {
         XCTAssertEqual(ThemeVariant.allCases, [.light, .dark])
@@ -36,7 +36,7 @@ final class ThemeChoiceTests: XCTestCase {
         XCTAssertEqual(ThemeVariant.allCases.map(\.title), ["Light", "Dark"])
     }
 
-    /// 2610.0008 S63 — `"Light"` fails a rule that tests "there is a value",
+    /// 2610.0008 "Only the word Dark means a dark Mac" — `"Light"` fails a rule that tests "there is a value",
     /// and `"dark"` one that ignores the letter case.
     func testTheMacIsDarkOnlyForTheExactInterfaceStyleDark() {
         XCTAssertTrue(ThemeChoice.systemIsDark(interfaceStyle: "Dark"))

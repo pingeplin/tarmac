@@ -25,13 +25,13 @@ final class ThemeFileTests: XCTestCase {
 
     // MARK: - The grammar
 
-    /// S4
-    func testS4TheDraculaTextGivesItsTerminalColours() {
+    /// "Dracula text parses to its colours"
+    func testTheDraculaTextGivesItsTerminalColours() {
         XCTAssertEqual(parsed(ThemeFixture.dracula), ThemeFixture.draculaColours)
     }
 
-    /// S5
-    func testS5EveryFormOfALineIsRead() {
+    /// "Every line form parses the same"
+    func testEveryFormOfALineIsRead() {
         let text = [
             "# a comment", "", "\tbackground\t=\t\"#FFF\"", "foreground=000000", "  palette = 3 = #AbC",
             "palette=15=1a2B3c", "cursor-color = \" #123 \"",
@@ -46,13 +46,13 @@ final class ThemeFileTests: XCTestCase {
         )
     }
 
-    /// S5 — the quotes are those of the line's value.
-    func testS5AQuotedPaletteValueIsRead() {
+    /// "Every line form parses the same" — the quotes are those of the line's value.
+    func testAQuotedPaletteValueIsRead() {
         XCTAssertEqual(parsed(ThemeFixture.text("palette = \"7 = #010203\""))?.ansi, [7: 0x010203])
     }
 
-    /// S6
-    func testS6ALineThatIsNotAUsedKeyChangesNothing() {
+    /// "Unused lines change nothing"
+    func testALineThatIsNotAUsedKeyChangesNothing() {
         let others = [
             "selection-background = not a colour", "cursor-text = x", "font-family = Menlo", "theme = other", "hello",
             "Background = red", "tarmac-scroll-thumb = #fff", "palette-generate = true",
@@ -61,14 +61,14 @@ final class ThemeFileTests: XCTestCase {
         XCTAssertEqual(parsed(others + "\n" + ThemeFixture.dracula), ThemeFixture.draculaColours)
     }
 
-    /// S7
-    func testS7TheLastLineWins() {
+    /// "Last line wins and empty value removes"
+    func testTheLastLineWins() {
         XCTAssertEqual(parsed("background = #111111\nforeground = #fff\nbackground = #222222")?.background, 0x222222)
         XCTAssertEqual(parsed(ThemeFixture.text("palette = 1=#111111", "palette = 1=#222222"))?.ansi, [1: 0x222222])
     }
 
-    /// S7
-    func testS7AnEmptyValueTakesAway() {
+    /// "Last line wins and empty value removes"
+    func testAnEmptyValueTakesAway() {
         for second in [
             "cursor-color =", "cursor-color = \"\"", "cursor-color = cell-foreground", "cursor-color = cell-background",
         ] {
@@ -85,16 +85,16 @@ final class ThemeFileTests: XCTestCase {
         XCTAssertEqual(parsed(ThemeFixture.text("tarmac-bg0 = #111111", "tarmac-bg0 ="))?.chrome, [:])
     }
 
-    /// S8
-    func testS8APaletteEntryOver15IsReadAndNotUsed() {
+    /// "Palette index outside range is skipped"
+    func testAPaletteEntryOver15IsReadAndNotUsed() {
         XCTAssertEqual(
             parsed(ThemeFixture.text("palette = 16=#111111", "palette = 255=#222222", "palette = 007=#333333"))?.ansi,
             [7: 0x333333]
         )
     }
 
-    /// S9
-    func testS9AUsedKeyWithAValueThatIsNotReadRefusesTheFile() {
+    /// "Bad lines are refused with their line number"
+    func testAUsedKeyWithAValueThatIsNotReadRefusesTheFile() {
         let bad: [(line: String, key: String)] = [
             ("background = red", "background"), ("background = #12345", "background"),
             ("background = #1234567", "background"), ("background = #fff # x", "background"),
@@ -114,8 +114,8 @@ final class ThemeFileTests: XCTestCase {
         }
     }
 
-    /// S9 — a line number counts every line, and the first bad line is told.
-    func testS9TheFirstBadLineIsTold() {
+    /// "Bad lines are refused with their line number" — a line number counts every line, and the first bad line is told.
+    func testTheFirstBadLineIsTold() {
         let text = [
             "# a comment", "", "background = #000", "foreground = #fff", "palette = x=#fff", "palette = 1=#111",
             "cursor-color = red",
@@ -124,8 +124,8 @@ final class ThemeFileTests: XCTestCase {
         XCTAssertEqual(refusal(text), .value(line: 5, key: "palette"))
     }
 
-    /// S10
-    func testS10AFileMustHaveABackgroundAndAForeground() {
+    /// "Missing background or foreground is refused"
+    func testAFileMustHaveABackgroundAndAForeground() {
         XCTAssertEqual(refusal("foreground = #fff"), .missing(key: "background"))
         XCTAssertEqual(refusal("palette = 1=#fff"), .missing(key: "background"))
         XCTAssertEqual(refusal("background = #000"), .missing(key: "foreground"))
@@ -133,8 +133,8 @@ final class ThemeFileTests: XCTestCase {
         XCTAssertEqual(refusal("foreground = #fff\npalette = x=#fff"), .value(line: 2, key: "palette"))
     }
 
-    /// S11
-    func testS11EachTarmacKeyGivesItsOwnEntry() {
+    /// "Chrome and repo keys parse to entries"
+    func testEachTarmacKeyGivesItsOwnEntry() {
         XCTAssertEqual(
             ThemeFile.ChromeKey.allCases.map(\.fileKey),
             [
@@ -150,14 +150,14 @@ final class ThemeFileTests: XCTestCase {
         XCTAssertEqual(parsed(ThemeFixture.text("tarmac-repo = 3=#123456"))?.repo, [3: 0x123456])
     }
 
-    /// S12 — `String(data:encoding:)` drops a mark by itself, so this is the
+    /// "Bytes decode with or without a BOM" — `String(data:encoding:)` drops a mark by itself, so this is the
     /// check that holds the rule of `parse`.
-    func testS12ParseDropsAByteOrderMark() {
+    func testParseDropsAByteOrderMark() {
         XCTAssertEqual(parsed("\u{FEFF}" + ThemeFixture.dracula), ThemeFixture.draculaColours)
     }
 
-    /// S13
-    func testS13ARefusalHasItsReasonInWords() {
+    /// "Refusals have readable reason and detail"
+    func testARefusalHasItsReasonInWords() {
         XCTAssertEqual(ThemeFile.Refusal.unreadable.reason, "cannot be read")
         XCTAssertEqual(ThemeFile.Refusal.tooLarge.reason, "is larger than 64 KiB")
         XCTAssertEqual(ThemeFile.Refusal.notText.reason, "is not UTF-8 text")
@@ -264,46 +264,46 @@ final class ThemeFileTests: XCTestCase {
         findings.filter { $0.part == part }.map { "\($0.subject) on \($0.ground)" }
     }
 
-    /// S12
-    func testS12BytesThatAreNotUTF8AreNotText() {
+    /// "Bytes decode with or without a BOM"
+    func testBytesThatAreNotUTF8AreNotText() {
         XCTAssertEqual(ThemeFile.palette(of: Data([0xff, 0xfe, 0x00])), .failure(.notText))
     }
 
-    /// S12
-    func testS12TheBytesOfAFileGiveItsPalette() {
+    /// "Bytes decode with or without a BOM"
+    func testTheBytesOfAFileGiveItsPalette() {
         let text = Data(ThemeFixture.dracula.utf8)
 
         XCTAssertEqual(ThemeFile.palette(of: text), .success(Self.dracula))
         XCTAssertEqual(ThemeFile.palette(of: Data([0xef, 0xbb, 0xbf]) + text), .success(Self.dracula))
     }
 
-    /// S14
-    func testS14DraculaHasTheValuesOfItsColumn() {
+    /// "Dracula colours give the vector palette"
+    func testDraculaHasTheValuesOfItsColumn() {
         XCTAssertEqual(ThemeFile.palette(from: ThemeFixture.draculaColours), Self.dracula)
     }
 
-    /// S15 — with no lift `agent` is ANSI 6, `179299`.
-    func testS15LatteHasTheValuesOfItsColumn() {
+    /// "Latte colours give the lifted palette" — with no lift `agent` is ANSI 6, `179299`.
+    func testLatteHasTheValuesOfItsColumn() {
         XCTAssertEqual(ThemeFile.palette(from: ThemeFixture.latteColours), Self.latte)
     }
 
-    /// S16 — a mix that goes under 0 is held at 0.
-    func testS16AFileWithTwoColoursIsAWholeTheme() {
+    /// "Black and White themes derive full palettes" — a mix that goes under 0 is held at 0.
+    func testAFileWithTwoColoursIsAWholeTheme() {
         XCTAssertEqual(ThemeFile.palette(from: ThemeFixture.black), Self.black)
         XCTAssertEqual(ThemeFile.palette(from: ThemeFixture.white), Self.white)
     }
 
-    /// S16 — and a mix that goes over 255 is held at 255: the blue of the
+    /// "Black and White themes derive full palettes" — and a mix that goes over 255 is held at 255: the blue of the
     /// background is the far side of the foreground's.
-    func testS16AMixIsHeldAt255() {
+    func testAMixIsHeldAt255() {
         let palette = ThemeFile.palette(from: ThemeFixture.colours(background: 0x0000ff, foreground: 0xffff00))
 
         XCTAssertEqual(palette.variant, .dark)
         XCTAssertEqual(palette.bg0, 0x0000ff)
     }
 
-    /// S16
-    func testS16AMissingANSIColourIsTheStandardThemes() {
+    /// "Black and White themes derive full palettes"
+    func testAMissingANSIColourIsTheStandardThemes() {
         var colours = ThemeFixture.black
         colours.ansi = [6: 0xff00ff]
 
@@ -314,8 +314,8 @@ final class ThemeFileTests: XCTestCase {
         XCTAssertEqual(palette.agent, 0xff00ff)
     }
 
-    /// S17 — a given colour is not lifted, also under its floor.
-    func testS17AGivenColourIsNotChanged() {
+    /// "Three given keys leave exact findings" — a given colour is not lifted, also under its floor.
+    func testAGivenColourIsNotChanged() {
         var colours = ThemeFixture.draculaColours
         colours.chrome = [.bg0: 0x101010, .agent: 0xff00ff, .muted: 0x6272a4]
 
@@ -330,13 +330,13 @@ final class ThemeFileTests: XCTestCase {
         XCTAssertEqual(subjects(findings, .terminal), ["ansi 0 on background"])
     }
 
-    /// S17 — the lift measures against the fills of the result.
-    func testS17AGivenFillMovesEveryLift() {
+    /// "Three given keys leave exact findings" — the lift measures against the fills of the result.
+    func testAGivenFillMovesEveryLift() {
         XCTAssertEqual(ThemeFile.palette(from: ThemeFixture.latteWithBg2Colours), Self.latteWithBg2)
     }
 
-    /// S17
-    func testS17EachChromeKeyReachesItsOwnToken() {
+    /// "Three given keys leave exact findings"
+    func testEachChromeKeyReachesItsOwnToken() {
         for key in ThemeFile.ChromeKey.allCases {
             var colours = ThemeFixture.black
             colours.chrome = [key: 0x123456]
@@ -345,16 +345,16 @@ final class ThemeFileTests: XCTestCase {
         }
     }
 
-    /// S17
-    func testS17AGivenRepoColourIsNotLiftedAndTheOthersAreDerived() {
+    /// "Three given keys leave exact findings"
+    func testAGivenRepoColourIsNotLiftedAndTheOthersAreDerived() {
         var colours = ThemeFixture.draculaColours
         colours.repo = [2: 0x123456]
 
         XCTAssertEqual(ThemeFile.palette(from: colours).repoColors, [0xf1fa8c, 0x50fa7b, 0x123456, 0xff79c6])
     }
 
-    /// S18
-    func testS18TheFixedPartsFollowOneRuleInEveryDerivedTheme() {
+    /// "Derived palettes share fixed tokens and variant"
+    func testTheFixedPartsFollowOneRuleInEveryDerivedTheme() {
         let columns: [(ThemeFile.Colours, ThemeVariant)] = [
             (ThemeFixture.draculaColours, .dark), (ThemeFixture.latteColours, .light), (ThemeFixture.black, .dark),
             (ThemeFixture.white, .light), (ThemeFixture.latteWithBg2Colours, .light),
@@ -372,16 +372,16 @@ final class ThemeFileTests: XCTestCase {
         }
     }
 
-    /// S18 — equal luminance is light, so the pole is black.
-    func testS18AFileOfOneGreyIsLight() {
+    /// "Derived palettes share fixed tokens and variant" — equal luminance is light, so the pole is black.
+    func testAFileOfOneGreyIsLight() {
         let palette = ThemeFile.palette(from: ThemeFixture.colours(background: 0x808080, foreground: 0x808080))
 
         XCTAssertEqual(palette.variant, .light)
         XCTAssertEqual(palette.text, 0x101010)
     }
 
-    /// S19 — the detector warns, and nothing refuses.
-    func testS19AThemeThatNoLiftCanMendIsStillATheme() {
+    /// "Hot Dog Stand gives its contract values" — the detector warns, and nothing refuses.
+    func testAThemeThatNoLiftCanMendIsStillATheme() {
         let palette = ThemeFile.palette(from: ThemeFixture.hotDogStandColours)
 
         XCTAssertEqual(palette.text, 0xffffff)

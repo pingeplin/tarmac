@@ -13,8 +13,8 @@ final class PaletteCheckTests: XCTestCase {
 
     private func pairs(_ findings: [Finding]) -> [String] { findings.map { "\($0.subject) on \($0.ground)" } }
 
-    /// S12
-    func testS12AnANSIColourThatIsTheBackgroundIsOneTerminalFinding() {
+    /// "Terminal colour equal to background is a finding"
+    func testAnANSIColourThatIsTheBackgroundIsOneTerminalFinding() {
         let findings = PaletteCheck.findings(clean.changed(ansi: [15: clean.terminal.background]))
 
         XCTAssertEqual(
@@ -22,8 +22,8 @@ final class PaletteCheckTests: XCTestCase {
         )
     }
 
-    /// S13 — the two sides of 7.
-    func testS13AForegroundUnderSevenIsOneTerminalFinding() throws {
+    /// "Foreground below seven to one is a finding" — the two sides of 7.
+    func testAForegroundUnderSevenIsOneTerminalFinding() throws {
         let black = Dictionary(uniqueKeysWithValues: (0..<16).map { ($0, UInt32(0x000000)) })
         func findings(foreground: UInt32) -> [Finding] {
             PaletteCheck.findings(
@@ -42,8 +42,8 @@ final class PaletteCheckTests: XCTestCase {
         XCTAssertEqual(findings(foreground: 0x595959), [])
     }
 
-    /// S14 — the two sides of 4.5, on every fill.
-    func testS14ATextColourUnderFourAndAHalfIsAFindingOnEachFill() {
+    /// "Muted under floor gives three findings" — the two sides of 4.5, on every fill.
+    func testATextColourUnderFourAndAHalfIsAFindingOnEachFill() {
         let white = clean.changed(bg0: 0xffffff, bg1: 0xffffff, bg2: 0xffffff)
 
         let findings = PaletteCheck.findings(white.changed(muted: 0x777777))
@@ -53,8 +53,8 @@ final class PaletteCheckTests: XCTestCase {
         XCTAssertEqual(PaletteCheck.findings(white.changed(muted: 0x767676)), [])
     }
 
-    /// S14 — every subject on a fill, then the next fill.
-    func testS14TheChromeFindingsGoFillByFill() {
+    /// "Muted under floor gives three findings" — every subject on a fill, then the next fill.
+    func testTheChromeFindingsGoFillByFill() {
         let palette = clean.changed(bg0: 0xffffff, bg1: 0xffffff, bg2: 0xffffff, text: 0x777777, muted: 0x777777)
 
         XCTAssertEqual(
@@ -63,8 +63,8 @@ final class PaletteCheckTests: XCTestCase {
         )
     }
 
-    /// S15
-    func testS15OnOneFillTheSubjectsComeInTokenOrderWithTheirFloors() {
+    /// "Weak bg2 gives findings in fixed order"
+    func testOnOneFillTheSubjectsComeInTokenOrderWithTheirFloors() {
         let findings = PaletteCheck.findings(clean.changed(bg2: 0x777777))
 
         XCTAssertEqual(Set(findings.map(\.ground)), ["bg2"])
@@ -72,8 +72,8 @@ final class PaletteCheckTests: XCTestCase {
         XCTAssertEqual(findings.map(\.floor), [4.5, 4.5, 3, 3, 3, 3])
     }
 
-    /// S16
-    func testS16TheANSIFindingsComeFirstThenTheForegroundThenTheChrome() {
+    /// "Mixed findings come in fixed order"
+    func testTheANSIFindingsComeFirstThenTheForegroundThenTheChrome() {
         let background = clean.terminal.background
         let palette = clean.changed(
             agent: clean.bg0, terminalForeground: 0x808080, ansi: [3: background, 9: background]
@@ -88,23 +88,23 @@ final class PaletteCheckTests: XCTestCase {
         )
     }
 
-    /// S17 — the chrome is Tarmac's own choice in every theme.
-    func testS17NoThemeHasAChromeFinding() {
+    /// "No catalog theme has a chrome finding" — the chrome is Tarmac's own choice in every theme.
+    func testNoThemeHasAChromeFinding() {
         for entry in ThemeCatalog.all {
             XCTAssertEqual(pairs(PaletteCheck.findings(entry.palette).filter { $0.part == .chrome }), [], entry.id)
         }
     }
 
-    /// S18
-    func testS18BreezeLightAndGitHubLightHaveNoFinding() {
+    /// "Breeze Light and GitHub Light have no finding"
+    func testBreezeLightAndGitHubLightHaveNoFinding() {
         for id in ["breeze-light", "github-light"] {
             XCTAssertEqual(pairs(PaletteCheck.findings(ThemeCatalog.theme(id).palette)), [], id)
         }
     }
 
-    /// S19 — the upstream terminal colours are kept as they are, so these
+    /// "Terminal findings match the findings table" — the upstream terminal colours are kept as they are, so these
     /// are the pairs a user of the theme cannot read well.
-    func testS19TheTerminalFindingsOfEveryThemeAreThoseOfTheSpec() {
+    func testTheTerminalFindingsOfEveryThemeAreThoseOfTheSpec() {
         let expected: [String: [String]] = [
             "breeze-light": [],
             "breeze-dark": ["ansi 0", "ansi 1", "ansi 5", "ansi 9", "ansi 13"],
@@ -127,8 +127,8 @@ final class PaletteCheckTests: XCTestCase {
         }
     }
 
-    /// S19
-    func testS19SolarizedLightsBrightWhiteIsItsBackground() throws {
+    /// "Terminal findings match the findings table"
+    func testSolarizedLightsBrightWhiteIsItsBackground() throws {
         let findings = PaletteCheck.findings(ThemeCatalog.theme("solarized-light").palette)
 
         XCTAssertEqual(try XCTUnwrap(findings.first { $0.subject == "ansi 15" }).ratio, 1)

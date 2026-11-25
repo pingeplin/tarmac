@@ -26,14 +26,16 @@ final class SampleLogFileTests: XCTestCase {
         try Data(body.utf8).write(to: URL(fileURLWithPath: path))
     }
 
-    func testS12AppendsMakeTheFileAndAddALineEach() {
+    /// "Append writes one line per call".
+    func testAppendsMakeTheFileAndAddALineEach() {
         SampleLogFile.append("one", to: log, cap: cap)
         XCTAssertEqual(text(log), "one\n")
         SampleLogFile.append("two", to: log, cap: cap)
         XCTAssertEqual(text(log), "one\ntwo\n")
     }
 
-    func testS13AFileOverTheCapMovesToDot1AndTheFileStartsAnew() throws {
+    /// "File over the cap rotates to dot one".
+    func testAFileOverTheCapMovesToDot1AndTheFileStartsAnew() throws {
         let old = String(repeating: "x", count: cap + 1)
         try write(old, to: log)
         SampleLogFile.append("new", to: log, cap: cap)
@@ -41,7 +43,8 @@ final class SampleLogFileTests: XCTestCase {
         XCTAssertEqual(text(log), "new\n")
     }
 
-    func testS14AFileOfExactlyTheCapIsNotMoved() throws {
+    /// "File at the cap does not rotate".
+    func testAFileOfExactlyTheCapIsNotMoved() throws {
         let old = String(repeating: "x", count: cap)
         try write(old, to: log)
         SampleLogFile.append("new", to: log, cap: cap)
@@ -49,7 +52,8 @@ final class SampleLogFileTests: XCTestCase {
         XCTAssertEqual(text(log), old + "new\n")
     }
 
-    func testS15ANewerOldContentReplacesDot1() throws {
+    /// "Rotation replaces the older backup".
+    func testANewerOldContentReplacesDot1() throws {
         try write("older", to: rotated)
         let newer = String(repeating: "y", count: cap + 1)
         try write(newer, to: log)
@@ -58,7 +62,8 @@ final class SampleLogFileTests: XCTestCase {
         XCTAssertEqual(text(log), "new\n")
     }
 
-    func testS16ADirectoryThatDoesNotExistGetsNoFile() {
+    /// "Missing directory is silent".
+    func testADirectoryThatDoesNotExistGetsNoFile() {
         let missing = dir + "/missing"
         SampleLogFile.append("one", to: missing + "/tarmac-app.jsonl", cap: cap)
         XCTAssertFalse(FileManager.default.fileExists(atPath: missing))
@@ -74,7 +79,8 @@ final class SampleLogFileTests: XCTestCase {
         XCTAssertEqual(text(log), old)
     }
 
-    func testS17TheFileIsBesideTheSocket() {
+    /// "Log path sits beside the socket".
+    func testTheFileIsBesideTheSocket() {
         XCTAssertEqual(SampleLogFile.path(socketPath: "/x/y/tarmacd.sock"), "/x/y/tarmac-app.jsonl")
     }
 

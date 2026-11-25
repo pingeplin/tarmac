@@ -18,14 +18,16 @@ final class CardFontVariablesTests: XCTestCase {
 
     // MARK: - values
 
-    func test2610_0010S2NothingChosenGivesTheStacksAndTheStandardSize() {
+    /// "Default fonts give exact JSON with three names".
+    func testNothingChosenGivesTheStacksAndTheStandardSize() {
         XCTAssertEqual(
             variables().json,
             #"{"--tarmac-mono-font":"ui-monospace, monospace","--tarmac-prose-font":"-apple-system, \"SF Pro Text\", system-ui, sans-serif","--tarmac-prose-size":"14px"}"#
         )
     }
 
-    func test2610_0010S3EachValueIsWhatFontCSSGivesForItsOwnInput() throws {
+    /// "Each font input changes only its value".
+    func testEachValueIsWhatFontCSSGivesForItsOwnInput() throws {
         let chosen = try parsed(variables(interface: "Fira Code", document: "Georgia", size: 13.5).json)
         XCTAssertEqual(chosen[CardFontVariables.monoFont], FontCSS.interface("Fira Code"))
         XCTAssertEqual(chosen[CardFontVariables.proseFont], FontCSS.document("Georgia"))
@@ -48,7 +50,8 @@ final class CardFontVariablesTests: XCTestCase {
         XCTAssertNotEqual(interface[CardFontVariables.monoFont], base[CardFontVariables.monoFont])
     }
 
-    func test2610_0010S4AFamilyThatIsEmptyOrHoldsAControlCharacterGivesTheStackAlone() throws {
+    /// "Empty or control character family uses the stack".
+    func testAFamilyThatIsEmptyOrHoldsAControlCharacterGivesTheStackAlone() throws {
         for name in ["", "Geo\u{0}rgia", "a\nb", "a\u{7f}b"] {
             let both = try parsed(variables(interface: name, document: name).json)
             XCTAssertEqual(both[CardFontVariables.monoFont], FontCSS.monospaceStack, name.debugDescription)
@@ -63,7 +66,8 @@ final class CardFontVariablesTests: XCTestCase {
         "a\u{2028}b\u{2029}c", #"\<"#, #"\\<"#,
     ]
 
-    func test2610_0010S6TheJSONHoldsNoLessThanAndNoRawLineSeparatorAndIsAValidLiteral() throws {
+    /// "Hostile family names stay safe in JSON".
+    func testTheJSONHoldsNoLessThanAndNoRawLineSeparatorAndIsAValidLiteral() throws {
         let context = try XCTUnwrap(JSContext())
         context.exceptionHandler = { _, error in XCTFail("the literal threw: \(String(describing: error))") }
         for name in Self.hostile {
@@ -90,7 +94,8 @@ final class CardFontVariablesTests: XCTestCase {
         return (0..<markers).reduce("var a = 1;\n") { $0 + "var b\($1) = [\(marker)][0];\n" } + "var z = 2;\n"
     }
 
-    func test2610_0010S7TheMarkerIsReplacedByTheJSONWhenTheShimHoldsItOnce() {
+    /// "Marker fills once or leaves text alone".
+    func testTheMarkerIsReplacedByTheJSONWhenTheShimHoldsItOnce() {
         let fonts = variables(interface: "Menlo")
         let once = shim(markers: 1)
         let filled = fonts.filling(once)
@@ -99,7 +104,8 @@ final class CardFontVariablesTests: XCTestCase {
         XCTAssertTrue(filled.contains(fonts.json))
     }
 
-    func test2610_0010S7AShimWithNoMarkerOrTwoIsGivenBackAsItIs() {
+    /// "Marker fills once or leaves text alone".
+    func testAShimWithNoMarkerOrTwoIsGivenBackAsItIs() {
         let fonts = variables()
         for count in [0, 2] {
             let text = shim(markers: count)
@@ -107,14 +113,15 @@ final class CardFontVariablesTests: XCTestCase {
         }
     }
 
-    func test2610_0010S7AFamilyNamedLikeTheMarkerIsNotSearchedAgain() {
+    /// "Marker fills once or leaves text alone".
+    func testAFamilyNamedLikeTheMarkerIsNotSearchedAgain() {
         let fonts = variables(interface: CardFontVariables.marker)
         let filled = fonts.filling(shim(markers: 1))
         XCTAssertEqual(filled, shim(markers: 1).replacingOccurrences(of: CardFontVariables.marker, with: fonts.json))
         XCTAssertTrue(filled.contains(CardFontVariables.marker))
     }
 
-    // MARK: - the guide (S25)
+    // MARK: - the guide ("Guide names the three font variables")
 
     private func guide() throws -> String {
         let root = URL(fileURLWithPath: #filePath)
@@ -129,7 +136,8 @@ final class CardFontVariablesTests: XCTestCase {
         text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
-    func test2610_0010S25TheGuideNamesTheThreePropertiesAndNoLongerSaysTheSystemStackIsTheOnlyChoice() throws {
+    /// "Guide names the three font variables".
+    func testTheGuideNamesTheThreePropertiesAndNoLongerSaysTheSystemStackIsTheOnlyChoice() throws {
         let guide = try guide()
         for name in [CardFontVariables.proseSize, CardFontVariables.proseFont, CardFontVariables.monoFont] {
             XCTAssertTrue(guide.contains(name), name)

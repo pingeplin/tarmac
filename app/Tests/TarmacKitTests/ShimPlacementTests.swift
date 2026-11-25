@@ -38,7 +38,8 @@ final class ShimPlacementTests: XCTestCase {
         XCTAssertEqual(file[(file.startIndex + offset)...], Data(expected.utf8), file: path, line: line)
     }
 
-    func testS1TheOffsetIsOnePastTheFirstGreaterThanOfALeadingDoctype() {
+    /// "Shim offset is one past the doctype".
+    func testTheOffsetIsOnePastTheFirstGreaterThanOfALeadingDoctype() {
         let file = Data("<!doctype html><p>x</p>".utf8)
         let at = ShimPlacement.offset(in: file)
         XCTAssertEqual(at, 15)
@@ -49,7 +50,8 @@ final class ShimPlacementTests: XCTestCase {
         XCTAssertEqual(offset(doctype), 15)
     }
 
-    func testS2WhatTheBrowserSkipsBeforeADoctypeIsBeforeTheScript() {
+    /// "Shim offset skips BOM spaces and comments".
+    func testWhatTheBrowserSkipsBeforeADoctypeIsBeforeTheScript() {
         assertOffsets([
             ("\u{FEFF}", 18),
             ("\t", 16), ("\n", 16), ("\u{0C}", 16), ("\r", 16), (" ", 16),
@@ -62,7 +64,8 @@ final class ShimPlacementTests: XCTestCase {
         ])
     }
 
-    func testS3BothCommentClosersEndAComment() {
+    /// "Comment forms give exact shim offsets".
+    func testBothCommentClosersEndAComment() {
         assertOffsets([
             ("<!-- x -->", 25), ("<!-- x --!>", 26),
             ("<!-->", 20), ("<!--->", 21), ("<!---->", 22), ("<!----!>", 23),
@@ -73,7 +76,8 @@ final class ShimPlacementTests: XCTestCase {
         XCTAssertEqual(offset("<!---!>" + doctype + "<p>in</p> -->"), 0)
     }
 
-    func testS4ADoctypeEndsAtItsFirstGreaterThanWhateverItHolds() {
+    /// "Any doctype ends at its first angle bracket".
+    func testADoctypeEndsAtItsFirstGreaterThanWhateverItHolds() {
         let vectors: [(String, Int)] = [
             ("<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\">", 63),
             (
@@ -99,7 +103,8 @@ final class ShimPlacementTests: XCTestCase {
         XCTAssertEqual(offset("<!doctype html <html><p>x</p>"), 21)
     }
 
-    func testS5AFileWithNoLeadingDoctypeGetsTheStartOfTheFile() {
+    /// "File without leading doctype gets offset zero".
+    func testAFileWithNoLeadingDoctypeGetsTheStartOfTheFile() {
         let vectors: [(String, [UInt8])] = [
             ("empty", []),
             ("no doctype", Array("<html><p>x</p></html>".utf8)),
@@ -126,7 +131,8 @@ final class ShimPlacementTests: XCTestCase {
         }
     }
 
-    func testS6ABomAndNoDoctypeGivesTheBomLength() {
+    /// "BOM without doctype gives offset three".
+    func testABomAndNoDoctypeGivesTheBomLength() {
         XCTAssertEqual(offset(bom), 3)
         XCTAssertEqual(offset(bom + Array("<html>bom</html>".utf8)), 3)
         XCTAssertEqual(offset(bom + Array("<!-- x".utf8)), 3)
@@ -135,7 +141,8 @@ final class ShimPlacementTests: XCTestCase {
         XCTAssertEqual(offset(bom + Array(" <?x".utf8)), 3)
     }
 
-    func testS7TheOffsetCountsFromTheStartOfASlice() {
+    /// "Offset counts from the data slice start".
+    func testTheOffsetCountsFromTheStartOfASlice() {
         let slice = Data("zz".utf8 + Data("<!doctype html><p>x</p>".utf8))[2...]
         XCTAssertNotEqual(slice.startIndex, 0)
         let at = ShimPlacement.offset(in: slice)

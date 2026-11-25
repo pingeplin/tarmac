@@ -7,7 +7,7 @@ final class FontSizeRuleTests: XCTestCase {
     private let terminal = FontSizeRule.terminal
     private let document = FontSizeRule.document
 
-    /// S2
+    /// "Size in effect falls back to the standard"
     func testASavedSizeIsInEffectAndNoneIsTheStandard() {
         XCTAssertEqual(terminal.inEffect(saved: nil), 16)
         XCTAssertEqual(terminal.inEffect(saved: 13.5), 13.5)
@@ -18,20 +18,20 @@ final class FontSizeRuleTests: XCTestCase {
         XCTAssertEqual(document.inEffect(saved: 24), 24)
     }
 
-    /// S3 — the field shows the shortest form, never `16.0`.
+    /// "Size text formats and parses" — the field shows the shortest form, never `16.0`.
     func testASizeIsShownInItsShortestForm() {
         XCTAssertEqual(FontSizeRule.text(16), "16")
         XCTAssertEqual(FontSizeRule.text(13.5), "13.5")
         XCTAssertEqual(FontSizeRule.text(8), "8")
     }
 
-    /// S3
+    /// "Size text formats and parses"
     func testATypedSizeIsRead() {
         XCTAssertEqual(terminal.typed("20"), 20)
         XCTAssertEqual(terminal.typed(" 13.5 "), 13.5)
     }
 
-    /// S41 — a size already in effect is not a change, whatever the file
+    /// "Choice is nil unless the size really changes" — a size already in effect is not a change, whatever the file
     /// holds: a number the reader refused stays there until a real choice.
     func testOnlyASizeThatIsNotInEffectIsAChoice() {
         XCTAssertNil(terminal.choice(16, saved: nil))
@@ -44,7 +44,7 @@ final class FontSizeRuleTests: XCTestCase {
         XCTAssertNil(terminal.choice(13.3, saved: nil))
     }
 
-    /// S20 — the file's rule: inside the role's own range, and on a half step.
+    /// "Size rule accepts only valid steps" — the file's rule: inside the role's own range, and on a half step.
     func testOnlyAHalfStepInsideTheRangeIsAccepted() {
         for size in [8, 8.5, 16, 31.5, 32] { XCTAssertTrue(terminal.accepts(size), "\(size)") }
         let refused = [7.5, 32.5, 0, -16, 16.25, 13.3, 13.500000000000002, .nan, .infinity]
@@ -59,7 +59,7 @@ final class FontSizeRuleTests: XCTestCase {
         }
     }
 
-    /// S21 — the typed rule: the nearest half step, a tie going up, then the range.
+    /// "Nearest size snaps into range" — the typed rule: the nearest half step, a tie going up, then the range.
     func testANumberGoesToTheNearestSizeTheRoleHas() {
         let cases: [(Double, Double)] = [
             (13.3, 13.5), (13.2, 13), (13.25, 13.5), (13.75, 14), (7, 8), (-5, 8), (99, 32),
@@ -69,7 +69,7 @@ final class FontSizeRuleTests: XCTestCase {
         XCTAssertEqual(document.nearest(to: 30), 24)
     }
 
-    /// S22
+    /// "Typed size parses or rounds into range"
     func testTextThatIsNotAFiniteNumberIsNoSize() {
         for text in ["abc", "", "   ", "nan", "inf", "-inf", "1e400", "13,5", "16pt"] {
             XCTAssertNil(terminal.typed(text), text.debugDescription)

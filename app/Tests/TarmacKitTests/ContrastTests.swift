@@ -4,21 +4,21 @@ import XCTest
 
 /// 2610.0007: the WCAG 2 contrast ratio the palette tests measure with.
 final class ContrastTests: XCTestCase {
-    /// S11 — the two ends of the scale, and the grey WCAG's own examples use.
-    func testS11TheRatioIsTheWCAGOne() {
+    /// "Contrast ratio matches known values" — the two ends of the scale, and the grey WCAG's own examples use.
+    func testTheRatioIsTheWCAGOne() {
         XCTAssertEqual(Contrast.ratio(0x000000, 0xffffff), 21, accuracy: 0.01)
         XCTAssertEqual(Contrast.ratio(0x777777, 0xffffff), 4.48, accuracy: 0.01)
     }
 
-    /// S11
-    func testS11AColourHasNoContrastWithItself() {
+    /// "Contrast ratio matches known values"
+    func testAColourHasNoContrastWithItself() {
         for colour: UInt32 in [0x000000, 0x12846e, 0xffffff] {
             XCTAssertEqual(Contrast.ratio(colour, colour), 1, String(colour, radix: 16))
         }
     }
 
-    /// S11
-    func testS11TheRatioDoesNotDependOnTheOrder() {
+    /// "Contrast ratio matches known values"
+    func testTheRatioDoesNotDependOnTheOrder() {
         let pairs: [(UInt32, UInt32)] = [(0x000000, 0xffffff), (0x12846e, 0xeff0f1), (0xed1515, 0x31363b)]
         for (a, b) in pairs {
             XCTAssertEqual(Contrast.ratio(a, b), Contrast.ratio(b, a), String(a, radix: 16))

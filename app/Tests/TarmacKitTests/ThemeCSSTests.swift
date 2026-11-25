@@ -14,8 +14,8 @@ final class ThemeCSSTests: XCTestCase {
         "color-scheme",
     ]
 
-    /// S15; 2611.0022 S32 adds `--bg3` and `--faint`.
-    func testS15TheLightDeclarationsAreTheTwelveOfTheContractInOrder() {
+    /// "Theme CSS properties for each variant"; 2611.0022 "Theme gives bg3 and faint tokens" adds `--bg3` and `--faint`.
+    func testTheLightDeclarationsAreTheTwelveOfTheContractInOrder() {
         let properties = ThemeCSS.properties(light)
 
         XCTAssertEqual(properties.map(\.name), names)
@@ -29,8 +29,8 @@ final class ThemeCSSTests: XCTestCase {
         )
     }
 
-    /// S15
-    func testS15TheDarkDeclarationsAreThePageOfToday() {
+    /// "Theme CSS properties for each variant"
+    func testTheDarkDeclarationsAreThePageOfToday() {
         let properties = ThemeCSS.properties(dark)
 
         XCTAssertEqual(properties.map(\.name), names)
@@ -44,8 +44,8 @@ final class ThemeCSSTests: XCTestCase {
         )
     }
 
-    /// S16
-    func testS16TheMarkerBecomesEveryDeclaration() {
+    /// "Theme markers are replaced in a page"
+    func testTheMarkerBecomesEveryDeclaration() {
         let page = ThemeCSS.page(":root { /*tarmac-theme*/ --zoom: 1; }", light)
 
         XCTAssertFalse(page.contains("/*tarmac-theme*/"))
@@ -61,8 +61,8 @@ final class ThemeCSSTests: XCTestCase {
         XCTAssertTrue(page.hasSuffix(" --zoom: 1; }"))
     }
 
-    /// S16 — the host page gets its backdrop and no `color-scheme`.
-    func testS16TheBackdropMarkerBecomesTheBackdropAlone() {
+    /// "Theme markers are replaced in a page" — the host page gets its backdrop and no `color-scheme`.
+    func testTheBackdropMarkerBecomesTheBackdropAlone() {
         XCTAssertEqual(ThemeCSS.page(":root { /*tarmac-backdrop*/ }", light), ":root { --bg1: #eff0f1; }")
         XCTAssertEqual(ThemeCSS.page(":root { /*tarmac-backdrop*/ }", dark), ":root { --bg1: #2b3036; }")
     }
@@ -81,9 +81,9 @@ final class ThemeCSSTests: XCTestCase {
         XCTAssertEqual(ThemeCSS.backdrop(dark).value, "#2b3036")
     }
 
-    /// 2610.0008 S28 — the pairs are those of the palette given, whatever
+    /// 2610.0008 "Theme CSS properties match the palette" — the pairs are those of the palette given, whatever
     /// theme it is.
-    func test2610_0008S28TheDeclarationsAreThoseOfThePaletteGiven() {
+    func testTheDeclarationsAreThoseOfThePaletteGiven() {
         let latte = ThemeCSS.properties(ThemeCatalog.theme("catppuccin-latte").palette)
 
         XCTAssertEqual(latte.map(\.name), names)
@@ -101,9 +101,9 @@ final class ThemeCSSTests: XCTestCase {
         XCTAssertEqual(mocha.last?.value, "dark")
     }
 
-    /// 2610.0008 S29 — the first template holds no theme marker, so its
+    /// 2610.0008 "Page template takes backdrop and theme markers" — the first template holds no theme marker, so its
     /// `--bg1` comes from the backdrop marker alone.
-    func test2610_0008S29TheBackdropAndThePageAreThoseOfThePaletteGiven() {
+    func testTheBackdropAndThePageAreThoseOfThePaletteGiven() {
         let palette = ThemeCatalog.theme("github-dark").palette
 
         XCTAssertEqual(ThemeCSS.backdrop(palette).name, "--bg1")
@@ -114,8 +114,8 @@ final class ThemeCSSTests: XCTestCase {
         XCTAssertTrue(page.contains("color-scheme: dark;"))
     }
 
-    /// S42 — a marker is a place only when the template holds it once.
-    func testS42ATemplateWithNoMarkerOrOneTwiceComesBackUnchanged() {
+    /// "Page with wrong markers comes back unchanged" — a marker is a place only when the template holds it once.
+    func testATemplateWithNoMarkerOrOneTwiceComesBackUnchanged() {
         let templates = [
             ":root { --zoom: 1; }",
             ":root { /*tarmac-theme*/ } body { /*tarmac-theme*/ }",
@@ -126,8 +126,8 @@ final class ThemeCSSTests: XCTestCase {
         }
     }
 
-    /// S42 — each marker is counted on its own.
-    func testS42AMarkerHeldOnceIsReplacedBesideOneHeldTwice() {
+    /// "Page with wrong markers comes back unchanged" — each marker is counted on its own.
+    func testAMarkerHeldOnceIsReplacedBesideOneHeldTwice() {
         XCTAssertEqual(
             ThemeCSS.page("a { /*tarmac-theme*/ } b { /*tarmac-theme*/ } :root { /*tarmac-backdrop*/ }", light),
             "a { /*tarmac-theme*/ } b { /*tarmac-theme*/ } :root { --bg1: #eff0f1; }"

@@ -2,8 +2,8 @@ import XCTest
 
 @testable import TarmacKit
 
-/// The read of a card's data file (spec 2611.0002 S30, S32; 2611.0005 S6,
-/// S33), with a stand-in
+/// The read of a card's data file (spec 2611.0002 "Read checks the resolved directory", "Read bytes must be valid UTF-8 JSON"; 2611.0005 "Link leading outside the card is refused",
+/// "Link to a hidden path is refused"), with a stand-in
 /// file system (`SchemeFixtures.Disk`): a path resolves when it, or the file
 /// its link leads to, is on the disk.
 final class CardDataReadTests: XCTestCase {
@@ -24,13 +24,15 @@ final class CardDataReadTests: XCTestCase {
 
     private func holding(_ text: String) -> Disk { holding(Array(text.utf8)) }
 
-    func test2611_0002S30AFileBesideTheCardIsReadAsText() {
+    /// 2611.0002 "Read checks the resolved directory".
+    func testAFileBesideTheCardIsReadAsText() {
         let disk = holding(#"{"n":1}"#)
         XCTAssertEqual(read(disk), .text(#"{"n":1}"#))
         XCTAssertEqual(disk.opened, [file])
     }
 
-    func test2611_0002S30_2611_0005S5ANameThatResolvesToAnotherDirectoryIsNeverRead() {
+    /// 2611.0002 "Read checks the resolved directory"; 2611.0005 "Under-check judges resolved paths".
+    func testANameThatResolvesToAnotherDirectoryIsNeverRead() {
         for target in ["/etc/stats.json", "/a/bc/stats.json"] {
             let disk = Disk([html: Data(), file: Data("{}".utf8), target: Data("{}".utf8)], links: [file: target])
             XCTAssertEqual(read(disk), .refused(CardDataRead.leadsOutside), target)
@@ -38,10 +40,11 @@ final class CardDataReadTests: XCTestCase {
         }
     }
 
+    /// 2611.0002 "Read checks the resolved directory"; 2611.0005 "Under-check judges resolved paths".
     /// The directories are compared as bytes (`CardDataPathTests`): a
     /// combining mark after a slash does not hide the slash, and two forms of
     /// one letter are two directories.
-    func test2611_0002S30_2611_0005S5TheResolvedDirectoryIsComparedAsBytes() {
+    func testTheResolvedDirectoryIsComparedAsBytes() {
         let mark = "\u{301}"
         let under = "/a/b/sub/\(mark)x.json"
         let disk = Disk([html: Data(), under: Data("{}".utf8)], links: [file: under])
@@ -58,24 +61,27 @@ final class CardDataReadTests: XCTestCase {
         XCTAssertEqual(other.opened, [])
     }
 
+    /// 2611.0002 "Read checks the resolved directory".
     /// A resolved path is taken as it is given: its directory is not worked
     /// out again from `..` components, which a resolved path does not have.
-    func test2611_0002S30AResolvedPathIsNotNormalisedAgain() {
+    func testAResolvedPathIsNotNormalisedAgain() {
         let odd = "/a/b/l/../stats.json"
         let disk = Disk([html: Data(), odd: Data("{}".utf8)], links: [file: odd])
         XCTAssertEqual(read(disk), .refused(CardDataRead.leadsOutside))
         XCTAssertEqual(disk.opened, [])
     }
 
+    /// 2611.0002 "Read checks the resolved directory".
     /// The resolved file is the one read, never the name.
-    func test2611_0002S30ANameThatResolvesToAnotherFileBesideTheCardReadsThatFile() {
+    func testANameThatResolvesToAnotherFileBesideTheCardReadsThatFile() {
         let disk = Disk([html: Data(), "/a/b/real.json": Data("[1]".utf8)], links: [file: "/a/b/real.json"])
         XCTAssertEqual(read(disk), .text("[1]"))
         XCTAssertEqual(disk.opened, ["/a/b/real.json"])
     }
 
+    /// 2611.0002 "Read checks the resolved directory".
     /// The directory is the resolved HTML file's, not its name's.
-    func test2611_0002S30TheDirectoryIsTheResolvedHTMLFiles() {
+    func testTheDirectoryIsTheResolvedHTMLFiles() {
         let beside = Disk([file: Data("{}".utf8), "/c/dash.html": Data()], links: [html: "/c/dash.html"])
         XCTAssertEqual(read(beside), .refused(CardDataRead.leadsOutside), "read beside the HTML file's name")
         XCTAssertEqual(beside.opened, [])
@@ -88,7 +94,8 @@ final class CardDataReadTests: XCTestCase {
         XCTAssertEqual(disk.opened, ["/c/stats.json"])
     }
 
-    func test2611_0005S6AResolvedFileUnderTheCardsDirectoryIsReadAndOneOutsideIsNot() {
+    /// 2611.0005 "Link leading outside the card is refused".
+    func testAResolvedFileUnderTheCardsDirectoryIsReadAndOneOutsideIsNot() {
         let link = "/a/b/link/x.json"
         let away = Disk([html: Data(), "/elsewhere/x.json": Data("{}".utf8)], links: [link: "/elsewhere/x.json"])
         XCTAssertEqual(
@@ -117,9 +124,10 @@ final class CardDataReadTests: XCTestCase {
         XCTAssertEqual(real.opened, ["/real/sub/x.json"])
     }
 
+    /// 2611.0005 "Link to a hidden path is refused".
     /// The hidden rule on the resolved file, below the resolved HTML file's
     /// directory only.
-    func test2611_0005S33AResolvedFileThatIsHiddenBelowTheCardsDirectoryIsNeverRead() {
+    func testAResolvedFileThatIsHiddenBelowTheCardsDirectoryIsNeverRead() {
         let name = "/a/b/data/x.json"
         for target in ["/a/b/.cfg/x.json", "/a/b/sub/.x.json"] {
             let disk = Disk([html: Data(), target: Data("{}".utf8)], links: [name: target])
@@ -140,7 +148,8 @@ final class CardDataReadTests: XCTestCase {
         XCTAssertEqual(hiddenCard.opened, ["/a/.b/sub/x.json"])
     }
 
-    func test2611_0002S30AResolveThatFailsForEitherFileIsARefusalAndNoRead() {
+    /// 2611.0002 "Read checks the resolved directory".
+    func testAResolveThatFailsForEitherFileIsARefusalAndNoRead() {
         let dataGone = Disk([html: Data()])
         XCTAssertEqual(read(dataGone), .refused(missing))
         XCTAssertEqual(dataGone.opened, [])
@@ -150,9 +159,10 @@ final class CardDataReadTests: XCTestCase {
         XCTAssertEqual(cardGone.opened, [])
     }
 
+    /// 2611.0002 "Read checks the resolved directory".
     /// The disk's own read fails only for a file that is not there, which
     /// resolve has refused already: a stand-in read gives the other failures.
-    func test2611_0002S30AReadThatFailsGivesItsReason() {
+    func testAReadThatFailsGivesItsReason() {
         let disk = holding("{}")
         for error in [FileBytes.NotAFile(), FileBytes.TooLarge(limit: FileBytes.sizeCap)] as [any Error] {
             let outcome = CardDataRead.read(
@@ -161,25 +171,29 @@ final class CardDataReadTests: XCTestCase {
         }
     }
 
-    // MARK: - the bytes (S32)
+    // MARK: - the bytes ("Read bytes must be valid UTF-8 JSON")
 
-    func test2611_0002S32BytesThatAreNotUTF8AreRefused() {
+    /// 2611.0002 "Read bytes must be valid UTF-8 JSON".
+    func testBytesThatAreNotUTF8AreRefused() {
         XCTAssertEqual(read(holding([0x22, 0xff, 0x22])), .refused(CardDataRead.notUTF8))
     }
 
-    func test2611_0002S32NestingIsTakenTo127LevelsAndNoDeeper() {
+    /// 2611.0002 "Read bytes must be valid UTF-8 JSON".
+    func testNestingIsTakenTo127LevelsAndNoDeeper() {
         let nested = { (depth: Int) in String(repeating: "[", count: depth) + String(repeating: "]", count: depth) }
         XCTAssertEqual(read(holding(nested(127))), .text(nested(127)))
         XCTAssertEqual(read(holding(nested(128))), .refused(CardDataRead.notJSON))
     }
 
-    func test2611_0002S32AnyValueIsTakenAtTheTopWithWhiteSpaceAround() {
+    /// 2611.0002 "Read bytes must be valid UTF-8 JSON".
+    func testAnyValueIsTakenAtTheTopWithWhiteSpaceAround() {
         for text in ["3", #""x""#, "null", " \n\t{\"a\":[1,2]}\r\n "] {
             XCTAssertEqual(read(holding(text)), .text(text), text)
         }
     }
 
-    func test2611_0002S32WhatStrictJSONRefusesIsRefused() {
+    /// 2611.0002 "Read bytes must be valid UTF-8 JSON".
+    func testWhatStrictJSONRefusesIsRefused() {
         for bytes in [[], [0xef, 0xbb, 0xbf] + Array("{}".utf8), Array("1e400".utf8), Array(#""\ud800""#.utf8)] {
             XCTAssertEqual(read(holding(bytes)), .refused(CardDataRead.notJSON), "\(bytes)")
         }
