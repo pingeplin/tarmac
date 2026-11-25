@@ -3,14 +3,15 @@ import XCTest
 @testable import TarmacKit
 
 /// Spec 2609.0014: which markdown doc-card `<img src>` values name a local file,
-/// and the absolute path each resolves to (S1–S9). The tarmac-card:// re-addressing
-/// of a local image (S10–S11) is a view concern and not part of this module.
+/// and the absolute path each resolves to. The tarmac-card:// re-addressing
+/// of a local image is a view concern and not part of this module.
 final class DocImageTests: XCTestCase {
     private func path(_ src: String, in docPath: String = "/r/README.md") -> String? {
         DocImage.localPath(src: src, docPath: docPath)
     }
 
-    func testS1RelativeSrcJoinsOntoTheDocsDirectoryWithDotSegmentsNormalized() {
+    /// "Relative image src joins the doc directory".
+    func testRelativeSrcJoinsOntoTheDocsDirectoryWithDotSegmentsNormalized() {
         XCTAssertEqual(path("docs/images/logo.png"), "/r/docs/images/logo.png")
         XCTAssertEqual(path("./x.png"), "/r/x.png")
         XCTAssertEqual(path("../x.png"), "/x.png")
@@ -18,12 +19,14 @@ final class DocImageTests: XCTestCase {
         XCTAssertEqual(path("./x:y.png"), "/r/x:y.png")
     }
 
-    func testS2AnAbsoluteSrcKeepsItsPathNormalized() {
+    /// "Absolute image src is normalized".
+    func testAnAbsoluteSrcKeepsItsPathNormalized() {
         XCTAssertEqual(path("/abs/dir/x.png"), "/abs/dir/x.png")
         XCTAssertEqual(path("/abs/../x.png"), "/x.png")
     }
 
-    func testS3ALocalFileURLsPathGoesThroughTheSameSteps() {
+    /// "File URL src resolves like a local path".
+    func testALocalFileURLsPathGoesThroughTheSameSteps() {
         XCTAssertEqual(path("file:///abs/x.png"), "/abs/x.png")
         XCTAssertEqual(path("file://localhost/abs/x.png"), "/abs/x.png")
         XCTAssertEqual(path("FILE:///abs/x.png"), "/abs/x.png")
@@ -31,7 +34,8 @@ final class DocImageTests: XCTestCase {
         XCTAssertEqual(path("file:///abs/../x.png"), "/x.png")
     }
 
-    func testS4IsNilForAnythingButALocalFileReference() {
+    /// "Non-local src is left unchanged".
+    func testIsNilForAnythingButALocalFileReference() {
         let nonLocal = [
             "https://h/x.png", "HTTPS://h/x.png", "http://h/x.png", "ftp://h/x.png", " https://h/x.png",
             "data:image/png;base64,AAAA", "blob:http://localhost/u",
@@ -44,12 +48,14 @@ final class DocImageTests: XCTestCase {
         }
     }
 
-    func testS5DropsEverythingFromTheFirstQuestionMarkOrHash() {
+    /// "Query and fragment are stripped from src".
+    func testDropsEverythingFromTheFirstQuestionMarkOrHash() {
         XCTAssertEqual(path("x.png?raw=true#top"), "/r/x.png")
         XCTAssertEqual(path("/abs/x.png#frag"), "/abs/x.png")
     }
 
-    func testS6DecodesEveryEscapeAfterTheStripFallingBackToTheWholeUndecodedPath() {
+    /// "Percent-encoded src is decoded safely".
+    func testDecodesEveryEscapeAfterTheStripFallingBackToTheWholeUndecodedPath() {
         XCTAssertEqual(path("my%20pic.png"), "/r/my pic.png")
         XCTAssertEqual(path("%E5%9C%96.png"), "/r/圖.png")
         XCTAssertEqual(path("a%23b.png"), "/r/a#b.png")
@@ -61,9 +67,10 @@ final class DocImageTests: XCTestCase {
         XCTAssertEqual(path("%2Fx.png"), "/r//x.png")
     }
 
+    /// "Doc directory is kept byte for byte".
     /// The second doc path carries only valid escapes: with the first one's stray
     /// %, a mutant that decodes the directory falls back to literal and still passes.
-    func testS7KeepsTheDocsDirectoryByteForByteNeitherDecodedNorCutAtHashOrQuestionMark() {
+    func testKeepsTheDocsDirectoryByteForByteNeitherDecodedNorCutAtHashOrQuestionMark() {
         XCTAssertEqual(
             path("img/x.png", in: "/tmp/my docs 100%#?/圖表/README.md"),
             "/tmp/my docs 100%#?/圖表/img/x.png"
@@ -71,7 +78,8 @@ final class DocImageTests: XCTestCase {
         XCTAssertEqual(path("img/x.png", in: "/tmp/a%20b/README.md"), "/tmp/a%20b/img/x.png")
     }
 
-    func testS8TrimsASCIIWhitespaceFromBothEndsFirst() {
+    /// "Whitespace around src is trimmed".
+    func testTrimsASCIIWhitespaceFromBothEndsFirst() {
         XCTAssertEqual(path("  x.png  "), "/r/x.png")
         XCTAssertEqual(path("\tx.png\n"), "/r/x.png")
         XCTAssertEqual(path("\u{0C}x.png\r"), "/r/x.png")
@@ -79,7 +87,8 @@ final class DocImageTests: XCTestCase {
         XCTAssertEqual(path("\u{0B}x.png"), "/r/\u{0B}x.png")
     }
 
-    func testS9NeverClimbsAboveTheRoot() {
+    /// "Src climbing past root stops at root".
+    func testNeverClimbsAboveTheRoot() {
         XCTAssertEqual(path("../../x.png"), "/x.png")
         XCTAssertEqual(path("../../../x.png"), "/x.png")
     }
@@ -106,9 +115,10 @@ final class DocImageTests: XCTestCase {
         XCTAssertEqual(path("a_b:x.png"), "/r/a_b:x.png", "an underscore is not a scheme character")
     }
 
-    // MARK: - src (S4, S10–S11): the address a doc-card image is loaded from
+    // MARK: - src: the address a doc-card image is loaded from
 
-    func testS4ANonLocalSrcIsLeftAsWritten() {
+    /// "Non-local src is left unchanged".
+    func testANonLocalSrcIsLeftAsWritten() {
         for src in [
             "https://h/x.png", "data:image/png;base64,AAAA", "//h/x.png", "file://example.com/x.png", "", "#top",
         ] {
@@ -116,7 +126,8 @@ final class DocImageTests: XCTestCase {
         }
     }
 
-    func testS10ALocalSrcIsTheImgHostWithOneEncodedSegmentThenTheChangeTime() {
+    /// "Image URL carries encoded path and mtime".
+    func testALocalSrcIsTheImgHostWithOneEncodedSegmentThenTheChangeTime() {
         let docPath = "/tmp/my docs 100%#?/圖表/README.md"
         XCTAssertEqual(
             DocImage.src("img/x.png", docPath: docPath, mtimeMs: 1234),
@@ -125,7 +136,8 @@ final class DocImageTests: XCTestCase {
         XCTAssertTrue(DocImage.src("img/x.png", docPath: docPath, mtimeMs: nil).hasSuffix("?v=0"))
     }
 
-    func testS11TheSameInputsGiveTheSameURL() {
+    /// "Same image inputs give the same URL".
+    func testTheSameInputsGiveTheSameURL() {
         XCTAssertEqual(
             DocImage.src("img/x.png", docPath: "/r/README.md", mtimeMs: 1_700_000_000_000),
             DocImage.src("img/x.png", docPath: "/r/README.md", mtimeMs: 1_700_000_000_000)

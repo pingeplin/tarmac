@@ -27,16 +27,18 @@ final class DevCellPointTests: XCTestCase {
         DevCellPoint.lastWrittenCell(in: [cells])
     }
 
-    // MARK: - S17 the last written cell
+    // MARK: - "Right-click point is last cell centre": the last written cell
 
+    /// "Right-click point is last cell centre".
     /// The last non-empty row is index 7 and holds 9 characters, so the target is
     /// cell (8, 7). An off-by-one in either axis lands in a neighbouring cell.
-    func testS17TheTargetIsTheLastCharacterOfTheLastWrittenRow() {
+    func testTheTargetIsTheLastCharacterOfTheLastWrittenRow() {
         let lines = viewport(["$ echo hi", "", "", "", "", "", "", "123456789"])
         XCTAssertEqual(DevCellPoint.lastWrittenCell(in: lines), Cell(col: 8, row: 7))
     }
 
-    func testS17TrailingBlankRowsBelowTheLastWrittenOneAreIgnored() {
+    /// "Right-click point is last cell centre".
+    func testTrailingBlankRowsBelowTheLastWrittenOneAreIgnored() {
         let lines = viewport(["abc", "", "", "", "", "", "", "123456789", "   ", ""])
         XCTAssertEqual(DevCellPoint.lastWrittenCell(in: lines), Cell(col: 8, row: 7))
     }
@@ -85,7 +87,8 @@ final class DevCellPointTests: XCTestCase {
         XCTAssertEqual(lastWritten(["a", "x\u{200B}"]), Cell(col: 1, row: 0))
     }
 
-    func testS17ThePointIsTheExactCellCentre() {
+    /// "Right-click point is last cell centre".
+    func testThePointIsTheExactCellCentre() {
         XCTAssertEqual(
             DevCellPoint.centre(of: Cell(col: 8, row: 7), in: grid, cols: cols, rows: rows),
             CGPoint(x: 100 + 8.5 * (640.0 / 80), y: 50 + 7.5 * (320.0 / 20))
@@ -106,11 +109,12 @@ final class DevCellPointTests: XCTestCase {
         )
     }
 
-    // MARK: - S18 an empty viewport
+    // MARK: - "Empty buffer gives empty buffer error": an empty viewport
 
+    /// "Empty buffer gives empty buffer error".
     /// A right-click on blank space yields a caret, not a selection, which would
     /// silently downgrade the Range scenario into a second copy of the caret one.
-    func testS18AnEmptyViewportHasNoCellToRightClick() {
+    func testAnEmptyViewportHasNoCellToRightClick() {
         XCTAssertNil(DevCellPoint.lastWrittenCell(in: viewport([])))
         XCTAssertNil(DevCellPoint.lastWrittenCell(in: viewport(["   ", "\t"])))
         XCTAssertNil(DevCellPoint.lastWrittenCell(in: []))
@@ -118,7 +122,8 @@ final class DevCellPointTests: XCTestCase {
         XCTAssertNil(lastWritten(["", " ", "\t", "  "]))
     }
 
-    func testS18TheRefusalIsEmptyBufferAndNamesTheCard() {
+    /// "Empty buffer gives empty buffer error".
+    func testTheRefusalIsEmptyBufferAndNamesTheCard() {
         let error = DevCellPoint.emptyBuffer(card: "t-1")
         XCTAssertEqual(error.code, .emptyBuffer)
         XCTAssertEqual(error.extra, ["card": "t-1"])
