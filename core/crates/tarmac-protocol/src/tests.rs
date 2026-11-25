@@ -647,7 +647,7 @@ fn conformance_vector_44_doc_tile_sidebar() {
     );
 }
 
-/// "Rust frame with one sidebar key matches".
+/// 2611.0024 "Rust frame with one sidebar key matches".
 #[test]
 fn the_built_doc_tile_carries_one_sidebar_key_after_loose() {
     assert_frame(
@@ -690,7 +690,7 @@ fn s2611_0024_a_sidebar_key_follows_term_id() {
     );
 }
 
-/// "Rust rejects wrong-typed sidebar keys".
+/// 2611.0024 "Rust rejects wrong-typed sidebar keys".
 #[test]
 fn a_sidebar_key_of_the_wrong_type_fails_the_frame() {
     let width = "cb 40 72 c8 00 00 00 00 00";

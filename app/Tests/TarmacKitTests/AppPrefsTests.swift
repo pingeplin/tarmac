@@ -4,7 +4,7 @@ import XCTest
 
 /// The app's own `app-prefs.json`. The first part is spec 2609.0016's, ported
 /// from the Rust `app_prefs.rs` tests; the part under the 2610.0005 mark is
-/// that spec's. S-numbers are those of the part's own spec.
+/// that spec's. Scenario titles are those of the part's own spec.
 final class AppPrefsTests: XCTestCase {
     private func data(_ json: String) -> Data { Data(json.utf8) }
 
@@ -903,7 +903,7 @@ final class DocSidebarSidePrefsTests: XCTestCase {
 
     private func text(_ values: Values) -> String { String(decoding: AppPrefs.encode(values), as: UTF8.self) }
 
-    /// "Prefs write the side key only for Right"
+    /// 2611.0025 "Prefs write the side key only for Right"
     func testTheSideIsWrittenLastAndOnlyForTheRight() {
         XCTAssertEqual(text(Values()), #"{"warn_before_quit":true}"#)
         XCTAssertEqual(text(Values(docSidebarSide: .left)), #"{"warn_before_quit":true}"#)
@@ -919,7 +919,7 @@ final class DocSidebarSidePrefsTests: XCTestCase {
         )
     }
 
-    /// "Prefs read accepts only exact left or right"
+    /// 2611.0025 "Prefs read accepts only exact left or right"
     func testTheSideIsReadOnItsOwnAndAnythingButRightIsLeft() {
         XCTAssertEqual(AppPrefs.decode(data(#"{"doc_sidebar_side":"right"}"#)).docSidebarSide, .right)
         for side in DocSidebar.Side.allCases {
@@ -938,7 +938,7 @@ final class DocSidebarSidePrefsTests: XCTestCase {
         XCTAssertEqual(AppPrefs.decode(data(#"{"doc_sidebar_side":"right",}"#)).docSidebarSide, .left)
     }
 
-    /// "Side is saved apart from other prefs"
+    /// 2611.0025 "Side is saved apart from other prefs"
     func testTheSideIsSavedApartFromTheOtherKeys() throws {
         let dir = NSTemporaryDirectory() + "tarmac-app-prefs-" + UUID().uuidString
         try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)

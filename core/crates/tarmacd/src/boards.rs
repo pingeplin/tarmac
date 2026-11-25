@@ -687,7 +687,7 @@ mod tests {
         assert_eq!(r.tiles, vec![term_tile()]);
     }
 
-    /// "Daemon set tiles keeps sidebar keys".
+    /// 2611.0024 "Daemon set tiles keeps sidebar keys".
     #[test]
     fn set_tiles_keeps_a_doc_tiles_sidebar_keys() {
         let mut r = Registry::empty();

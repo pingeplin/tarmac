@@ -3,7 +3,7 @@ import XCTest
 @testable import TarmacKit
 
 /// 2609.0016: who owes the window a comeback. Ported from the Rust
-/// `window_lifecycle.rs` tests; S-numbers are the spec's.
+/// `window_lifecycle.rs` tests; scenario titles are the spec's.
 final class WindowLifecycleTests: XCTestCase {
     /// "Close request restores window once" — activation and Reopen both fire for one Dock click.
     func testACloseIsWorthExactlyOneRestore() {

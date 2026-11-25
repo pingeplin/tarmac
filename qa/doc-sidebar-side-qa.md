@@ -1,6 +1,6 @@
 # Markdown card sidebar side — manual QA (spec 2611.0025, #446)
 
-All [QA] scenarios of `.blueprint/specs/2611.0025_doc_sidebar_side.md`. They are [QA]
+The scenarios from "Documents pane shows rows and side tiles" to "First frame already shows the Right side" of `.blueprint/specs/2611.0025_doc_sidebar_side.md`. They are [QA]
 scenarios because they test the shell: the Documents pane, `DocumentSettings`,
 the broadcast, `DocWebView` and the page's mirrored rules. The rules are pinned
 by `DocSidebarTests`, `AppPrefsTests`, `DocLayoutScriptTests` and

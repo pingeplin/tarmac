@@ -86,7 +86,7 @@ final class TerminalFrameTests: XCTestCase {
         XCTAssertEqual(frame.cursor?.blinks, true)
     }
 
-    /// "Dark theme is judged by luminance" — by WCAG relative luminance: the blue is the darker of its pair,
+    /// 2610.0007 "Dark theme is judged by luminance" — by WCAG relative luminance: the blue is the darker of its pair,
     /// though its largest channel and the mean of its channels are the higher.
     func testAThemeIsDarkWhenItsBackgroundHasTheLowerLuminance() {
         func theme(background: UInt32, foreground: UInt32) -> TerminalTheme {

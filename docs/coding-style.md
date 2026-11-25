@@ -280,7 +280,7 @@ back from a rendered bitmap.
   names as camelCase sentences —
   `testAddEvictsTheOldestBeyondMaxToastsKeepingTheRestInOrder`; a scenario-driven
   test names its scenario by the spec's title, in the name or in the comment
-  above it — `/// "Chord outside the grammar is refused".` — never by a number. Build
+  above it — `/// "Bad chords are unsupported or malformed".` — never by a number. Build
   state with a small private factory inside the class; `setUp`/`tearDown` are for
   a test that owns a real resource — a socket, a temp directory, a child process
   — as `app/Tests/TarmacKitTests/DevSocketTests.swift` does. A `TarmacTerm` test

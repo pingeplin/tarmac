@@ -208,7 +208,7 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(shown(try scroll(laidOut: true, alpha: 0)), false)
     }
 
-    /// "Snapshot carries the thumb rectangle".
+    /// 2610.0004 "Snapshot carries the thumb rectangle".
     /// Where the thumb is, for a tool that aims at it; a stale frame of a
     /// thumb that is not laid out is no thumb.
     func testACardSaysWhereItsThumbIs() throws {
@@ -223,7 +223,7 @@ final class DevSnapshotTests: XCTestCase {
             thumb(try scroll(alpha: 0, thumb: rect)), ["x": 379, "y": 33, "w": 10, "h": 24], "a faded thumb")
     }
 
-    /// "Snapshot carries the thumb rectangle".
+    /// 2610.0004 "Snapshot carries the thumb rectangle".
     func testShownDoesNotLookAtTheThumbsRect() throws {
         let snapshot = DevSnapshot.build(input(cards: [term(scroll: try scroll(alpha: 1, thumb: nil))]))
         XCTAssertEqual(fields(card(snapshot, "t-1")["scroll"])["shown"], true)

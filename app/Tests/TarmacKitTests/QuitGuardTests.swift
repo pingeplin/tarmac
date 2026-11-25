@@ -4,7 +4,7 @@ import XCTest
 @testable import TarmacKit
 
 /// 2609.0016: every decision the ⌘Q guard makes. Ported from the Rust
-/// `quit_guard.rs` tests; S-numbers are the spec's.
+/// `quit_guard.rs` tests; scenario titles are the spec's.
 final class QuitGuardTests: XCTestCase {
     private let shift = QuitShortcut.shift
     private let control = QuitShortcut.control

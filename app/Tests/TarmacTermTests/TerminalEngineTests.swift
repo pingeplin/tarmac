@@ -154,7 +154,7 @@ final class TerminalEngineTests: XCTestCase {
 
     // MARK: scrollback
 
-    /// "Engine scrolls to an absolute row".
+    /// 2610.0004 "Engine scrolls to an absolute row".
     /// The row a dragged scroll thumb asks for. At the last row the viewport
     /// can start at, or past it, the viewport is the live one again and
     /// follows what is printed next.

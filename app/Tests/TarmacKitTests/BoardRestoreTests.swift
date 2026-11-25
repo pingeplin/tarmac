@@ -253,7 +253,7 @@ final class BoardRestoreTests: XCTestCase {
         XCTAssertEqual(restored.docs.map(\.ownerTermID), [nil])
     }
 
-    /// "Restore plan carries sidebar and drops unknown docs".
+    /// 2611.0024 "Restore plan carries sidebar and drops unknown docs".
     func testThePlanCarriesEachDocsSidebar() {
         var a = docTile("/a.md")
         a.sidebarW = 300.5

@@ -18,7 +18,7 @@ final class CardFontVariablesTests: XCTestCase {
 
     // MARK: - values
 
-    /// "Default fonts give exact JSON with three names".
+    /// 2610.0010 "Default fonts give exact JSON with three names".
     func testNothingChosenGivesTheStacksAndTheStandardSize() {
         XCTAssertEqual(
             variables().json,
@@ -26,7 +26,7 @@ final class CardFontVariablesTests: XCTestCase {
         )
     }
 
-    /// "Each font input changes only its value".
+    /// 2610.0010 "Each font input changes only its value".
     func testEachValueIsWhatFontCSSGivesForItsOwnInput() throws {
         let chosen = try parsed(variables(interface: "Fira Code", document: "Georgia", size: 13.5).json)
         XCTAssertEqual(chosen[CardFontVariables.monoFont], FontCSS.interface("Fira Code"))
@@ -50,7 +50,7 @@ final class CardFontVariablesTests: XCTestCase {
         XCTAssertNotEqual(interface[CardFontVariables.monoFont], base[CardFontVariables.monoFont])
     }
 
-    /// "Empty or control character family uses the stack".
+    /// 2610.0010 "Empty or control character family uses the stack".
     func testAFamilyThatIsEmptyOrHoldsAControlCharacterGivesTheStackAlone() throws {
         for name in ["", "Geo\u{0}rgia", "a\nb", "a\u{7f}b"] {
             let both = try parsed(variables(interface: name, document: name).json)
@@ -66,7 +66,7 @@ final class CardFontVariablesTests: XCTestCase {
         "a\u{2028}b\u{2029}c", #"\<"#, #"\\<"#,
     ]
 
-    /// "Hostile family names stay safe in JSON".
+    /// 2610.0010 "Hostile family names stay safe in JSON".
     func testTheJSONHoldsNoLessThanAndNoRawLineSeparatorAndIsAValidLiteral() throws {
         let context = try XCTUnwrap(JSContext())
         context.exceptionHandler = { _, error in XCTFail("the literal threw: \(String(describing: error))") }
@@ -94,7 +94,7 @@ final class CardFontVariablesTests: XCTestCase {
         return (0..<markers).reduce("var a = 1;\n") { $0 + "var b\($1) = [\(marker)][0];\n" } + "var z = 2;\n"
     }
 
-    /// "Marker fills once or leaves text alone".
+    /// 2610.0010 "Marker fills once or leaves text alone".
     func testTheMarkerIsReplacedByTheJSONWhenTheShimHoldsItOnce() {
         let fonts = variables(interface: "Menlo")
         let once = shim(markers: 1)
@@ -104,7 +104,7 @@ final class CardFontVariablesTests: XCTestCase {
         XCTAssertTrue(filled.contains(fonts.json))
     }
 
-    /// "Marker fills once or leaves text alone".
+    /// 2610.0010 "Marker fills once or leaves text alone".
     func testAShimWithNoMarkerOrTwoIsGivenBackAsItIs() {
         let fonts = variables()
         for count in [0, 2] {
@@ -113,7 +113,7 @@ final class CardFontVariablesTests: XCTestCase {
         }
     }
 
-    /// "Marker fills once or leaves text alone".
+    /// 2610.0010 "Marker fills once or leaves text alone".
     func testAFamilyNamedLikeTheMarkerIsNotSearchedAgain() {
         let fonts = variables(interface: CardFontVariables.marker)
         let filled = fonts.filling(shim(markers: 1))
@@ -136,7 +136,7 @@ final class CardFontVariablesTests: XCTestCase {
         text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
-    /// "Guide names the three font variables".
+    /// 2610.0010 "Guide names the three font variables".
     func testTheGuideNamesTheThreePropertiesAndNoLongerSaysTheSystemStackIsTheOnlyChoice() throws {
         let guide = try guide()
         for name in [CardFontVariables.proseSize, CardFontVariables.proseFont, CardFontVariables.monoFont] {

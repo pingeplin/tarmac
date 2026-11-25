@@ -308,7 +308,7 @@ final class HTMLCardSessionTests: XCTestCase {
         XCTAssertEqual(registrations(reload(&other, naming: "y.json")), ["/a/b/y.json"])
     }
 
-    /// "Ready with subdirectory name registers the file".
+    /// 2611.0005 "Ready with subdirectory name registers the file".
     func testANameInASubdirectoryRegistersThatFileWithNoConsoleLine() {
         let (session, effects) = card(naming: "sub/stats.json")
         XCTAssertEqual(registrations(effects), ["/a/b/sub/stats.json"])

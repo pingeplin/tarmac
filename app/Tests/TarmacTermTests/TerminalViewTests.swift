@@ -533,7 +533,7 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertTrue(sentText.hasPrefix("\u{1b}[<64;"), sentText.debugDescription)
     }
 
-    // MARK: scroll position (2610.0003)
+    // MARK: scroll position (2610.0003 "Terminal view reports its scrollbar", "Unchanged scrollbar is not reported again")
 
     private let tenLines = (1...10).map { "line\($0)" }.joined(separator: "\r\n")
 

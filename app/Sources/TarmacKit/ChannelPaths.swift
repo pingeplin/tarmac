@@ -98,7 +98,8 @@ public enum ChannelPaths {
     }
 
     /// The in-app QA driver's socket (issue #166), which the APP binds —
-    /// `TARMAC_DEV_SOCKET`, else `channelDir/tarmac-dev.sock` (spec 2609.0015).
+    /// `TARMAC_DEV_SOCKET`, else `channelDir/tarmac-dev.sock` (2609.0015 "Dev socket path follows the channel",
+    /// "Env override wins and empty means unset", "Dev socket shares the channel directory").
     public static func devSocketPath(override: String?, home: String, channel: Channel) -> String {
         resolve(override, home: home, channel: channel, file: "tarmac-dev.sock")
     }

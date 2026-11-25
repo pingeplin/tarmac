@@ -196,7 +196,7 @@ a relayout that can no longer happen.
 <!-- "Incapable engine falls back to reveal" removed in #94: the macOS 26
      floor (packaging/Casks/tarmac.rb, `depends_on macos: :tahoe`) leaves no
      zoom-incapable target, so the capability probe it tested no longer exists.
-     Numbers are not reassigned — they are spec 2607.0006's scenario IDs, which
+     The label is not reused — it is a spec 2607.0006 scenario title, which
      tests and the spec both cite. -->
 
 ## Self-posted zoom message is ignored — Nested/forged zoom messages rejected (event.source guard)
@@ -373,9 +373,8 @@ the new load).
 
 # Spec 2609.0003 (#99) — self-reload scenarios
 
-**These are spec `2609.0003`'s scenario ids, not 2607.0006's.** This sheet
-already has an unrelated "Gesture never re-lays out magnify card" (mid-gesture) above; every id below is written
-`2609.0003 S<n>` for that reason. Same setup rules as the rest of the sheet
+**These are spec `2609.0003`'s scenarios, not 2607.0006's.** Every label below is
+prefixed `2609.0003`, so that it is not read as a 2607.0006 scenario. Same setup rules as the rest of the sheet
 (`make run`, fresh dev daemon, kill any installed `tarmacd` first).
 
 **Status: RUN 2026-09-05 against `7702f59` (PR #107) — all six PASS.** The fix
