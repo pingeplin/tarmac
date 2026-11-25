@@ -1,6 +1,6 @@
 # HTML card default scheme: probe pages
 
-Probe pages for spec 2610.0007, scenarios S62 to S66
+Probe pages for spec 2610.0007, scenarios from "HTML pages show the theme canvas and text" to "Partly styled pages keep the accepted cost"
 (`.blueprint/specs/2610.0007_theme_setting.md`, *HTML cards*). An HTML card
 follows Tarmac's theme unless its author states a colour scheme. Each page
 here states one thing about colour, or nothing, so that the rule can be
@@ -18,7 +18,7 @@ tarmac open qa/html-card-scheme/p0.html
 - **A label** at the top: the page's number and a random id, then what the
   page states.
 - **A random id**, made one time when the page loads. A page that shows a new
-  id was loaded again (S63).
+  id was loaded again ("Theme switch does not reload HTML cards").
 - **A block**, 120 px wide and 60 px high, below the label. It is a border
   with no colour of its own, so it is drawn in `currentColor`. Sample it for
   the default text colour.
@@ -65,7 +65,7 @@ the block.
 On every page, `matches` is `true` under the dark theme and `false` under the
 light theme.
 
-The spec gives P8 and P9 under the dark theme only (S66): they are the cost
+The spec gives P8 and P9 under the dark theme only ("Partly styled pages keep the accepted cost"): they are the cost
 that the user accepted. Their pairs under the light theme are not in the spec.
 They follow from the row of P0.
 
@@ -73,8 +73,8 @@ They follow from the row of P0.
 
 | Scenario | Pages |
 | --- | --- |
-| S62: the table, under each theme | P0 to P7, P10, P11 |
-| S63: a change of the theme, with no reload | P0, P1, P2, P7 |
-| S64: a culled card, and a card opened off the viewport | P0 |
-| S65: no white frame at open | P0 |
-| S66: a page that sets half of its colours | P8, P9 |
+| HTML pages show the theme canvas and text — the table, under each theme | P0 to P7, P10, P11 |
+| Theme switch does not reload HTML cards | P0, P1, P2, P7 |
+| Culled HTML card opens in the current theme — a culled card, and a card opened off the viewport | P0 |
+| HTML card opens with no white flash | P0 |
+| Partly styled pages keep the accepted cost — a page that sets half of its colours | P8, P9 |

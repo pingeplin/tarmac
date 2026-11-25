@@ -81,7 +81,7 @@ app from above — see *Reads the dev page* below.
   cancelled.
 - **Does not count:** an HTML doc card's requests. Those live in the iframe realm
   behind `card_shim.js`, which is a different instrument for a different question
-  (see `cull-qa.md` S37). That is the point of this one.
+  (see `cull-qa.md` "Cull probe is committed and instrumented"). That is the point of this one.
 - **Cannot see a request that was already outstanding when it installed.** The
   wrappers go in from `main.tsx`'s first import, and every dependency here calls
   `requestAnimationFrame` off the global at call time rather than through a

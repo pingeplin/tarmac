@@ -272,7 +272,7 @@ Both failures read `second type dropped [{"index":0,"char":"b"}]` — which is
 #162's mechanism exactly: the resize press flushed the focused terminal's
 selection, WebKit then fired no `beforeinput`, and `execCommand` returned
 `false`. The driver reported it rather than passing quietly, which is the whole
-point of S71's summariser.
+point of the summariser of "Type reply counts inserted and dropped chars".
 
 **One knob, one factor.** Sixteen other checks stayed green under the knockout,
 so the two failures are attributable to the predicate and not to a disturbed app.
@@ -281,7 +281,7 @@ both branches of the predicate, and D4 is the required observation.
 
 **What this rules out.** If `type` were delivering text through its bracket
 keydown rather than through `execCommand`, the knockout could not have changed
-anything and D4 would have passed — S19's inert bracket (Decision 1) is what makes
+anything and D4 would have passed — the inert bracket of "Typed char plans inert bracket and insert" (Decision 1) is what makes
 these scenarios able to fail at all. They can.
 
 ---
@@ -310,7 +310,7 @@ tarmac dev focus board && tarmac dev focus <term>
 ```
 
 Two reports, not one: `^[[M ?(` is the button **press** and `^[[M#?(` the
-**release** — `focus` plans `mousedown` + `mouseup` (S35), and xterm encodes
+**release** — `focus` plans `mousedown` + `mouseup` ("Focus term plans pointer and mouse events"), and xterm encodes
 both. A program that acts on a click (Claude Code, vim) sees a complete click at
 the centre of the terminal element. `tarmac --help` and the dev-channel skill
 both say so.
@@ -319,7 +319,7 @@ Restored with `tarmac dev key <term> ctrl+c` and `printf '\033[?1000l'; clear`.
 
 ---
 
-## S17's "unpatched rect" has no test, at any tier — measured, not assumed
+## The "unpatched rect" of "Right-click point is last cell centre" has no test, at any tier — measured, not assumed
 
 Recorded because the referee flagged it as covered-but-vacuous and the obvious fix
 did not work.
@@ -327,7 +327,7 @@ did not work.
 `key <card> contextmenu` must compute its point from the **unpatched**
 `screenElement` rect —
 `Element.prototype.getBoundingClientRect.call(screen)` in `devDriver.ts` — because
-`TerminalCard` patches `getBoundingClientRect` on that very element. S17 claims
+`TerminalCard` patches `getBoundingClientRect` on that very element. "Right-click point is last cell centre" claims
 "a patched-rect implementation fails it". It does not:
 
 - The **kit** test cannot see it. `devCellPoint` takes the rect by argument, so
@@ -350,8 +350,8 @@ the last written row is the target and not the user's shell prompt),
 | `AAA BBB … HHH` (31 chars) | 1.7, 2.5 | `HHH`, the correct last word |
 | `QQQ` (3 chars, row's left edge — the most displaced case) | 1.05, 1.1, 1.4, 1.7, 2.1, 2.9 | `QQQ` every time |
 
-**Every variant passed under the knockout.** The reason is in S17's own algebra:
-the leading `mousemove` (S16) re-anchors the patched rect on the very point being
+**Every variant passed under the knockout.** The reason is in the algebra of "Right-click point is last cell centre" itself:
+the leading `mousemove` ("Contextmenu plans mousemove then contextmenu") re-anchors the patched rect on the very point being
 dispatched, and that cancels most of the error back out — enough that the
 resolved cell stays inside the target at every reachable zoom.
 
@@ -359,7 +359,7 @@ resolved cell stays inside the target at every reachable zoom.
 without the behaviour under test is exactly the vacuity the Definition of Done
 forbids; keeping it would have been worse than not having it, because it would
 have looked like coverage. The `Element.prototype` call now stands on the algebra
-and on a comment that says it is the only guard, and S17's claim is corrected in
+and on a comment that says it is the only guard, and the claim of "Right-click point is last cell centre" is corrected in
 the spec.
 
 ---
@@ -391,7 +391,7 @@ Two consequences:
    pointerup path completes and the card's lifted state clears.
 2. **`pointerId: 1` in `devResizeGrip` is load-bearing for safety, not fidelity.**
    Any other id throws at `:124` and the resize silently never starts while the
-   driver still reports success. S44 asserts the id for that reason.
+   driver still reports success. "Resize plan is down move up on grip" asserts the id for that reason.
 
 Capture itself never happens for id 1 — which is harmless: all three events land
 on the grip, where `CardShell` wires its own move/up listeners, so capture only
@@ -401,7 +401,7 @@ ever matters for a real pointer that leaves the element.
 
 ## Q6 — `type` under kitty flag 8, in the real WKWebView
 
-The flag-8 branch (S77) was the one production path whose only evidence was the
+The flag-8 branch ("Kitty flag 8 types as key event") was the one production path whose only evidence was the
 Playwright harness — the instrument this spec's own *Alternatives Considered*
 distrusts, for exactly the reason it gives there. This closes that gap against the
 real app. It is a **[Q] hand-run and not a `make qa` scenario**, for a reason
@@ -419,7 +419,7 @@ tarmac dev type <term> "ab!"
 ```
 
 Reply: `{"chars":3,"inserted":0,"dropped":[],"mode":"key"}` — **no `insertText` at
-all**, which is S77's point: under flag 8 xterm owns every key, and an
+all**, which is the point of "Kitty flag 8 types as key event": under flag 8 xterm owns every key, and an
 `execCommand` on top would deliver each character a second time.
 
 The PTY received:
@@ -473,7 +473,7 @@ The scenarios and their knockout runs are recorded in
 is a row of the guard's Q grid. Driver-side facts from the runs (2026-09-20,
 `b1cb7c4` + the scripts):
 
-- **`make qa` 27/27, then 28/28** with Finder raised first so S21 ran. D1–D11
+- **`make qa` 27/27, then 28/28** with Finder raised first so 2609.0018 "Press verb activates a background app" ran. D1–D11
   are unchanged by the new verb and still pass.
 - **`focus <doc card>`** replies as observed: `{"focused_card": "<path>",
   "active_element": {"tag": "BODY", …}}` for markdown and `"IFRAME"` for HTML,
@@ -486,12 +486,12 @@ is a row of the guard's Q grid. Driver-side facts from the runs (2026-09-20,
 - **D15's window** (`press_ms₂ − press_ms₁` in (1000, 1300)) was hit on every
   run so far; no inconclusive run yet.
 - **Fixtures** live in this worktree's `.dev/qa-fixtures/` (gitignored) and are
-  rewritten only when their bytes differ. After the S19 fixture knockout the
+  rewritten only when their bytes differ. After the fixture knockout of 2609.0018 "Cmd-Q tap with HTML card focused" the
   on-disk `d18.html` carried the `preventDefault` script until the next run's
   D17 rewrote it — which is the designed behaviour, and the iframe reloaded on
   the daemon's `file_event`.
 
-## S36 — `card_hidden` in a live app
+## 2609.0018 Culled HTML card gives card hidden error
 
 ### Result: PASS (2026-09-20, screen locked — the row is DOM-only)
 

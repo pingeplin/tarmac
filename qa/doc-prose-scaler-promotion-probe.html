@@ -1,6 +1,6 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>doc-prose-scaler promotion detector (R1) — spec 2608.0002 S11</title>
+<title>doc-prose-scaler promotion detector (R1) — spec 2608.0002 "Raw HTML will-change promotion is detected"</title>
 <link rel="stylesheet" href="../src/theme/kit.css">
 <!--
   R1 standing detector (spec 2608.0002's "Instrument extension" + Follow-up
@@ -29,7 +29,7 @@
   until a human or driver calls report() for that case, and this page must
   not be read as though it measured itself.
 
-  Fixed false safe (S11 reading, this session): the `will-change` case's
+  Fixed false safe ("Raw HTML will-change promotion is detected" reading, this session): the `will-change` case's
   hostile node was a bare `<span>`. `will-change`/`transform` do not apply to
   non-replaced inline boxes, so WebKit never promoted it and the case read
   "not composited" — a false safe on half of R1's surface. The node is now a
