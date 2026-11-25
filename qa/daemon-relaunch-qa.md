@@ -1,6 +1,6 @@
 # The daemon spawn path stops locking itself out — manual QA (spec 2609.0004, #26)
 
-S10, S10b, S11 and S12 of
+"Relaunch reaches connected without kill-daemon", "App respawns daemon killed from another shell", "Detached daemon log exists and grows" and "Terminal card works with detached daemon" of
 `.blueprint/specs/2609.0004_dev_daemon_relaunch_recovery.md`. These four are [Q]
 scenarios because each one is a property of the *running dev app* — whether the
 Tauri backend reaches connected, what it does with a daemon that dies underneath
@@ -8,7 +8,7 @@ it, and whether a detached daemon still drives a real PTY. The automated suites
 cover the parts that can be observed without a window: session id, the log file,
 the `may_spawn` truth table (`desktop/src-tauri/src/bridge.rs` `mod tests`) and
 the SIGHUP shutdown (`core/crates/tarmacd/tests/daemon_basics_integration.rs`).
-None of them exercises the app's connect loop, so **S10b below is the only
+None of them exercises the app's connect loop, so **"App respawns daemon killed from another shell" below is the only
 positive demonstration that the lockout is fixed.**
 
 Run against `make run`.
@@ -44,7 +44,7 @@ Two supporting observations, both cheap:
 
 ---
 
-## S10 — close and relaunch reaches connected
+## Relaunch reaches connected without kill-daemon
 
 > **Method note.** "Close the window" was performed as a `SIGTERM` to the Tauri
 > app process, which is what quitting the app does; no mouse was used. Round 4's
@@ -107,7 +107,7 @@ itself a finding.
 
 ---
 
-## S10b — the positive repro: a daemon killed underneath the app
+## App respawns daemon killed from another shell — the positive repro: a daemon killed underneath the app
 
 *This is the defect demonstration.* It forces both necessary conditions from the
 spec: the app itself is the spawner (so it latches), and the daemon it spawned
@@ -164,7 +164,7 @@ spawned within the reconnect budget and the status returns to connected.
 
 ---
 
-## S11 — dev logging survives the move off the inherited pipe
+## Detached daemon log exists and grows — dev logging survives the move off the inherited pipe
 
 D1 redirects the daemon's stdout/stderr into `.dev/tarmacd.log` instead of the
 `make run` terminal. The output must still be reachable — `tail -f
@@ -209,7 +209,7 @@ D1 redirects the daemon's stdout/stderr into `.dev/tarmacd.log` instead of the
 
 ---
 
-## S12 — a detached daemon still drives PTYs
+## Terminal card works with detached daemon
 
 > **Method note — this scenario was substituted, and the substitution is not
 > free.** ⌘T could not be delivered to the app (see `new-card-zoom-scale-qa.md`
@@ -220,7 +220,7 @@ D1 redirects the daemon's stdout/stderr into `.dev/tarmacd.log` instead of the
 > real session leader first (`getsid(pid) == pid`), so the condition D1 changes
 > *was* exercised. **What this does not cover:** the app's own rendering and
 > card teardown path, `vim` or any full-screen TUI, and sustained noisy output.
-> The OS-level property S12 exists for — a detached daemon drives PTYs and
+> The OS-level property "Terminal card works with detached daemon" exists for — a detached daemon drives PTYs and
 > survives a card teardown's process-group SIGHUP — is covered; the UI half is
 > not.
 

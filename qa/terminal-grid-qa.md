@@ -3,8 +3,8 @@
 The `[QA]` half of spec [2609.0011](../../.blueprint/specs/2609.0011_terminal_grid_from_content_box.md)
 — the scenarios the Vitest suites cannot reach, because they need a real layout,
 a real renderer and a real PTY. The pure rules are covered by
-`src/kit/termGrid.test.ts` (S1–S10a, S13–S17) and the CSS declarations by
-S11/S12; what follows is the behaviour those rules and declarations are supposed
+`src/kit/termGrid.test.ts` (every scenario but the two below) and the CSS declarations by
+"Inner box height and width omit borders" and "Terminal host CSS is bottom anchored"; what follows is the behaviour those rules and declarations are supposed
 to produce.
 
 Run against `make run`. Kill any installed daemon first with `make kill-daemon`
@@ -83,7 +83,7 @@ two sizes.
 - [ ] **Pass iff** the program is unchanged and its cols×rows are the same as
       before the switch. A backgrounded board is `display:none`, so the card
       measures a 0×0 box; the grid must be left alone rather than proposed as
-      2×1 (the S10 path).
+      2×1 (the "Unmeasurable box proposes nothing" path).
 
 ## Results
 
@@ -107,7 +107,7 @@ for the shipped code — context, not evidence about the app.
 | Q5 selection lands on the right cells at zoom ≠ 1 | — (needs a real pointer) | **PASS** | The `getBoundingClientRect` override still holds under the new `.xterm` height |
 | Q6 IME candidate window tracks the cursor | — (needs a real IME) | **PASS** | CJK typed into a dev-app card; `.xterm-helpers` still anchors to the cursor |
 | Q7 scrollback and the scrollbar | — (needs real scrolling) | **PASS** | The likeliest quiet breakage — `.xterm` no longer fills the host — and it holds |
-| Q8 hidden board must not resize the PTY | the *rule* rejects a 0×0 box (`termGrid.test.ts` S10) | **PASS** | Board switch away and back with a program running: no resize |
+| Q8 hidden board must not resize the PTY | the *rule* rejects a 0×0 box (`termGrid.test.ts` "Unmeasurable box proposes nothing") | **PASS** | Board switch away and back with a program running: no resize |
 
 ### How Q4 and Q8 were checked (and how to re-check them)
 

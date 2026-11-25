@@ -99,7 +99,7 @@
   const BASE_FS = 14, MAXW = 720, PAD_V = 18, PAD_H = 22;
   const ARMS = ["A", "B", "C"];
 
-  // ?pre= switches ALL arms' <pre> spelling together (spec 2608.0002 S1-S10):
+  // ?pre= switches ALL arms' <pre> spelling together (spec 2608.0002, every scenario before "Raw HTML will-change promotion is detected"):
   // base = shipped overflow:auto; wrapx = visible+pre-wrap (no word-break);
   // wrap = the chosen de-promoted arm (visible+pre-wrap+break-word). Default
   // wrap so a plain load of this file measures what card.css ships today.
@@ -118,11 +118,11 @@
 
   // pre1: a genuinely overflowing code line — real word-break opportunities
   // (spaces), so even wrapx (pre-wrap alone, no word-break) reaches every
-  // character; it exercises the "re-wraps once" fingerprint change (S6/S7).
+  // character; it exercises the "re-wraps once" fingerprint change ("Prose wrap is identical across arms", "Pre signature changes once then stays stable").
   const overflowLine = () => Array.from({length: 40}, (_, i) =>
     `--flag-${i}=value${i}`).join(" ");
   // pre2: a 200-char token with NO break opportunities at all (alnum only) —
-  // this is what makes word-break load-bearing rather than cosmetic (S8):
+  // this is what makes word-break load-bearing rather than cosmetic ("Unbreakable token stays reachable under wrap"):
   // pre-wrap alone still clips it at the card edge, unreachable.
   const TOKEN_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   const unbreakableToken = (n) => Array.from({length: n}, (_, i) =>
@@ -248,7 +248,7 @@ count can hold steady while a break moves. ${ruler(20, 90)}</p>
     return { w: +r.width.toFixed(2), h: +r.height.toFixed(2) };
   };
 
-  // Per-code-block reachability geometry (spec 2608.0002 S6-S8): scrollWidth
+  // Per-code-block reachability geometry (spec 2608.0002 "Prose wrap is identical across arms", "Pre signature changes once then stays stable", "Unbreakable token stays reachable under wrap"): scrollWidth
   // vs clientWidth is the overflow/reachability tell, offsetHeight is the
   // re-wrap tell — pre1/pre2 grow taller once when wrap is applied; pre0
   // never overflows and is the null control.
@@ -334,7 +334,7 @@ count can hold steady while a break moves. ${ruler(20, 90)}</p>
         scrollBox: rect(n.scroll),
         scrollHeightAuto: scrollAuto,          // before the JS sizer override
         scrollHeightFixed: n.scroll.scrollHeight,
-        sizerH: n.sizer.offsetHeight,          // read back, not `want`'s input — S9(b)/(c)
+        sizerH: n.sizer.offsetHeight,          // read back, not `want`'s input — "Sizer height and scroll fraction hold" (b)/(c)
         clientH: n.scroll.clientHeight,
         // Laid-out box in the prose's OWN coordinate space -- the area WebKit
         // must lay out and (before any transform) rasterize.
@@ -361,7 +361,7 @@ count can hold steady while a break moves. ${ruler(20, 90)}</p>
     _scalerNFresh: false,
     // Not self-measured: in-page JS cannot ask "is this element composited?".
     // An external driver (WebKit Inspector / CDP LayerTree, on a real engine)
-    // calls this with the layer count it observed for .scaler (R1, S10).
+    // calls this with the layer count it observed for .scaler (R1, "De-promoted cards cut footprint and drop scaler").
     // Marked fresh for the NEXT run() only — see run()'s consume-on-read.
     setScalerN(n) { window.__probe.scalerN = n; window.__probe._scalerNFresh = true; },
     reset: () => { for (const a of ARMS) nodes[a].scroll.scrollTop = 0; },

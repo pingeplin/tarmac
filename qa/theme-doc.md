@@ -1,7 +1,7 @@
 # Theme fixture
 
-A doc for the live checks of the theme setting (spec 2610.0007, S33 and
-S34). It is long enough to scroll. The parts that a theme must reach are in
+A doc for the live checks of the theme setting (spec 2610.0007, "Doc card keeps scroll and themes its parts" and
+"New doc card opens light"). It is long enough to scroll. The parts that a theme must reach are in
 the middle, so that a card scrolled to its middle shows them all.
 
 Paragraph 1. The board is a flat sheet, and each card on it is a window to
