@@ -151,7 +151,7 @@ final class DocStoreTests: XCTestCase {
 
     func testFileEventGoesOnlyToItsOwnForm() {
         let store = DocStore()
-        store.applyRestore([doc(nfc, lastChangedMs: 1), doc(nfd, lastChangedMs: 1)])
+        store.applyRestore([doc(nfd, lastChangedMs: 1), doc(nfc, lastChangedMs: 1)])
         store.applyFileEvent(path: nfd, mtimeMs: 42)
         XCTAssertEqual(stored(store, nfd)?.lastChangedMs, 42)
         XCTAssertEqual(stored(store, nfc)?.lastChangedMs, 1)
@@ -159,7 +159,7 @@ final class DocStoreTests: XCTestCase {
 
     func testCloseRemovesOnlyItsOwnForm() {
         let store = DocStore()
-        store.applyRestore([doc(nfc), doc(nfd)])
+        store.applyRestore([doc(nfd), doc(nfc)])
         store.remove(nfd)
         XCTAssertEqual(store.docs.map { Array($0.path.utf8) }, [Array(nfc.utf8)])
     }
