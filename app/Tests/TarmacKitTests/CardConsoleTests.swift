@@ -4,14 +4,14 @@ import XCTest
 
 /// Host side of the HTML-card console relay: validating the shim's postMessage
 /// payloads and the per-card ring buffer. Two specs share these cases —
-/// 2607.0004 (payload validation S4/S17, ring buffer S5) and 2607.0006 (ready
-/// payload S4/S14, forged host→shim rejection S16) — so every id is qualified
+/// 2607.0004 (payload validation, ring buffer) and 2607.0006 (ready
+/// payload, forged host→shim rejection) — so every id is qualified
 /// with its spec number.
 final class CardConsoleTests: XCTestCase {
     private typealias Message = CardConsole.Message
     private func parse(_ body: Any) -> Message? { CardConsole.parse(body) }
 
-    // MARK: - parse (2607.0004 S4)
+    // MARK: - parse (2607.0004 "Card messages parse into typed events")
 
     func testAcceptsAWellFormedConsolePayload() {
         XCTAssertEqual(
@@ -51,9 +51,10 @@ final class CardConsoleTests: XCTestCase {
         XCTAssertNil(parse(["tarmac": "started"]))
     }
 
-    // MARK: - scrolled payload (2610.0003 S10, S34)
+    // MARK: - scrolled payload (2610.0003)
 
-    func test2610S10AcceptsAScrolledPayload() {
+    /// "Console parses a scrolled payload".
+    func testAcceptsAScrolledPayload() {
         XCTAssertEqual(
             parse(["tarmac": "scrolled", "offset": 30, "visible": 100, "total": 400]),
             ScrollMetrics(offset: 30, visible: 100, total: 400).map(CardConsole.Message.scrolled)
@@ -61,12 +62,13 @@ final class CardConsoleTests: XCTestCase {
         XCTAssertNotNil(parse(["tarmac": "scrolled", "offset": 30, "visible": 100, "total": 400]))
     }
 
-    func test2610S34RejectsAScrolledPayloadThatDescribesNoScroller() {
+    /// "Console refuses a bad scrolled payload".
+    func testRejectsAScrolledPayloadThatDescribesNoScroller() {
         XCTAssertNil(parse(["tarmac": "scrolled", "offset": 30, "visible": 0, "total": 400]))
         XCTAssertNil(parse(["tarmac": "scrolled", "visible": 100, "total": 400]))
     }
 
-    // MARK: - ready payload (2607.0006 S4)
+    // MARK: - ready payload (2607.0006 "Ready message carries meta and probe")
 
     func testAcceptsAReadyPayloadWithStringMeta() {
         XCTAssertEqual(parse(["tarmac": "ready", "meta": "magnify"]), .ready(meta: "magnify"))
@@ -88,7 +90,7 @@ final class CardConsoleTests: XCTestCase {
         XCTAssertEqual(parse(["tarmac": "ready", "meta": "magnify", "somethingElse": 1]), bare)
     }
 
-    // MARK: - rejects junk (2607.0004 S17)
+    // MARK: - rejects junk (2607.0004 "Non-Tarmac messages parse to null")
 
     func testRejectsNonTarmacAndMalformedPayloads() {
         XCTAssertNil(parse(NSNull()))
@@ -109,7 +111,7 @@ final class CardConsoleTests: XCTestCase {
     }
 
     /// Standing guard: `cull` is host→shim only and must never enter the shim→host
-    /// union, or a card could forge one at the host (2609.0002 S4).
+    /// union, or a card could forge one at the host (2609.0002 "Cull message is not a card message").
     func testRejectsACullPayload() {
         XCTAssertNil(parse(["tarmac": "cull", "culled": true]))
         XCTAssertNil(parse(["tarmac": "cull", "culled": false]))
@@ -126,7 +128,7 @@ final class CardConsoleTests: XCTestCase {
         XCTAssertNil(parse(["tarmac": "console", "level": "log", "args": [deep] as [Any]]))
     }
 
-    // MARK: - malformed ready (2607.0006 S14)
+    // MARK: - malformed ready (2607.0006 "Malformed ready messages parse to null")
 
     func testRejectsAReadyPayloadWithNonStringNonNullMeta() {
         XCTAssertNil(parse(["tarmac": "ready", "meta": 1]))
@@ -138,9 +140,10 @@ final class CardConsoleTests: XCTestCase {
         XCTAssertNil(parse(["tarmac": "ready"]))
     }
 
-    // MARK: - the data name and the load (2611.0002 S19)
+    // MARK: - the data name and the load (2611.0002)
 
-    func test2611_0002S19AReadyCarriesItsDataNameAndItsLoad() {
+    /// "Console parser reads data and load fields".
+    func testAReadyCarriesItsDataNameAndItsLoad() {
         XCTAssertEqual(
             parse(["tarmac": "ready", "meta": NSNull(), "data": "stats.json", "load": 3]),
             .ready(meta: nil, data: "stats.json", load: 3)
@@ -151,13 +154,15 @@ final class CardConsoleTests: XCTestCase {
         )
     }
 
-    func test2611_0002S19ANullOrAbsentDataNamesNoFile() {
+    /// "Console parser reads data and load fields".
+    func testANullOrAbsentDataNamesNoFile() {
         XCTAssertEqual(
             parse(["tarmac": "ready", "meta": NSNull(), "data": NSNull(), "load": 2]), .ready(meta: nil, load: 2))
         XCTAssertEqual(parse(["tarmac": "ready", "meta": NSNull(), "load": 2]), .ready(meta: nil, data: nil, load: 2))
     }
 
-    func test2611_0002S19ADataOrALoadOfAnotherTypeMakesTheReadyUnparseable() {
+    /// "Console parser reads data and load fields".
+    func testADataOrALoadOfAnotherTypeMakesTheReadyUnparseable() {
         for data in [1, true, [String: Any](), ["a"]] as [Any] {
             XCTAssertNil(parse(["tarmac": "ready", "meta": NSNull(), "data": data]), "data \(data)")
         }
@@ -166,7 +171,7 @@ final class CardConsoleTests: XCTestCase {
         }
     }
 
-    /// Absent is neither a string nor null (2607.0006 S14, guards 2607.0006 S8).
+    /// Absent is neither a string nor null (2607.0006 "Malformed ready messages parse to null", guards 2607.0006 "Meta-less document logs no capability line").
     func testRejectsAReadyPayloadWithTheMetaKeyAbsent() {
         let probe: [String: Any] = ["base": 400, "zoomed": 200]
         XCTAssertNil(parse(["tarmac": "ready", "probe": probe]))
@@ -180,13 +185,13 @@ final class CardConsoleTests: XCTestCase {
         )
     }
 
-    // MARK: - forged host→shim (2607.0006 S16)
+    // MARK: - forged host→shim (2607.0006 "Forged upward zoom payload parses to null")
 
     func testRejectsAnInboundZoomPayloadWhichIsNotAHostMessageKind() {
         XCTAssertNil(parse(["tarmac": "zoom", "z": 40]))
     }
 
-    // MARK: - ring buffer (2607.0004 S5)
+    // MARK: - ring buffer (2607.0004 "Console buffer drops oldest at cap")
 
     private func entry(_ n: Double) -> CardConsole.Entry {
         CardConsole.Entry(level: .log, args: [.number(n)])

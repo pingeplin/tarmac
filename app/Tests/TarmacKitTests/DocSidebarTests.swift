@@ -22,14 +22,14 @@ final class DocSidebarTests: XCTestCase {
         DocSidebar.apply(action, stored: stored, overlayOpen: overlayOpen, cardWidth: cardWidth)
     }
 
-    /// S14
-    func test2611_0022S14ACardIsWideFrom632() {
+    /// "Wide threshold switches between docked and strip".
+    func testACardIsWideFrom632() {
         XCTAssertEqual(mode(632), .docked(240))
         XCTAssertEqual(mode(631), .strip)
     }
 
-    /// S15
-    func test2611_0022S15ADockedWidthIsClampedToTheRange() {
+    /// "Docked width is clamped to the range".
+    func testADockedWidthIsClampedToTheRange() {
         XCTAssertEqual(mode(700, stored: Stored(width: 400)), .docked(308))
         XCTAssertEqual(mode(wide, stored: Stored(width: 400)), .docked(400))
         XCTAssertEqual(mode(wide, stored: Stored(width: 100)), .docked(160))
@@ -37,12 +37,12 @@ final class DocSidebarTests: XCTestCase {
         XCTAssertEqual(DocSidebar.range(cardWidth: wide), 160...420)
     }
 
-    /// S16
-    func test2611_0022S16AClosedWideCardShowsTheStrip() {
+    /// "Closed sidebar on wide card is a strip".
+    func testAClosedWideCardShowsTheStrip() {
         XCTAssertEqual(mode(wide, stored: Stored(open: false)), .strip)
     }
 
-    /// S17
+    /// "Overlay width and range on narrow card".
     func test2611_0022S17AnOverlayKeepsClearOfTheScrollThumb() {
         XCTAssertEqual(mode(narrow, overlayOpen: true), .overlay(240))
         XCTAssertEqual(mode(narrow, stored: Stored(width: 420), overlayOpen: true), .overlay(339))
@@ -56,15 +56,15 @@ final class DocSidebarTests: XCTestCase {
         }
     }
 
-    /// S17a
-    func test2611_0022S17aAnOpenOverlayIsDroppedWhenTheCardIsWide() {
+    /// "Overlay is dropped when the card is wide".
+    func testAnOpenOverlayIsDroppedWhenTheCardIsWide() {
         XCTAssertFalse(DocSidebar.overlayOpen(true, cardWidth: 632))
         XCTAssertTrue(DocSidebar.overlayOpen(true, cardWidth: 631))
         XCTAssertFalse(DocSidebar.overlayOpen(false, cardWidth: narrow))
     }
 
-    /// S19
-    func test2611_0022S19OpenAndClose() {
+    /// "Open and close differ on wide and narrow".
+    func testOpenAndClose() {
         let wideOpen = apply(.open, wide, stored: Stored(open: false))
         XCTAssertEqual(wideOpen.stored, Stored(open: true))
         XCTAssertFalse(wideOpen.overlayOpen)
@@ -80,8 +80,8 @@ final class DocSidebarTests: XCTestCase {
         XCTAssertFalse(narrowClose.overlayOpen)
     }
 
-    /// S20
-    func test2611_0022S20ResizeStoresTheWidthAndBelowTheMinimumCollapses() {
+    /// "Resize clamps and collapses by card width".
+    func testResizeStoresTheWidthAndBelowTheMinimumCollapses() {
         XCTAssertEqual(apply(.resize(300), wide).stored.width, 300)
         XCTAssertEqual(apply(.resize(500), wide).stored.width, 420)
         XCTAssertEqual(
@@ -98,8 +98,8 @@ final class DocSidebarTests: XCTestCase {
         XCTAssertFalse(resized.overlayOpen)
     }
 
-    /// S21
-    func test2611_0022S21ResetIsTheStandardWidthOpen() {
+    /// "Reset restores the default width and opens".
+    func testResetIsTheStandardWidthOpen() {
         XCTAssertEqual(
             apply(.reset, wide, stored: Stored(width: 300, open: false)).stored, Stored(width: 240, open: true))
 
@@ -108,8 +108,8 @@ final class DocSidebarTests: XCTestCase {
         XCTAssertTrue(narrowReset.overlayOpen)
     }
 
-    /// S22
-    func test2611_0022S22ACardResizedAcrossTheThresholdKeepsItsChoice() {
+    /// "Resize across the threshold keeps stored width".
+    func testACardResizedAcrossTheThresholdKeepsItsChoice() {
         let stored = Stored(width: 300, open: true)
 
         XCTAssertEqual(mode(wide, stored: stored), .docked(300))
@@ -117,8 +117,8 @@ final class DocSidebarTests: XCTestCase {
         XCTAssertEqual(mode(wide, stored: stored), .docked(300))
     }
 
-    /// S23
-    func test2611_0022S23ThePagesReport() {
+    /// "Page reports map to sidebar actions".
+    func testThePagesReport() {
         XCTAssertEqual(DocSidebar.Action(report: ["action": "open"]), .open)
         XCTAssertEqual(DocSidebar.Action(report: ["action": "close"]), .close)
         XCTAssertEqual(DocSidebar.Action(report: ["action": "reset"]), .reset)
@@ -180,6 +180,7 @@ final class DocSidebarTests: XCTestCase {
         DocSidebar.storesChange(action, stored: stored, overlayOpen: overlayOpen, cardWidth: cardWidth)
     }
 
+    /// "Action that changes nothing stores nothing".
     func test2611_0024S9aAnActionThatChangesNothingStoresNothing() {
         XCTAssertFalse(storesChange(.open, narrow))
         XCTAssertFalse(storesChange(.close, narrow, overlayOpen: true))
@@ -193,7 +194,8 @@ final class DocSidebarTests: XCTestCase {
         XCTAssertFalse(storesChange(.reset, wide, stored: Stored(width: 240, open: true)))
     }
 
-    func test2611_0024S9TheReadCheckKeepsAWidthInTheRangeAndTheOpenState() {
+    /// "Restored sidebar keeps in-range width and open flag".
+    func testTheReadCheckKeepsAWidthInTheRangeAndTheOpenState() {
         let cases: [(Double?, Bool?, Stored)] = [
             (300.5, false, Stored(width: 300.5, open: false)),
             (160, nil, Stored(width: 160)),
@@ -213,7 +215,8 @@ final class DocSidebarTests: XCTestCase {
         }
     }
 
-    func test2611_0024S10WhatTheAppWritesItReadsBack() {
+    /// "Sidebar state the app writes reads back equal".
+    func testWhatTheAppWritesItReadsBack() {
         let actions: [DocSidebar.Action] = [
             .open, .close, .reset, .resize(150), .resize(160), .resize(300), .resize(500), .resize(1e9),
         ]
@@ -230,15 +233,15 @@ final class DocSidebarTests: XCTestCase {
 
     // MARK: - 2611.0025
 
-    /// S2
-    func test2611_0025S2TheSides() {
+    /// "Sidebar side offers Left and Right".
+    func testTheSides() {
         XCTAssertEqual(DocSidebar.Side.allCases, [.left, .right])
         XCTAssertEqual(DocSidebar.Side.allCases.map(\.title), ["Left", "Right"])
         XCTAssertEqual(DocSidebar.Side.allCases.map(\.rawValue), ["left", "right"])
     }
 
-    /// S6: the side changes no width and no open state.
-    func test2611_0025S6TheStateCarriesTheSideAndOnlyTheSide() {
+    /// "Page state carries the side and nothing else": the side changes no width and no open state.
+    func testTheStateCarriesTheSideAndOnlyTheSide() {
         for cardWidth in [1280.0, 700, 632, 631, 392, 200] {
             for stored in [Stored(), Stored(width: 300, open: false), Stored(width: 400, open: true)] {
                 for overlayOpen in [false, true] {
@@ -269,9 +272,9 @@ final class DocSidebarTests: XCTestCase {
             ] as NSDictionary)
     }
 
-    /// S6a: on a narrow card the overlay's grip at its upper end ends 1 px
+    /// "Grip clears the thumb at every card width": on a narrow card the overlay's grip at its upper end ends 1 px
     /// clear of the scroll thumb, measured in the card's own frame.
-    func test2611_0025S6aTheGripClearsTheThumb() {
+    func testTheGripClearsTheThumb() {
         let border = Double(CardBox.borderWidth)
         let thumbStart = { (cardWidth: Double) in
             cardWidth - border - Double(ScrollIndicator.inset) - Double(ScrollIndicator.width) - 1

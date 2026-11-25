@@ -3,7 +3,7 @@ import XCTest
 @testable import TarmacKit
 
 /// The host → shim messages of an HTML card (`card_shim.js` message listener)
-/// and the cull polarity that feeds one of them (spec 2609.0002 S1).
+/// and the cull polarity that feeds one of them (spec 2609.0002 "Cull message polarity matches visibility").
 final class CardHostMessageTests: XCTestCase {
     func testZoomCarriesTheFactorAsZ() {
         XCTAssertEqual(CardHostMessage.zoom(3).json, #"{"tarmac":"zoom","z":3}"#)
@@ -16,12 +16,14 @@ final class CardHostMessageTests: XCTestCase {
         XCTAssertEqual(CardHostMessage.cull(false).json, #"{"tarmac":"cull","culled":false}"#)
     }
 
-    func test2610_0004S10ScrollToCarriesThePositionAsY() {
+    /// 2610.0004 "ScrollTo host message encodes y".
+    func testScrollToCarriesThePositionAsY() {
         XCTAssertEqual(CardHostMessage.scrollTo(300).json, #"{"tarmac":"scrollTo","y":300}"#)
         XCTAssertEqual(CardHostMessage.scrollTo(132.5).json, #"{"tarmac":"scrollTo","y":132.5}"#)
     }
 
-    func test2610_0010S15FontsCarriesTheVariablesUnderVars() throws {
+    /// 2610.0010 "Fonts host message has the exact JSON".
+    func testFontsCarriesTheVariablesUnderVars() throws {
         let fonts = CardFontVariables(interfaceFamily: nil, documentFamily: nil, documentSize: 14)
         let json = CardHostMessage.fonts(fonts).json
         XCTAssertEqual(json, #"{"tarmac":"fonts","vars":"# + fonts.json + "}")
@@ -29,7 +31,8 @@ final class CardHostMessageTests: XCTestCase {
         XCTAssertEqual(object["tarmac"] as? String, "fonts")
     }
 
-    /// 2610.0002 S24, as 2610.0004 and 2610.0010 leave it: the wheel is the
+    /// 2610.0004 "ScrollTo host message encodes y".
+    /// 2610.0002 "Card host message has only zoom and cull", as 2610.0004 and 2610.0010 leave it: the wheel is the
     /// web view's, not a message, and a held thumb says where the root goes.
     /// A fifth case does not compile here.
     func test2610_0004S10TheHostSaysAZoomACullOrAScrollTo() {
@@ -48,9 +51,10 @@ final class CardHostMessageTests: XCTestCase {
             names(.fonts(CardFontVariables(interfaceFamily: nil, documentFamily: nil, documentSize: 14))), "fonts")
     }
 
-    // MARK: - cull polarity (2609.0002 S1)
+    // MARK: - cull polarity (2609.0002)
 
-    func testS1ACulledCardIsOneThatIsNotVisible() {
+    /// 2609.0002 "Cull message polarity matches visibility".
+    func testACulledCardIsOneThatIsNotVisible() {
         XCTAssertEqual(CardHostMessage.cull(CardCull.isCulled(visible: false)), .cull(true))
         XCTAssertEqual(CardHostMessage.cull(CardCull.isCulled(visible: true)), .cull(false))
     }

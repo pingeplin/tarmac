@@ -3,28 +3,28 @@ import XCTest
 @testable import TarmacKit
 
 /// 2606.0003: per-channel daemon socket path derivation — the Swift mirror of
-/// the Rust `tarmac_protocol` resolver. Pure, table-driven, S-numbers in
+/// the Rust `tarmac_protocol` resolver. Pure, table-driven, scenario titles in
 /// comments. The `#if DEBUG` → Channel mapping is not unit-tested.
 final class ChannelPathsTests: XCTestCase {
     private let home = "/Users/eplin"
 
     // MARK: - socketPath
 
-    /// S1/S2/S3/S4/S9: the resolution grid. Release == today's flat path
-    /// byte-for-byte (S1); dev inserts exactly `/dev` (S2); an explicit override
-    /// wins verbatim in BOTH channels (S3/S4); an empty override is treated as
-    /// unset and falls through to the channel default (S9).
+    /// 2606.0003: the resolution grid. Release == today's flat path
+    /// byte-for-byte ("Release socket path matches legacy path"); dev inserts exactly `/dev` ("Dev socket path inserts channel segment"); an explicit override
+    /// wins verbatim in BOTH channels ("Override wins in release channel", "Override wins even in dev channel"); an empty override is treated as
+    /// unset and falls through to the channel default ("Empty override is treated as unset").
     func testSocketPathGrid() {
         let cases: [(override: String?, channel: ChannelPaths.Channel, expected: String)] = [
-            // S1: release == today's flat path (backward compat, zero migration).
+            // "Release socket path matches legacy path" (backward compat, zero migration).
             (nil, .release, "/Users/eplin/Library/Application Support/tarmac/tarmacd.sock"),
-            // S2: dev inserts the `dev/` segment.
+            // "Dev socket path inserts channel segment".
             (nil, .dev, "/Users/eplin/Library/Application Support/tarmac/dev/tarmacd.sock"),
-            // S3: override wins verbatim in the release channel.
+            // "Override wins in release channel".
             ("/tmp/x.sock", .release, "/tmp/x.sock"),
-            // S4: override wins verbatim EVEN in dev — the channel never shadows it.
+            // "Override wins even in dev channel" — the channel never shadows it.
             ("/tmp/x.sock", .dev, "/tmp/x.sock"),
-            // S9: empty override == unset → falls through to the dev default.
+            // "Empty override is treated as unset" → falls through to the dev default.
             ("", .dev, "/Users/eplin/Library/Application Support/tarmac/dev/tarmacd.sock"),
         ]
         for c in cases {
@@ -88,7 +88,7 @@ final class ChannelPathsTests: XCTestCase {
         }
     }
 
-    /// S5: dev differs from release ONLY by the inserted `/dev` segment,
+    /// "Dev socket differs from release by one segment": dev differs from release ONLY by the inserted `/dev` segment,
     /// immediately before `/tarmacd.sock`, with nothing else moved. A renamed
     /// marker or a misplaced insert breaks this.
     func testDevDiffersFromReleaseOnlyBySegment() {
@@ -136,7 +136,7 @@ final class ChannelPathsTests: XCTestCase {
 
     // MARK: - devSocketPath
 
-    /// S50/S51: the QA driver's socket per channel; `TARMAC_DEV_SOCKET` wins
+    /// 2609.0015 "Dev socket path follows the channel" and "Env override wins and empty means unset": the QA driver's socket per channel; `TARMAC_DEV_SOCKET` wins
     /// verbatim in both, and empty means unset.
     func testDevSocketPathGrid() {
         let cases: [(override: String?, channel: ChannelPaths.Channel, expected: String)] = [
@@ -156,7 +156,7 @@ final class ChannelPathsTests: XCTestCase {
         }
     }
 
-    /// S52 by construction: both sockets share the per-channel directory.
+    /// 2609.0015 "Dev socket shares the channel directory" by construction: both sockets share the per-channel directory.
     func testSocketAndDevSocketShareTheChannelDir() {
         for channel in [ChannelPaths.Channel.release, .dev] {
             let dir = ChannelPaths.channelDir(home: home, channel: channel)
@@ -178,9 +178,9 @@ final class ChannelPathsTests: XCTestCase {
         XCTAssertEqual(ChannelPaths.home(env: ["HOME": ""]), "")
     }
 
-    // MARK: - sockaddr_un byte budget (S8 / S8b)
+    // MARK: - sockaddr_un byte budget
 
-    /// S8: the dev default appends a fixed 52-byte suffix to `home`. So a
+    /// "Dev socket path hits sockaddr byte boundary": the dev default appends a fixed 52-byte suffix to `home`. So a
     /// 51-byte home yields a 103-byte socket (accepted at the `len < 104` cap)
     /// and a 52-byte home yields 104 (rejected). Assert BOTH the exact byte
     /// count (`utf8.count`) and the accept/reject outcome at the same predicate
@@ -199,9 +199,9 @@ final class ChannelPathsTests: XCTestCase {
         XCTAssertFalse(DaemonClient.fitsUnixSocketPath(s52), "104 bytes is rejected (104 < 104 is false)")
     }
 
-    /// S8b: the `make run` per-worktree path inserts `dev/wt-XXXXXXXX/` (16
+    /// "Per-worktree dev path hits sockaddr byte boundary": the `make run` per-worktree path inserts `dev/wt-XXXXXXXX/` (16
     /// bytes) for plain `dev/` (4) — a fixed 64-byte suffix. It rides the
-    /// verbatim override, so `socketPath` returns it UNCHANGED (S3/S4); pin the
+    /// verbatim override, so `socketPath` returns it UNCHANGED ("Override wins in release channel", "Override wins even in dev channel"); pin the
     /// constructed string's byte counts (103 at a 39-byte home, 104 at 40) so a
     /// drift in the `wt-` prefix or the 8-hex width is caught, and assert
     /// accept/reject at the same predicate `connectOnce` uses.
@@ -214,7 +214,7 @@ final class ChannelPathsTests: XCTestCase {
         let p39 = perWorktree(home39)
         XCTAssertEqual(p39.utf8.count, 103)
         XCTAssertTrue(DaemonClient.fitsUnixSocketPath(p39))
-        // Override wins verbatim (S3/S4): the resolver returns it unchanged.
+        // Override wins verbatim ("Override wins in release channel", "Override wins even in dev channel"): the resolver returns it unchanged.
         XCTAssertEqual(ChannelPaths.socketPath(override: p39, home: "/ignored", channel: .dev), p39)
 
         let home40 = "/" + String(repeating: "a", count: 39)  // 40 bytes
@@ -226,7 +226,7 @@ final class ChannelPathsTests: XCTestCase {
 
     // MARK: - channelLabel
 
-    /// S10: the channel label maps both arms (a swapped or constant label fails).
+    /// "Channel label names release and dev correctly": the channel label maps both arms (a swapped or constant label fails).
     func testChannelLabel() {
         XCTAssertEqual(ChannelPaths.channelLabel(.release), "release")
         XCTAssertEqual(ChannelPaths.channelLabel(.dev), "dev")
@@ -234,7 +234,7 @@ final class ChannelPathsTests: XCTestCase {
 
     // MARK: - configDir (spec 2610.0009)
 
-    /// 2610.0009 S1: the override wins verbatim in both channels; an absolute
+    /// 2610.0009 "Config dir follows the environment table": the override wins verbatim in both channels; an absolute
     /// `XDG_CONFIG_HOME` is the base, and an empty or a relative one is not;
     /// a debug build adds `/dev`, but never to an override.
     func testConfigDirGrid() {
@@ -262,7 +262,7 @@ final class ChannelPathsTests: XCTestCase {
         }
     }
 
-    /// 2610.0009 S2
+    /// 2610.0009 "Themes dir sits under the config dir".
     func testThemesDirIsTheConfigDirAndThenThemes() {
         XCTAssertEqual(ChannelPaths.themesDir(configDir: "/a/b"), "/a/b/themes")
         XCTAssertEqual(ChannelPaths.themesDir(configDir: "/a/b/"), "/a/b/themes")

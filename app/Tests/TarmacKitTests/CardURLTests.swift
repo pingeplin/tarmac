@@ -2,7 +2,7 @@ import XCTest
 
 @testable import TarmacKit
 
-/// Spec 2607.0004 S2: a card's content is addressed by a `tarmac-card://` URL.
+/// Spec 2607.0004 "Card source URL encodes path and mtime": a card's content is addressed by a `tarmac-card://` URL.
 final class CardURLTests: XCTestCase {
     func testPercentEncodesTheWholePathAsOneSegmentWithTheMtimeVersion() {
         let url = CardURL.src(path: "/Users/me/my dash.html", mtimeMs: 1234)
@@ -32,7 +32,7 @@ final class CardURLTests: XCTestCase {
         XCTAssertEqual(CardURL.src(path: "/a/x.png", mtimeMs: 5, host: .img), "tarmac-card://img/%2Fa%2Fx.png?v=5")
     }
 
-    /// Spec 2609.0001 S11 — a standing guard: the refresh control re-evaluates this
+    /// Spec 2609.0001 "Card URL depends only on path and mtime" — a standing guard: the refresh control re-evaluates this
     /// on every click, so purity is what keeps an unchanged-mtime refresh from
     /// reloading an HTML card and losing its JS state (#99). The URL is pinned to
     /// the exact string, so any time-derived nonce or counter in it fails at once —

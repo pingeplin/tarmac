@@ -23,7 +23,8 @@ final class TermNewPlanTests: XCTestCase {
         return nil
     }
 
-    func testS6TheCardTakesTheFirstFreeSlotAroundItsOwnerWithTheOwnerAndTheTopZ() {
+    /// 2611.0016 "Plan places card beside owner on restored board".
+    func testTheCardTakesTheFirstFreeSlotAroundItsOwnerWithTheOwnerAndTheTopZ() {
         let existing = [owner, prime]
         let place = placed(
             TermNewPlan.plan(
@@ -36,7 +37,8 @@ final class TermNewPlanTests: XCTestCase {
         XCTAssertEqual(place?.spawn, SpawnRequest(cwd: "/w/api"))
     }
 
-    func testS7WithNoOwnerCardTheCardIsAnchoredOnThePrimeAndHasNoOwner() {
+    /// 2611.0016 "Plan without an owner anchors on prime card".
+    func testWithNoOwnerCardTheCardIsAnchoredOnThePrimeAndHasNoOwner() {
         for ownerID in [nil, "t-not-here"] as [String?] {
             let place = placed(
                 TermNewPlan.plan(
@@ -48,20 +50,23 @@ final class TermNewPlanTests: XCTestCase {
         }
     }
 
-    func testS7WithNoPrimeEitherTheCardCirclesTheBootFrame() {
+    /// 2611.0016 "Plan without an owner anchors on prime card".
+    func testWithNoPrimeEitherTheCardCirclesTheBootFrame() {
         let place = placed(TermNewPlan.plan(request(owner: nil), on: board()))
 
         XCTAssertEqual(place?.frame, TermPlacement.newTerminalFrame(prime: nil, existing: []))
     }
 
-    func testS12ABoardTheAppCannotSpawnOnIsRefused() {
+    /// 2611.0016 "Plan refuses a board not ready in app".
+    func testABoardTheAppCannotSpawnOnIsRefused() {
         XCTAssertEqual(
             TermNewPlan.plan(request(board: "board-2"), on: board(ready: false, ownerFrame: owner)),
             .refuse("board board-2 is not ready in the app; show it, then retry")
         )
     }
 
-    func testS30APlannedTermCardWithAnOwnerIsNotCarriedByItsOwnersDrag() {
+    /// 2611.0016 "Owned term card is not attached to owner".
+    func testAPlannedTermCardWithAnOwnerIsNotCarriedByItsOwnersDrag() {
         let place = placed(TermNewPlan.plan(request(), on: board(ownerFrame: owner, existing: [owner])))!
         let cards: [String: Provenance.Card<String>] = [
             "t1": .init(frame: owner, owner: nil, attached: Provenance.startsAttached(isDoc: false)),
@@ -72,7 +77,8 @@ final class TermNewPlanTests: XCTestCase {
         XCTAssertEqual(Provenance.carried(by: "t1", among: cards), [:])
     }
 
-    func testS14TheInputIsTheCommandAndAReturnAsUTF8HeldAndNotTyped() {
+    /// 2611.0016 "Command input is command plus carriage return".
+    func testTheInputIsTheCommandAndAReturnAsUTF8HeldAndNotTyped() {
         let place = placed(
             TermNewPlan.plan(
                 TermNewPlan.Request(reqID: 1, cmd: "echo 中", cwd: "/w", ownerTermID: nil, boardID: "board-0"),
