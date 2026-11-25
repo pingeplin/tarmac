@@ -6,30 +6,32 @@ public struct CardDataRegistrations: Sendable {
     /// A card is a doc on a board.
     public struct Card: Hashable, Sendable {
         public let boardID: String
-        public let path: String
+        private let docPath: DocPath
+
+        public var path: String { docPath.string }
 
         public init(boardID: String, path: String) {
             self.boardID = boardID
-            self.path = path
+            self.docPath = DocPath(path)
         }
     }
 
-    private var files: [Card: String] = [:]
+    private var files: [Card: DocPath] = [:]
 
     public init() {}
 
     /// `file` nil clears the card's registration.
     public mutating func set(_ file: String?, for card: Card) {
-        files[card] = file
+        files[card] = file.map(DocPath.init)
     }
 
     public func cards(reading file: String) -> [Card] {
-        files.compactMap { $0.value == file ? $0.key : nil }
+        files.compactMap { $0.value == DocPath(file) ? $0.key : nil }
     }
 
     /// A `data_file` for each card that reads a file.
     public var resent: [Message] {
-        files.map { card, file in .dataFile(boardID: card.boardID, path: card.path, file: file) }
+        files.map { card, file in .dataFile(boardID: card.boardID, path: card.path, file: file.string) }
     }
 
     public mutating func forget(board boardID: String) {

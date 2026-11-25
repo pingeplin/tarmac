@@ -100,8 +100,8 @@ final class CardView: NSView, ThemeFollowing {
             termBody = term
             body = term
         case .doc(let path):
-            header = CardHeaderView(kind: .doc(DocKind(path: path)))
-            let doc = DocCardBodies.make(path: path)
+            header = CardHeaderView(kind: .doc(DocKind(path: path.string)))
+            let doc = DocCardBodies.make(path: path.string)
             docBody = doc
             body = doc
         }

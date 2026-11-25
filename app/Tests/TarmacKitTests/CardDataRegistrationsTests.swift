@@ -67,6 +67,37 @@ final class CardDataRegistrationsTests: XCTestCase {
         XCTAssertEqual(table.cards(reading: "/a/stats.json"), [])
         XCTAssertEqual(table.cards(reading: "/a/y.json"), [dash0])
     }
+
+    // MARK: - two forms of one name (spec 2611.0034)
+
+    private let nfc = "/v/\u{e9}/a.md"
+    private let nfd = "/v/e\u{301}/a.md"
+    private let nfcData = "/v/\u{e9}/a.md/data.json"
+    private let nfdData = "/v/e\u{301}/a.md/data.json"
+
+    private func docPaths(_ messages: [Message]) -> [[UInt8]] {
+        messages.compactMap { message in
+            guard case .dataFile(_, let path, _) = message else { return nil }
+            return Array(path.utf8)
+        }
+    }
+
+    func testDataRegistrationsKeepTwoFormsApart() {
+        var table = CardDataRegistrations()
+        table.set(nfcData, for: Card(boardID: "board-0", path: nfc))
+        table.set(nfdData, for: Card(boardID: "board-0", path: nfd))
+        let reading = table.cards(reading: nfdData)
+        XCTAssertEqual(reading.map { Array($0.path.utf8) }, [Array(nfd.utf8)])
+        XCTAssertEqual(docPaths(table.resent).count, 2)
+    }
+
+    func testClearingOneFormKeepsTheRegistrationOfTheOtherForm() {
+        var table = CardDataRegistrations()
+        table.set(nfcData, for: Card(boardID: "board-0", path: nfc))
+        table.set(nfdData, for: Card(boardID: "board-0", path: nfd))
+        table.set(nil, for: Card(boardID: "board-0", path: nfd))
+        XCTAssertEqual(docPaths(table.resent), [Array(nfc.utf8)])
+    }
 }
 
 extension Message {

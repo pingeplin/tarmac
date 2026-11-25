@@ -1071,6 +1071,22 @@ final class DevSnapshotTests: XCTestCase {
         )
     }
 
+    func testSnapshotMarksOnlyTheCardOfTheSameBytes() {
+        let nfc = "/v/\u{e9}/a.md"
+        let nfd = "/v/e\u{301}/a.md"
+        let snapshot = DevSnapshot.build(input(cards: [doc(nfc), doc(nfd)], selectedCard: nfd, borrowedCard: nfd))
+        let byBytes = { (path: String) in
+            self.cards(snapshot).first { card in
+                guard case .string(let id)? = card["id"] else { return false }
+                return Array(id.utf8) == Array(path.utf8)
+            } ?? [:]
+        }
+        XCTAssertEqual(byBytes(nfd)["focused"], true)
+        XCTAssertEqual(byBytes(nfd)["borrowed"], true)
+        XCTAssertEqual(byBytes(nfc)["focused"], false)
+        XCTAssertEqual(byBytes(nfc)["borrowed"], false)
+    }
+
     func testTheHintsAreThePillsAsPlaced() {
         let hints = [DevSnapshot.Hint(card: "T", signal: .exit, edge: .right)]
         XCTAssertEqual(

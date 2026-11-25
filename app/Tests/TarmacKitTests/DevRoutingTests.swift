@@ -570,4 +570,20 @@ final class DevRoutingTests: XCTestCase {
         let far = CGRect(x: 10_000, y: 0, width: 400, height: 300)
         XCTAssertEqual(refusal(.focus(card: "/a/c.html"), docs(html: far))?.message.contains("zoom out"), true)
     }
+
+    // MARK: - two forms of one name (spec 2611.0034)
+
+    func testDevFocusGoesToTheCardOfTheSameBytes() {
+        let htmlNFC = "/v/\u{e9}/a.html"
+        let htmlNFD = "/v/e\u{301}/a.html"
+        let context = context(
+            cards: [Card(id: htmlNFC, kind: .doc, frame: frame), Card(id: htmlNFD, kind: .doc, frame: frame)],
+            borrowed: htmlNFC
+        )
+        guard case .focusHTML(let card, let borrow) = route(.focus(card: htmlNFD), context) else {
+            return XCTFail("not routed to an HTML focus: \(route(.focus(card: htmlNFD), context))")
+        }
+        XCTAssertEqual(Array(card.utf8), Array(htmlNFD.utf8))
+        XCTAssertTrue(borrow)
+    }
 }

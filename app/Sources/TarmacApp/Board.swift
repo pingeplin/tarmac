@@ -48,7 +48,7 @@ final class Board {
     var termRecords: [String: TermRecord] = [:]
 
     /// Provenance: doc path → the `term_id` that opened it (from `DocEntry`).
-    var docOwner: [String: String] = [:]
+    var docOwner: [DocPath: String] = [:]
 
     /// True once this board's first restore has been applied. Per-board because
     /// the daemon sends a restore for the active board on connect and again on
@@ -113,7 +113,7 @@ final class Board {
     /// Doc paths currently on this board.
     var boardDocPaths: [String] {
         view.cards.keys.compactMap {
-            if case .doc(let path) = $0 { return path }
+            if case .doc(let path) = $0 { return path.string }
             return nil
         }
     }

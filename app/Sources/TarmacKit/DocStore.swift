@@ -16,19 +16,19 @@ public final class DocStore {
     /// Membership, order, or per-doc state changed.
     public var onChange: (() -> Void)?
 
-    private var indexByPath: [String: Int] = [:]
+    private var indexByPath: [DocPath: Int] = [:]
 
     public init() {}
 
     public func doc(for path: String) -> RestoreDoc? {
-        indexByPath[path].map { docs[$0] }
+        indexByPath[DocPath(path)].map { docs[$0] }
     }
 
     /// Takes the daemon's list in its order, keeping the first entry of a
     /// repeated path.
     public func applyRestore(_ entries: [RestoreDoc]) {
-        var seen = Set<String>()
-        docs = entries.filter { seen.insert($0.path).inserted }
+        var seen = Set<DocPath>()
+        docs = entries.filter { seen.insert(DocPath($0.path)).inserted }
         reindex()
         onChange?()
     }
@@ -39,7 +39,7 @@ public final class DocStore {
     @discardableResult
     public func applyDocOpened(_ doc: RestoreDoc) -> Bool {
         let isNew: Bool
-        if let i = indexByPath[doc.path] {
+        if let i = indexByPath[DocPath(doc.path)] {
             let previous = docs[i]
             docs[i] = doc
             docs[i].repo = doc.repo ?? previous.repo
@@ -50,7 +50,7 @@ public final class DocStore {
             isNew = false
         } else {
             docs.append(doc)
-            indexByPath[doc.path] = docs.count - 1
+            indexByPath[DocPath(doc.path)] = docs.count - 1
             isNew = true
         }
         onChange?()
@@ -59,20 +59,20 @@ public final class DocStore {
 
     /// A closed doc leaves the registry.
     public func remove(_ path: String) {
-        guard let i = indexByPath[path] else { return }
+        guard let i = indexByPath[DocPath(path)] else { return }
         docs.remove(at: i)
         reindex()
         onChange?()
     }
 
     public func applyFileEvent(path: String, mtimeMs: UInt64) {
-        guard let i = indexByPath[path] else { return }
+        guard let i = indexByPath[DocPath(path)] else { return }
         docs[i].lastChangedMs = mtimeMs
         onChange?()
     }
 
     private func reindex() {
         indexByPath = [:]
-        for (i, doc) in docs.enumerated() { indexByPath[doc.path] = i }
+        for (i, doc) in docs.enumerated() { indexByPath[DocPath(doc.path)] = i }
     }
 }

@@ -124,4 +124,43 @@ final class DocStoreTests: XCTestCase {
         XCTAssertEqual(kept?.termID, "t2")
         XCTAssertEqual(kept?.lastChangedMs, 99)
     }
+
+    // MARK: - Two forms of one name (spec 2611.0034)
+
+    private let nfc = "/v/\u{e9}/a.md"
+    private let nfd = "/v/e\u{301}/a.md"
+
+    private func stored(_ store: DocStore, _ path: String) -> RestoreDoc? {
+        store.docs.first { Array($0.path.utf8) == Array(path.utf8) }
+    }
+
+    func testRestoreKeepsBothFormsAsTwoDocs() {
+        let store = DocStore()
+        store.applyRestore([doc(nfc), doc(nfd)])
+        XCTAssertEqual(store.docs.count, 2)
+        XCTAssertEqual(store.doc(for: nfc).map { Array($0.path.utf8) }, Array(nfc.utf8))
+        XCTAssertEqual(store.doc(for: nfd).map { Array($0.path.utf8) }, Array(nfd.utf8))
+    }
+
+    func testOpenInTheOtherFormIsANewDoc() {
+        let store = DocStore()
+        store.applyRestore([doc(nfc)])
+        XCTAssertTrue(store.applyDocOpened(doc(nfd)))
+        XCTAssertEqual(store.docs.count, 2)
+    }
+
+    func testFileEventGoesOnlyToItsOwnForm() {
+        let store = DocStore()
+        store.applyRestore([doc(nfd, lastChangedMs: 1), doc(nfc, lastChangedMs: 1)])
+        store.applyFileEvent(path: nfd, mtimeMs: 42)
+        XCTAssertEqual(stored(store, nfd)?.lastChangedMs, 42)
+        XCTAssertEqual(stored(store, nfc)?.lastChangedMs, 1)
+    }
+
+    func testCloseRemovesOnlyItsOwnForm() {
+        let store = DocStore()
+        store.applyRestore([doc(nfd), doc(nfc)])
+        store.remove(nfd)
+        XCTAssertEqual(store.docs.map { Array($0.path.utf8) }, [Array(nfc.utf8)])
+    }
 }

@@ -101,14 +101,14 @@ public enum BoardRestore {
             terms.append(Term(termID: mint(), frame: Placement.termFrame, z: 0, spawn: SpawnRequest()))
         }
 
-        var recordedOwner: [String: String?] = [:]
-        for doc in docs { recordedOwner.updateValue(doc.termID, forKey: doc.path) }
+        var recordedOwner: [DocPath: String?] = [:]
+        for doc in docs { recordedOwner.updateValue(doc.termID, forKey: DocPath(doc.path)) }
 
         var placed: [Doc] = []
         var dropped: [String] = []
         var scatterSlot = 0
         for tile in parsed.docs {
-            guard let recorded = recordedOwner[tile.path] else {
+            guard let recorded = recordedOwner[DocPath(tile.path)] else {
                 dropped.append(tile.path)
                 continue
             }

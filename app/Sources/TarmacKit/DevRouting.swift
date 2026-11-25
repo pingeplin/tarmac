@@ -231,7 +231,7 @@ public enum DevRouting {
     }
 
     private static func onCard(_ id: String, in context: Context, _ then: (Card) -> Route) -> Route {
-        guard let card = context.cards.first(where: { $0.id == id }) else {
+        guard let card = context.cards.first(where: { DocPath($0.id) == DocPath(id) }) else {
             return refused(.noSuchCard, "no card with that id on the active board", card: id)
         }
         return then(card)
@@ -262,7 +262,7 @@ public enum DevRouting {
                 card: card.id
             )
         }
-        return .focusHTML(card: card.id, borrow: context.borrowedCard != card.id)
+        return .focusHTML(card: card.id, borrow: context.borrowedCard.map(DocPath.init) != DocPath(card.id))
     }
 
     /// Not culled: the predicate the board hides cards with.

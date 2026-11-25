@@ -37,11 +37,11 @@ extension AppController {
         board.view.onLayoutChanged = { [weak self] _ in self?.layoutPersister.schedule(bid) }
         board.view.onCardClose = { [weak self] id in
             guard case .doc(let path) = id else { return }
-            self?.closeDocCard(path)
+            self?.closeDocCard(path.string)
         }
         board.view.onCardRefresh = { [weak self] id in
             guard case .doc(let path) = id else { return }
-            self?.refreshDocFromDisk(path)
+            self?.refreshDocFromDisk(path.string)
         }
         // A culled HTML card's document is told, so that it stops its timers
         // and frames; the board hides the card either way.
