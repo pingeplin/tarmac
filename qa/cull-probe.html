@@ -1,5 +1,5 @@
 <!--
-  Cull-gate probe card (spec 2609.0002, issue #72, S37).
+  Cull-gate probe card (spec 2609.0002, issue #72, "Cull probe is committed and instrumented").
 
   A PERMANENT QA artifact, not a scratch file. Open it as a normal HTML doc card
   (`tarmac open qa/cull-probe.html`) so it loads through the real
@@ -75,7 +75,7 @@
     across=on     (default, 12000) arm a one-shot timeout whose deadline is meant
          =<ms>    to land INSIDE a cull, to exercise the ONE case no measurement
          =off     before this had: a timeout outstanding ACROSS the pause boundary
-                  (S29). ORDERING MATTERS -- the deadline is fixed at LOAD, so it
+                  ("Culled cards deliver no callbacks"). ORDERING MATTERS -- the deadline is fixed at LOAD, so it
                   discriminates nothing unless the cull actually contains it. Cull
                   within ~10 s of load and hold past the mark, or set `across=<ms>`
                   to a deadline you know your cull will span. Every report line
@@ -131,7 +131,7 @@
 // once the gate
 // ships these wrap the SHIM's wrappers rather than the raw natives. That is
 // what makes the count meaningful here — it is this card's outstanding
-// requests, which is exactly what S29/S37 want.
+// requests, which is exactly what "Culled cards deliver no callbacks" and "Cull probe is committed and instrumented" want.
 var TM = (function () {
   var raf = window.requestAnimationFrame;
   var caf = window.cancelAnimationFrame;
@@ -183,7 +183,7 @@ var TM = (function () {
   var LOOPS = q.loops || "all";
   // across=off disables it; across=<ms> sets the deadline; anything else = 12000.
   // The deadline is fixed at LOAD, so it only discriminates if the cull actually
-  // contains it — see the report line's across= field and cull-qa.md S29.
+  // contains it — see the report line's across= field and cull-qa.md "Culled cards deliver no callbacks".
   var ACROSS = q.across !== "off";
   var ACROSS_MS = Number(q.across) > 0 ? Number(q.across) : 12000;
   var acrossState = "off";
@@ -223,7 +223,7 @@ var TM = (function () {
 
   function work() {
     // Deliberately trivial: this probe measures DELIVERY TIMING, not throughput.
-    // The cost question is CPU, sampled host-side per S30.
+    // The cost question is CPU, sampled host-side per "Culled cards cost under one CPU point".
     var s = 0;
     for (var i = 0; i < 200; i++) s += i;
     return s;

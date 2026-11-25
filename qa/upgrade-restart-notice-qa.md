@@ -1,20 +1,20 @@
 # Say so when a version-mismatch restart cold-spawns terminals — manual QA (spec 2609.0017, #172)
 
-S14, S15, S16 and S17 of `.blueprint/specs/2609.0017_upgrade_restart_notice.md`.
+"Upgrade restart shows one notice toast", "Unvisited board shows no second toast", "Plain cold start shows no restart toast" and "Killed daemon keeps the old toast" of `.blueprint/specs/2609.0017_upgrade_restart_notice.md`.
 They discharge the thin-wiring exception: the three `desktop/src-tauri/src/bridge.rs`
 call sites (the record write in the mismatch branch, the `note_proceeding` call
 before `dispatch(app, first_msg)`, and the `annotate_restore` call in `dispatch`)
 plus the `desktop/src/App.tsx` and `desktop/src/ipc/protocol.ts` changes. The
 automated suites cover the decisions without a window: `restartNotice`
-(`desktop/src/kit/restartNotice.test.ts`, S1 and S3–S9) and `annotate_restore` /
-`note_proceeding` (`bridge.rs` `mod tests`, S2 and S10–S13e). None of them runs the
+(`desktop/src/kit/restartNotice.test.ts`, the kit scenarios) and `annotate_restore` /
+`note_proceeding` (`bridge.rs` `mod tests`, the bridge scenarios). None of them runs the
 app's connect loop, so these four scenarios are the only evidence that the wiring
 carries the fact from the mismatch branch to a toast:
 
-- **S14** — the record, its `to`, the annotation, and the toast.
-- **S15** — the shared latch.
-- **S16** — no record, no notice.
-- **S17** — the existing reconnect toast is unchanged.
+- **Upgrade restart shows one notice toast** — the record, its `to`, the annotation, and the toast.
+- **Unvisited board shows no second toast** — the shared latch.
+- **Plain cold start shows no restart toast** — no record, no notice.
+- **Killed daemon keeps the old toast** — the existing reconnect toast is unchanged.
 
 Run against the worktree's `make run` and its `.dev/` socket only.
 
@@ -37,7 +37,7 @@ reach the window. A toast lives for 7 s (`TOAST_TTL_MS`,
 right after launch, or take a region screencapture, so that a toast you missed
 is not recorded as "no toast".
 
-Run **S14 → S15 → version revert → S16 → S17**, in that order.
+Run **"Upgrade restart shows one notice toast" → "Unvisited board shows no second toast" → version revert → "Plain cold start shows no restart toast" → "Killed daemon keeps the old toast"**, in that order.
 
 **Build:** branch `fix/172-silent-cold-spawn-upgrade`, based on `main` @ 94ce43c.
 
@@ -52,8 +52,8 @@ the human recipe:
    with one term tile whose `term_id` is a placeholder. A setup `make run`
    (0.12.3) cold-spawned A's two shells and persisted their real ids
    (`7bac6f2e…`, `f38dca2a…`, matching the live cards in `tarmac dev snapshot`).
-   B's `term_id` was never live in any daemon. That does not matter for S14, S16
-   or S17, but it would for S15.
+   B's `term_id` was never live in any daemon. That does not matter for "Upgrade restart shows one notice toast", "Plain cold start shows no restart toast"
+   or "Killed daemon keeps the old toast", but it would for "Unvisited board shows no second toast".
 2. **Quit (⌘Q) → SIGTERM to the dev app pid.** The pid was the process holding
    `.dev/tarmac-dev.sock`, and its executable and cwd were this worktree's.
    SIGTERM skips any `beforeunload` flush, so `.dev/state.json` was checked
@@ -61,7 +61,7 @@ the human recipe:
    and the daemon survived.
 3. **Watching for toasts → captures of the dev window only.** The window was
    found by the app's pid and captured with `screencapture -l <id>` about every
-   1.1 s from the moment it appeared: 25 frames per launch and 20 for S17. Frame 01 of each
+   1.1 s from the moment it appeared: 25 frames per launch and 20 for "Killed daemon keeps the old toast". Frame 01 of each
    launch is the webview before it loads. A 7 s toast spans at least 5 frames,
    so from the first rendered frame on, a missing toast means no toast. The frames and logs are
    in `.dev/qa-172/` (gitignored).
@@ -72,13 +72,13 @@ the human recipe:
    before `make run`, so nothing under `desktop/src-tauri` was written while
    `tauri dev` was live. For the revert, `git checkout --` restored the four files,
    which were clean before QA.
-6. **Evidence of fresh shells.** Before S14, `tarmac dev type` ran
+6. **Evidence of fresh shells.** Before "Upgrade restart shows one notice toast", `tarmac dev type` ran
    `echo QA172-OLD-SHELL pid=$$ tty=$(tty)` in both old shells (pids 89577 and
-   89578). Before S14, `tarmac dev zoom 0.5` was also run.
+   89578). Before "Upgrade restart shows one notice toast", `tarmac dev zoom 0.5` was also run.
 
 ---
 
-## S14 — an upgrade restart toasts the version change
+## Upgrade restart shows one notice toast
 
 - [ ] `make run`. On board A, keep its terminal. Press ⌘N to create board B and
       let its shell spawn. Switch back to A and add a second terminal (⌘T).
@@ -125,19 +125,19 @@ the human recipe:
   `2 terminals on this board were restarted as f…`. `.tm-toast-body`
   (`desktop/src/theme/chrome.css`) is `max-width: 280px; white-space: nowrap;
   text-overflow: ellipsis`, so the words "fresh shells" never show. The
-  count matches the expected body, but the full string is only proven by the S1
+  count matches the expected body, but the full string is only proven by the "Restart notice names versions and lost count"
   unit test, not on screen.
 - **Follow-up:** this truncation finding led to shortening the body to
-  `2 terminals on this board were restarted`. S14 was re-checked (below): the
+  `2 terminals on this board were restarted`. "Upgrade restart shows one notice toast" was re-checked (below): the
   body now shows in full.
 
-### S14 re-check: shortened body (2026-09-17, 21:02–21:05)
+### "Upgrade restart shows one notice toast" re-check: shortened body (2026-09-17, 21:02–21:05)
 
 Same method as the first run (see *How this run was driven*).
 
 **Result:** PASS. The body shows in full.
 
-- **Setup (0.12.3).** A was re-seeded, because S17's dead cards had left A with a
+- **Setup (0.12.3).** A was re-seeded, because the dead cards of "Killed daemon keeps the old toast" had left A with a
   single `term_id: null` tile. App 34297 and daemon 34591 cold-spawned
   `f9860e88…` and `c5ce833a…` (both live; the state holds both ids). App 34297 was
   stopped with SIGTERM, which ended the `make run` tree. Daemon 34591 and its shells (34659, 34660) survived.
@@ -157,9 +157,9 @@ Same method as the first run (see *How this run was driven*).
 
 ---
 
-## S15 — later first visits do not toast again
+## Unvisited board shows no second toast
 
-- [ ] In the same app session as S14, switch to board B (its first visit this
+- [ ] In the same app session as "Upgrade restart shows one notice toast", switch to board B (its first visit this
       session, with a persisted `term_id` that is not live).
 - [ ] Then press ⌘N and visit the new board.
 
@@ -174,7 +174,7 @@ and a new ⌘N board showed no second toast.
 
 ---
 
-## Version revert (between S15 and S16)
+## Version revert (between "Unvisited board shows no second toast" and "Plain cold start shows no restart toast")
 
 - [ ] Switch back to board A and confirm `.dev/state.json` shows `active` = A
       (`make kill-daemon` sends SIGKILL, so a save still inside the 150 ms
@@ -187,7 +187,7 @@ Do not revert while `make run` is live: an edit under `desktop/src-tauri`
 relaunches the app against the 0.12.4 daemon and triggers a second, unrelated
 mismatch restart.
 
-**Observed:** done (S15 skipped). The board was never switched, and `.dev/state.json` showed
+**Observed:** done ("Unvisited board shows no second toast" skipped). The board was never switched, and `.dev/state.json` showed
 `active` = `board-0` with A = `d20d6374…`, `e5576bcb…`. App 96117 was stopped with SIGTERM, which ended the
 `make run` tree, and daemon 96633 survived. With nothing live, the four files were
 reverted, and their shasums match the pre-QA ones. `tarmac --version` then showed daemon
@@ -196,7 +196,7 @@ socket had no holder afterwards.
 
 ---
 
-## S16 — negative control: a plain cold start does not toast
+## Plain cold start shows no restart toast — negative control
 
 - [ ] With app and daemon both 0.12.3 and board A active with its two persisted
       terminals, quit if running, `make kill-daemon`, `make run`.
@@ -215,9 +215,9 @@ any kind**.
 
 ---
 
-## S17 — regression: the reconnect toast is unchanged
+## Killed daemon keeps the old toast — regression
 
-- [ ] With the S16 app running, `make kill-daemon`.
+- [ ] With the "Plain cold start shows no restart toast" app running, `make kill-daemon`.
 
 **Expected:**
 
