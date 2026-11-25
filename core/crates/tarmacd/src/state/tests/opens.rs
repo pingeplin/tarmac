@@ -14,7 +14,7 @@ async fn look_at_doc(daemon: &Arc<Daemon>, doc: &Path) -> HashMap<PathBuf, Optio
     answers(async move { daemon.look(|_| vec![doc], |_, now| now.clone()).await }).await
 }
 
-// 2610.0012 S1
+// 2610.0012 "Hung path open times out with error"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_open_whose_path_does_not_answer_fails_in_its_limit() {
     let tmp = canon_tmp("open-stuck");
@@ -31,7 +31,7 @@ async fn an_open_whose_path_does_not_answer_fails_in_its_limit() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S2
+// 2610.0012 "Repeat open of held path fails at once"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_second_open_of_a_path_that_is_out_fails_at_once_with_no_call() {
     let tmp = canon_tmp("open-stuck-again");
@@ -49,7 +49,7 @@ async fn a_second_open_of_a_path_that_is_out_fails_at_once_with_no_call() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S3
+// 2610.0012 "Held open does not block another open"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_open_answers_while_another_open_waits_for_its_path() {
     let tmp = canon_tmp("open-beside-stuck");
@@ -72,7 +72,7 @@ async fn an_open_answers_while_another_open_waits_for_its_path() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S4: the caller has had its error, and runs the open again.
+// 2610.0012 "Timed-out open is not finished on its own": the caller has had its error, and runs the open again.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_open_that_did_not_answer_is_not_finished_when_its_call_returns() {
     let tmp = canon_tmp("open-not-late");
@@ -96,7 +96,7 @@ async fn an_open_that_did_not_answer_is_not_finished_when_its_call_returns() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S7
+// 2610.0012 "Missing path and directory keep their replies"
 #[tokio::test]
 async fn an_open_answers_a_missing_path_a_directory_and_a_file_as_before() {
     let tmp = canon_tmp("open-texts");
@@ -117,7 +117,7 @@ async fn an_open_answers_a_missing_path_a_directory_and_a_file_as_before() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S8: an open and a look of one path share the call that is
+// 2610.0012 "Open and look share the out entry": an open and a look of one path share the call that is
 // out, the open first.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_look_does_not_read_a_path_whose_open_is_out() {
@@ -138,7 +138,7 @@ async fn a_look_does_not_read_a_path_whose_open_is_out() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S8: the look first.
+// 2610.0012 "Open and look share the out entry": the look first.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_open_does_not_resolve_a_path_whose_look_is_out() {
     let tmp = canon_tmp("look-then-open");
@@ -171,7 +171,7 @@ async fn in_a_repo(tag: &str) -> (PathBuf, PathBuf, Arc<Daemon>, Arc<StuckFs>, s
     (tmp, open, daemon, fs, release)
 }
 
-// 2610.0012 S5
+// 2610.0012 "Held repo walk opens doc without repo"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_new_doc_whose_repo_does_not_answer_opens_with_no_repo() {
     let (tmp, _, daemon, fs, _release) = in_a_repo("walk-stuck").await;
@@ -186,7 +186,7 @@ async fn a_new_doc_whose_repo_does_not_answer_opens_with_no_repo() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S6: the next startup fills a missing repo in, not a re-open.
+// 2610.0012 "Re-open does not walk the repo again": the next startup fills a missing repo in, not a re-open.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_reopen_does_not_look_for_the_repo_again() {
     let (tmp, open, daemon, fs, release) = in_a_repo("walk-once").await;
@@ -209,7 +209,7 @@ async fn a_reopen_does_not_look_for_the_repo_again() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S8b: `returned` wakes the daemon, and the look reads what no
+// 2610.0012 "Returned call wakes a look for other docs": `returned` wakes the daemon, and the look reads what no
 // wake told of.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_read_that_returns_after_its_limit_wakes_a_look() {

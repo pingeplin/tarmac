@@ -1,6 +1,6 @@
 # Hold ⌘Q to quit — manual QA (spec 2609.0016, #171)
 
-Q1–Q16 and S37 of `.blueprint/specs/2609.0016_hold_to_quit.md`. They discharge
+Q1–Q16 and "Removed retarget call fails the QA check" of `.blueprint/specs/2609.0016_hold_to_quit.md`. They discharge
 the thin-wiring exception (`quit_intercept.rs`, the AppKit half of
 `quit_notice.rs`, the `lib.rs` menu/window/run wiring, `app_prefs.rs`'s file IO,
 `bridge.rs::app_prefs_path`, `devDriver.ts`, and the `App.tsx` switcher and
@@ -33,7 +33,7 @@ tarmac: quit-key route=<guard|terminate> type=<NSEventType raw> repeat=<bool> ag
 ```
 
 `type=10` is a keyDown, `type=1` a mouse-down. Record any two lines with the
-same `press_ms` and `repeat=false`: that is the double delivery S20 guards
+same `press_ms` and `repeat=false`: that is the double delivery "Duplicate delivery of one press is ignored" guards
 against, for which no path was found. `-` means the field does not apply.
 
 **Build under test:** `make run` from this worktree at 2026-09-18 08:23,
@@ -44,7 +44,7 @@ refactor of the same wiring (the notice text is computed at the call site, the
 retarget check reads selectors instead of comparing targets, `HiddenByClose`
 owns its own atomic, the debug log line is built from fewer arguments). The log
 line's format is unchanged, `make test` and `make qa` are green on the refactor,
-and S37's knockout was re-run against it. **Not yet re-checked by hand:** one tap
+and "Removed retarget call fails the QA check"'s knockout was re-run against it. **Not yet re-checked by hand:** one tap
 and one hold on the refactored build would re-earn the keyboard rows above.
 
 **#179 moved the release poll to a main-run-loop timer**
@@ -54,7 +54,7 @@ polling thread is now a repeating `NSTimer` in `NSRunLoopCommonModes`, which
 so every row that depends on a real hold or release is owed again. What was
 re-earned without a keyboard:
 
-- `make test` green, `make qa` 19/19 with D11, and S37's knockout re-run (both
+- `make test` green, `make qa` 19/19 with D11, and "Removed retarget call fails the QA check"'s knockout re-run (both
   below).
 - **The timer under tao, in isolation.** A standalone tao 0.35.3 / objc2 0.6.4
   harness (main checkout `.dev/nstimer-179/`, three runs) posted an in-process
@@ -99,7 +99,7 @@ The Q1 cell (plain shell × ABC) also pays the `/simplify` debt above.
 
 ## Agent-runnable
 
-- **S36 / D11 (`make qa`)** — with the app up, `make qa` must pass, including
+- **Live app reports retargeted quit guard / D11 (`make qa`)** — with the app up, `make qa` must pass, including
   `D11 — the ⌘Q guard says whether the Quit item is really retargeted`.
   - **PASS** (2026-09-18). `19/19 checks passed`, D11 included. A bare
     `tarmac dev snapshot` reports `quit_guard: {"enabled": true,
@@ -109,7 +109,7 @@ The Q1 cell (plain shell × ABC) also pays the `/simplify` debt above.
     `19/19 checks passed`, D11 included, and the snapshot read
     `{"enabled": true, "retargeted": true}`. The `779f9b1` run's output is in
     the main checkout at `.dev/nstimer-179/qa-779f9b1.log`.
-- **S37 (knockout)** — comment out the `quit_intercept::install(...)` line in
+- **Removed retarget call fails the QA check (knockout)** — comment out the `quit_intercept::install(...)` line in
   `lib.rs` (revert the line afterwards, not the file), let `tauri dev` relaunch,
   and re-run D11: it must fail with `quit_guard.retargeted` false.
   - **PASS** (2026-09-18). With the line commented out and the app relaunched,
@@ -136,7 +136,7 @@ The Q1 cell (plain shell × ABC) also pays the `/simplify` debt above.
     both behave as specified. The notice's **text sat too high inside the
     slab** — an `NSTextField` draws its single line at the top of its frame,
     and the label had been given the slab's full height. Fixed by sizing the
-    label to its text and centring that box (`label_y`, S39), and by zeroing the
+    label to its text and centring that box (`label_y`, "Notice label is centred but never above"), and by zeroing the
     `NSBox`'s content-view margins: the box insets its content view by 5 pt plus
     the border, so a label centred on the slab's own height was drawn 6 pt high
     and 6 pt right. Measured from the QA screenshot (text centre 4–5 px above
@@ -230,7 +230,7 @@ The Q1 cell (plain shell × ABC) also pays the `/simplify` debt above.
     14, 15, 18, 19, 21, 26, 27, 62, 98 and **268 ms** — the highest is an
     eighth of the 2000 ms bound.
   - Two side facts from those lines: **no two presses shared a `press_ms`**, so
-    the double delivery S20 guards against did not occur; and **no
+    the double delivery "Duplicate delivery of one press is ignored" guards against did not occur; and **no
     `repeat=true` line appeared** during a ~1 s hold, which is consistent with
     Key Repeat being off on this Mac. Worth re-checking on a machine with Key
     Repeat on.
@@ -250,7 +250,7 @@ The Q1 cell (plain shell × ABC) also pays the `/simplify` debt above.
 - **Q14** — ⌘W typed inside an HTML card's iframe (`App.tsx` never sees it):
   expected to hide the window, app still running.
   - **PASS** (2026-09-18, hand-run).
-- **Q15** — run S37's knockout, then restore the line.
+- **Q15** — run "Removed retarget call fails the QA check"'s knockout, then restore the line.
   - **Done above** (agent-runnable), no keyboard needed.
 - **Q16 (notice re-show)** — under ABC with a plain-shell terminal focused, tap
   ⌘Q, then tap again ~1.1–1.2 s after the first press, while the notice still
@@ -273,13 +273,13 @@ The Q1 cell (plain shell × ABC) also pays the `/simplify` debt above.
 `press` posts a native ⌘ chord in-process with a debug-only key-held override,
 and `quit_guard` now reports `phase`, `notice` and `last_press`. The rows below
 are the spec's `[D]` scenarios (`make qa` D12–D19, `make qa-quit`), each with its
-knockout run, plus the `[QA]` rows S22 and S33–S35. `desktop/qa/qa-driver-qa.md`
-records the driver-side rows (D12–D19 as driver scenarios, S36).
+knockout run, plus the `[QA]` rows "Press activates app with non-key window", "Press refuses Cmd-Q when not retargeted", "Minimised window gives not key error" and "Release binary has no press code". `desktop/qa/qa-driver-qa.md`
+records the driver-side rows (D12–D19 as driver scenarios, "Culled HTML card gives card hidden error").
 
 **Build under test:** `feat/183-quit-guard-qa-driver`, 2026-09-20: the first
 `make qa` runs and the TS knockouts at `b1cb7c4` plus the then-uncommitted
-scripts; S36 at `03f72df`; S35 at `3d424a8`; the Rust knockouts, `make
-qa-quit`, S22, S33 and S34 at `2268085` (which carries the one defect the
+scripts; "Culled HTML card gives card hidden error" at `03f72df`; "Release binary has no press code" at `3d424a8`; the Rust knockouts, `make
+qa-quit`, "Press activates app with non-key window", "Press refuses Cmd-Q when not retargeted" and "Minimised window gives not key error" at `2268085` (which carries the one defect the
 knockouts found, below). `make test` green throughout. Screen unlocked
 (`CGSSessionScreenIsLocked 0`) for every run recorded as a result; the runs
 that hit a locked screen are named as such.
@@ -298,12 +298,12 @@ that hit a locked screen are named as such.
 | Q12 freshness, idle half | **D12** (`0 <= age_ms <= 2000`) | idle `age_ms` 2–24 across 50 driver presses this run |
 | Q12 freshness, busy half | **D19** (`press --busy 1000`) | `age_ms` 968–973 |
 | Q16 re-show | **D15** | second press while the first notice fades; `alpha` back to 1; lingers ≥ 900 ms |
-| stale press (S7 of 2609.0016) | **`CASE=stale`** | `--age 2500 --hold 1` |
+| stale press (2609.0016 "Stale keyDown quits at once") | **`CASE=stale`** | `--age 2500 --hold 1` |
 | ⌘T / ⌘W as page shortcuts | **D16** | proves the verb is not ⌘Q-specific |
 
 **Still manual:** Q1 × Zhuyin / Japanese (the chord's characters are supplied,
 so the input source plays no part), Q1's real Claude Code cell, Q2 (minimised;
-`press` answers `not_key` there, S34), Q3 (the toggle), Q4 (a menu click), Q5
+`press` answers `not_key` there, "Minimised window gives not key error"), Q3 (the toggle), Q4 (a menu click), Q5
 (the red button), Q6 (⌘C/⌘V have no snapshot field), Q7 (VoiceOver), Q8 (the
 release bundle's physical key read — the override bypasses it), Q9 (a remap:
 `press alt+cmd+q` can press it, but the row also reads the notice's text), Q10,
@@ -311,40 +311,40 @@ Q11, Q13, Q14.
 
 ### Results
 
-- **`make qa`** — **PASS, 27/27** (first run; S21 skipped because the dev app
+- **`make qa`** — **PASS, 27/27** (first run; "Press verb activates a background app" skipped because the dev app
   was already frontmost), then **PASS, 28/28** with Finder raised first
-  (`open -a Finder`), which exercised S21: `activated == true` and the frontmost
+  (`open -a Finder`), which exercised "Press verb activates a background app": `activated == true` and the frontmost
   pid after the press was the dev app's.
   - Every driver press this session logged `route=guard type=10 repeat=false`
     (60 `quit-key` lines): idle `age_ms` 2–24 (one first-press 93), busy
     968–973 at `--busy 1000`.
 - **Knockouts (each reverted by the line, and the run re-passed after):**
-  - **S11** (kitty rule in `kit/termKeyRoute.ts` prefixed `false &&`): D13
+  - **Cmd-Q tap through kitty terminal is guarded** (kitty rule in `kit/termKeyRoute.ts` prefixed `false &&`): D13
     **FAIL** — `quit_guard.last_press.press_ms ~= …` never held (xterm swallowed
     the key). The `finally` popped the flags and D14–D19 still passed, 26/27.
-  - **S14** (`App.tsx`'s ⌘T branch returns before `spawnNewTerminal()`): D16
+  - **Cmd-T opens and Cmd-W closes a terminal** (`App.tsx`'s ⌘T branch returns before `spawnNewTerminal()`): D16
     **FAIL** — no new terminal card appeared within 3000 ms of ⌘T.
-  - **S18** (`dispatchStep`'s `page-body` case does nothing): D17 **FAIL** —
+  - **Cmd-Q tap with markdown card focused** (`dispatchStep`'s `page-body` case does nothing): D17 **FAIL** —
     `active_element.tag` expected `BODY`, got `TEXTAREA`.
-  - **S19, `doc-iframe` case does nothing:** D18 **FAIL** — `active_element.tag`
+  - **Cmd-Q tap with HTML card focused, `doc-iframe` case does nothing:** D18 **FAIL** — `active_element.tag`
     expected `IFRAME`, got `TEXTAREA`.
-  - **S19, `doc-shield` case does nothing:** D18 **FAIL** —
+  - **Cmd-Q tap with HTML card focused, `doc-shield` case does nothing:** D18 **FAIL** —
     `cards[].borrowed` expected `true`, got `false` (`active_element` still read
     `IFRAME`, as V4 predicts: only `borrowed` catches this one).
-  - **S19, fixture `keydown` → `preventDefault()` (in `smoke.mjs`, not on
+  - **Cmd-Q tap with HTML card focused, fixture `keydown` → `preventDefault()` (in `smoke.mjs`, not on
     disk):** D18 **FAIL** — the matching wait timed out: the frame handled the
     ⌘Q and the menu never saw it. So D18's ⌘Q really passes through the frame.
-  - **S10** (`Effect::ShowHud` does nothing): D12 **FAIL** — `notice.visible`
+  - **Cmd-Q tap from shell shows notice** (`Effect::ShowHud` does nothing): D12 **FAIL** — `notice.visible`
     expected `true`, got `false`; so did every other ⌘Q row (D13, D14, D15,
     D17, D18, D19), 20/27. D16 still passed: ⌘T/⌘W never show a notice.
-  - **S13** (no `hud_gen` bump in `show_notice`): D15 **FAIL** — after the
+  - **Second press re-shows the fading notice** (no `hud_gen` bump in `show_notice`): D15 **FAIL** — after the
     second press, `quit_guard.notice.alpha == 1` never held within 300 ms: the
     first notice's fade kept stepping the re-shown notice down. (The spec
     predicted the later `visible == false` check would catch it; the fade's
     alpha steps are what the scenario met first.)
-  - **S21** (the "already key?" test always true, Finder in front): D12's
+  - **Press verb activates a background app** (the "already key?" test always true, Finder in front): D12's
     tap **passed** (the post went straight to the inactive app's menu and
-    still routed `guard`, as spike 2 found) and S21 **FAIL** — `activated`
+    still routed `guard`, as spike 2 found) and "Press verb activates a background app" **FAIL** — `activated`
     expected `true`, got `false`. Two more rows failed under it and are worth
     knowing: D16 (⌘W went to the native Close Window item, and the new
     terminal stayed on the board) and D19 (`age_ms` read 1: the post bypassed
@@ -354,29 +354,29 @@ Q11, Q13, Q14.
       `app_not_ready` instead of posting. Fixed in `2268085` (`press` now
       addresses Tauri's `main` window, as `notice_screen` does); the normal
       run re-passed 28/28 before the knockout was re-run.
-  - **S24** (the `eval` skipped): D19 **FAIL** — the press exited 51 ms after
+  - **Cmd-Q into frozen page waits for freeze** (the `eval` skipped): D19 **FAIL** — the press exited 51 ms after
     spawn (no freeze to wait out), 26/27.
-  - The first S10/S13 attempts ran into a locked screen (every press
+  - The first "Cmd-Q tap from shell shows notice" and "Second press re-shows the fading notice" attempts ran into a locked screen (every press
     `not_key`, 19/27): inconclusive, not a result. Both were re-run unlocked
     (above).
 - **`make qa-quit`** — each **PASS**, one per fresh `make run`:
-  - `CASE=hold` (S15): `route=guard`, `confirming` with the notice up,
+  - `CASE=hold` ("Held Cmd-Q hides windows then quits"): `route=guard`, `confirming` with the notice up,
     `visibility == "hidden"`, still answering at +1500 ms, gone **1993 ms**
     after the reply.
-  - `CASE=double` (S16): two presses 182 ms apart, the second routed `guard`
+  - `CASE=double` ("Two quick Cmd-Q taps quit on release"): two presses 182 ms apart, the second routed `guard`
     into `confirming`, gone **477 ms** after the second reply.
-  - `CASE=stale` (S17): gone **4 ms** after the CLI exited; the `make run`
+  - `CASE=stale` ("Stale Cmd-Q press quits at once"): gone **4 ms** after the CLI exited; the `make run`
     line read `quit-key route=terminate type=10 repeat=false age_ms=2549`.
   - **Knockouts**, each also one fresh `make run`, the app then stopped by pid:
-    - S15 (the `|| self.held_override(key_code)` dropped from `on_poll`):
+    - "Held Cmd-Q hides windows then quits" (the `|| self.held_override(key_code)` dropped from `on_poll`):
       `CASE=hold` **FAIL** — `phase == "confirming"` never held; the app
       stayed up.
-    - S16 (`recent` always false in `on_quit_key`): `CASE=double` **FAIL** —
+    - "Two quick Cmd-Q taps quit on release" (`recent` always false in `on_quit_key`): `CASE=double` **FAIL** —
       phase after the second tap expected `confirming`, got `showing`; the
       app stayed up.
-    - S17 (`FRESHNESS_BOUND_MS` = 10 000): `CASE=stale` **FAIL** — the app
+    - "Stale Cmd-Q press quits at once" (`FRESHNESS_BOUND_MS` = 10 000): `CASE=stale` **FAIL** — the app
       still answered 1000 ms on; its line read `route=guard … age_ms=2545`.
-- **S22** — **PASS**. With Finder raised (`open -a Finder`, frontmost
+- **Press activates app with non-key window** — **PASS**. With Finder raised (`open -a Finder`, frontmost
   confirmed by `lsappinfo`), `press cmd+q --hold 300` replied
   `activated: true`, the frontmost app read `tarmac-app` afterwards, the line
   was `route=guard … age_ms=48`, and a temporary libc `backtrace_symbols_fd`
@@ -386,17 +386,17 @@ Q11, Q13, Q14.
   page saw the key first. A control press with the window already key gave
   the same 9 frames. (Rust's `std::backtrace` names none of those frames;
   only the libc probe does.)
-- **S33** — **PASS**. With `quit_intercept::install(...)` commented out in
+- **Press refuses Cmd-Q when not retargeted** — **PASS**. With `quit_intercept::install(...)` commented out in
   `lib.rs` (reverted), the snapshot read `retargeted: false`; `press cmd+q`
   exited 1 with `not_retargeted` ("would reach a native terminate: item …
   not posted") and **the app stayed up**; `press cmd+t` exited 0 and a new
   terminal card appeared, so only the Quit chord is refused.
-- **S34** — **PASS**. `press cmd+m` minimised the window (`visibility`
+- **Minimised window gives not key error** — **PASS**. `press cmd+m` minimised the window (`visibility`
   `"hidden"`); `press cmd+q` then exited 1 with `not_key` after **1032 ms**
   (`KEY_WAIT_MS` plus hops), the app stayed up, and `last_press` stayed
   `null`, so nothing was posted. `activateIgnoringOtherApps(true)` made the
   app frontmost but did **not** un-minimise the window, as the row expected.
-- **S35** — **PASS** (2026-09-20, `make bundle` at `3d424a8`). `strings` on
+- **Release binary has no press code** — **PASS** (2026-09-20, `make bundle` at `3d424a8`). `strings` on
   `dist/Tarmac.app/Contents/MacOS/tarmac-app` finds `dev_press`,
   `dev_quit_guard` and `not_retargeted` **0** times each (the debug binary has
   each once) and the notice's text once, so the guard ships and the verb does

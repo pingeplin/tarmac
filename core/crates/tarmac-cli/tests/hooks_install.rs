@@ -225,8 +225,9 @@ fn keys(v: &serde_json::Value) -> Vec<&str> {
     v.as_object().unwrap().keys().map(String::as_str).collect()
 }
 
+/// "Install into a missing settings file".
 #[test]
-fn s1_install_into_a_missing_file_makes_it() {
+fn install_into_a_missing_file_makes_it() {
     let dir = sandbox();
     let path = user_settings(&dir);
     let out = claude(&dir, "install", &[]);
@@ -240,8 +241,9 @@ fn s1_install_into_a_missing_file_makes_it() {
     assert!(!backup_of(&path).exists());
 }
 
+/// "Install merge keeps all other settings".
 #[test]
-fn s2_install_merges_and_backs_the_file_up() {
+fn install_merges_and_backs_the_file_up() {
     let dir = sandbox();
     let path = user_settings(&dir);
     put(&path, &f_own_hooks());
@@ -267,8 +269,9 @@ fn mtime(path: &Path) -> std::time::SystemTime {
     std::fs::metadata(path).unwrap().modified().unwrap()
 }
 
+/// "Second install is a byte-for-byte no-op".
 #[test]
-fn s3_a_second_install_writes_nothing() {
+fn a_second_install_writes_nothing() {
     let dir = sandbox();
     let path = user_settings(&dir);
     let backup = backup_of(&path);
@@ -297,8 +300,9 @@ fn round_trip(original: &str) -> String {
     read(&path)
 }
 
+/// "Install then uninstall restores the original file".
 #[test]
-fn s4_install_then_uninstall_gives_the_original_bytes_back() {
+fn install_then_uninstall_gives_the_original_bytes_back() {
     for (name, original) in [("F-claude", F_CLAUDE.to_string()), ("F-own-hooks", f_own_hooks()), ("F-4", f_4())] {
         assert_eq!(round_trip(&original), original, "{name}");
     }
@@ -311,8 +315,9 @@ fn a_file_that_claude_wrote_comes_back_byte_for_byte() {
     assert_eq!(round_trip(&original), original);
 }
 
+/// "Removal moves no other key".
 #[test]
-fn s4b_a_removal_moves_no_other_key() {
+fn a_removal_moves_no_other_key() {
     let dir = sandbox();
     let path = user_settings(&dir);
     put(&path, &f_mid());
@@ -340,8 +345,9 @@ fn status_line<'a>(out: &'a Report, prefix: &str) -> &'a str {
     out.stdout.lines().find(|l| l.starts_with(prefix)).unwrap_or_else(|| panic!("no `{prefix}` line: {}", out.stdout))
 }
 
+/// "Status shows scopes and PATH binary".
 #[test]
-fn s7_status_reads_both_scopes_and_the_path() {
+fn status_reads_both_scopes_and_the_path() {
     let dir = sandbox();
     claude(&dir, "install", &[]);
     put(&project_settings(&dir), &format!("{{\n  \"hooks\": {{\n{BARE_STOP}\n  }}\n}}\n"));
@@ -363,8 +369,9 @@ fn s7_status_reads_both_scopes_and_the_path() {
     );
 }
 
+/// "Status shows scopes and PATH binary".
 #[test]
-fn s7_status_shows_not_installed_for_a_file_with_none_of_ours_and_for_no_file() {
+fn status_shows_not_installed_for_a_file_with_none_of_ours_and_for_no_file() {
     let dir = sandbox();
     put(&user_settings(&dir), F_CLAUDE);
 
@@ -377,8 +384,9 @@ fn s7_status_shows_not_installed_for_a_file_with_none_of_ours_and_for_no_file() 
     }
 }
 
+/// "Status shows scopes and PATH binary".
 #[test]
-fn s7_the_path_line_names_the_first_executable_tarmac() {
+fn the_path_line_names_the_first_executable_tarmac() {
     let dir = sandbox();
     let empty = dir.join("empty");
     std::fs::create_dir_all(&empty).unwrap();
@@ -399,8 +407,9 @@ fn s7_the_path_line_names_the_first_executable_tarmac() {
     );
 }
 
+/// "Uninstall removes only our handlers".
 #[test]
-fn s8_uninstall_removes_ours_only() {
+fn uninstall_removes_ours_only() {
     let dir = sandbox();
     let path = user_settings(&dir);
     put(&path, &f_own_hooks());
@@ -415,8 +424,9 @@ fn s8_uninstall_removes_ours_only() {
     assert_eq!(read(&backup_of(&path)), installed);
 }
 
+/// "Only our handler forms count as ours".
 #[test]
-fn s9_uninstall_leaves_every_near_match_as_it_was() {
+fn uninstall_leaves_every_near_match_as_it_was() {
     let dir = sandbox();
     let path = user_settings(&dir);
     let foreign = serde_json::json!([
@@ -442,8 +452,9 @@ fn s9_uninstall_leaves_every_near_match_as_it_was() {
     assert_eq!(json(&path), serde_json::json!({"hooks": {"Stop": [{"hooks": foreign}]}}));
 }
 
+/// "Old forms are replaced by the current form".
 #[test]
-fn s10_an_old_form_shows_in_status_and_install_replaces_it() {
+fn an_old_form_shows_in_status_and_install_replaces_it() {
     let bare = serde_json::json!({"type": "command", "command": "tarmac hooks run claude"});
     let current = serde_json::json!({"hooks": four_groups()});
     let with = |f: &dyn Fn(&mut serde_json::Value)| {
@@ -506,8 +517,9 @@ fn s10_an_old_form_shows_in_status_and_install_replaces_it() {
     }
 }
 
+/// "Codex target is skipped and all installs claude-code".
 #[test]
-fn s12_codex_is_skipped_as_a_success() {
+fn codex_is_skipped_as_a_success() {
     const SKIP: &str = "skipped codex: hooks are not supported for codex yet\n";
     for verb in ["install", "uninstall"] {
         let dir = sandbox();
@@ -522,8 +534,9 @@ fn s12_codex_is_skipped_as_a_success() {
     assert_eq!(out.stdout, format!("installed: {}\n{SKIP}", user_settings(&dir).display()));
 }
 
+/// "Config dir and project scope pick the file".
 #[test]
-fn s13_claude_config_dir_and_project_scope_pick_the_file() {
+fn claude_config_dir_and_project_scope_pick_the_file() {
     let dir = sandbox();
     let cfg = dir.join("cfg");
     let out = Report::of(hooks_cmd(&dir).env("CLAUDE_CONFIG_DIR", &cfg).args(["install", "--target", "claude-code"]));
@@ -560,15 +573,17 @@ fn s13_claude_config_dir_and_project_scope_pick_the_file() {
     }
 }
 
+/// "Config dir and project scope pick the file".
 #[test]
-fn s13_an_empty_claude_config_dir_is_home() {
+fn an_empty_claude_config_dir_is_home() {
     let dir = sandbox();
     let out = claude(&dir, "install", &[]);
     assert_eq!(out.stdout, format!("installed: {}\n", user_settings(&dir).display()));
 }
 
+/// "Dry run leaves no file behind".
 #[test]
-fn s14_dry_run_writes_nothing() {
+fn dry_run_writes_nothing() {
     let dir = sandbox();
     let before = tree(&dir);
     let path = user_settings(&dir);
@@ -594,8 +609,9 @@ fn s14_dry_run_writes_nothing() {
     }
 }
 
+/// "Symlinked settings file stays a symlink".
 #[test]
-fn s15_a_symlinked_file_is_written_through() {
+fn a_symlinked_file_is_written_through() {
     let dir = sandbox();
     let target = dir.join("dotfiles/claude-settings.json");
     let link = user_settings(&dir);
@@ -613,8 +629,9 @@ fn s15_a_symlinked_file_is_written_through() {
     assert_eq!(read(&backup), F_CLAUDE);
 }
 
+/// "Symlinked settings file stays a symlink".
 #[test]
-fn s15_a_symlink_to_a_missing_file_is_refused() {
+fn a_symlink_to_a_missing_file_is_refused() {
     let dir = sandbox();
     let link = user_settings(&dir);
     std::fs::create_dir_all(link.parent().unwrap()).unwrap();
@@ -636,8 +653,9 @@ fn set_mode(path: &Path, mode: u32) {
     std::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(mode)).unwrap();
 }
 
+/// "File permission bits are kept".
 #[test]
-fn s16_the_files_mode_is_kept_and_a_new_file_gets_the_default() {
+fn the_files_mode_is_kept_and_a_new_file_gets_the_default() {
     let dir = sandbox();
     let path = user_settings(&dir);
     put(&path, F_CLAUDE);
@@ -657,8 +675,9 @@ fn s16_the_files_mode_is_kept_and_a_new_file_gets_the_default() {
     assert_eq!(mode(&user_settings(&dir)), mode(&reference));
 }
 
+/// "Unwritable file or directory fails closed".
 #[test]
-fn s16b_a_target_that_is_not_writable_fails_closed() {
+fn a_target_that_is_not_writable_fails_closed() {
     let probe = sandbox().join("probe");
     std::fs::write(&probe, "").unwrap();
     set_mode(&probe, 0o444);
@@ -685,8 +704,9 @@ fn s16b_a_target_that_is_not_writable_fails_closed() {
     }
 }
 
+/// "Unparsable settings file is refused".
 #[test]
-fn s26_a_file_of_the_wrong_shape_is_refused() {
+fn a_file_of_the_wrong_shape_is_refused() {
     for bad in [
         r#"{"a": 1,}"#,
         "[]",
@@ -712,8 +732,9 @@ fn s26_a_file_of_the_wrong_shape_is_refused() {
     }
 }
 
+/// "Unparsable settings file is refused".
 #[test]
-fn s26_status_shows_an_unparsable_file_and_exits_1() {
+fn status_shows_an_unparsable_file_and_exits_1() {
     let dir = sandbox();
     put(&user_settings(&dir), r#"{"a": 1,}"#);
     let out = hooks(&dir, &["status"]);
@@ -732,8 +753,9 @@ fn an_empty_file_or_a_bom_is_named_as_the_cause() {
     }
 }
 
+/// "One failing target does not stop the other".
 #[test]
-fn s27_a_refused_target_does_not_stop_the_other() {
+fn a_refused_target_does_not_stop_the_other() {
     let dir = sandbox();
     put(&user_settings(&dir), r#"{"a": 1,}"#);
     let out = hooks(&dir, &["install"]);
@@ -741,8 +763,9 @@ fn s27_a_refused_target_does_not_stop_the_other() {
     assert_eq!(out.stdout, "skipped codex: hooks are not supported for codex yet\n");
 }
 
+/// "Bad usage exits 2 and creates no file".
 #[test]
-fn s28_a_usage_error_exits_2_and_makes_no_file() {
+fn a_usage_error_exits_2_and_makes_no_file() {
     for args in [
         &[][..],
         &["frob"],

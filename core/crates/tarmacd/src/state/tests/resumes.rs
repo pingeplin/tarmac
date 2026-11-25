@@ -42,9 +42,9 @@ async fn end(r: Rig, handle: Arc<TermHandle>) {
     r.end().await;
 }
 
-// S16
+// "Shutdown freeze keeps the resume command"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn s16_under_shutdown_a_gone_holder_and_a_failed_exit_keep_the_command() {
+async fn under_shutdown_a_gone_holder_and_a_failed_exit_keep_the_command() {
     let (r, handle) = resumed("resume-freeze").await;
 
     r.daemon.final_save().await;
@@ -55,9 +55,9 @@ async fn s16_under_shutdown_a_gone_holder_and_a_failed_exit_keep_the_command() {
     end(r, handle).await;
 }
 
-// S16, the first control
+// "Shutdown freeze keeps the resume command", the first control
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn s16_with_no_shutdown_a_gone_holder_drops_the_command() {
+async fn with_no_shutdown_a_gone_holder_drops_the_command() {
     let (r, handle) = resumed("resume-gone").await;
 
     r.daemon.check_resume("T", &handle, gone).await;
@@ -67,9 +67,9 @@ async fn s16_with_no_shutdown_a_gone_holder_drops_the_command() {
     end(r, handle).await;
 }
 
-// S16, the second control
+// "Shutdown freeze keeps the resume command", the second control
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn s16_with_no_shutdown_a_live_holder_keeps_it_and_a_failed_exit_drops_it() {
+async fn with_no_shutdown_a_live_holder_keeps_it_and_a_failed_exit_drops_it() {
     let (r, handle) = resumed("resume-live").await;
     let live = holder_live_with(&r.daemon, 0).await;
 
@@ -82,9 +82,9 @@ async fn s16_with_no_shutdown_a_live_holder_keeps_it_and_a_failed_exit_drops_it(
     end(r, handle).await;
 }
 
-// S16: a reused pid
+// "Shutdown freeze keeps the resume command": a reused pid
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn s16_a_holder_pid_with_another_start_time_drops_the_command() {
+async fn a_holder_pid_with_another_start_time_drops_the_command() {
     let (r, handle) = resumed("resume-reused").await;
     let reused = holder_live_with(&r.daemon, 1).await;
 
@@ -94,9 +94,9 @@ async fn s16_a_holder_pid_with_another_start_time_drops_the_command() {
     end(r, handle).await;
 }
 
-// S16: an unread holder
+// "Shutdown freeze keeps the resume command": an unread holder
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn s16_an_unread_holder_keeps_the_command() {
+async fn an_unread_holder_keeps_the_command() {
     let (r, handle) = resumed("resume-unread").await;
 
     r.daemon.check_resume("T", &handle, |_| Facts::Unread).await;
@@ -105,9 +105,9 @@ async fn s16_an_unread_holder_keeps_the_command() {
     end(r, handle).await;
 }
 
-// S16: the freeze stops nothing else
+// "Shutdown freeze keeps the resume command": the freeze stops nothing else
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn s16_under_shutdown_a_clean_exit_still_deletes_the_entry() {
+async fn under_shutdown_a_clean_exit_still_deletes_the_entry() {
     let (r, handle) = resumed("resume-freeze-clean").await;
     r.daemon.final_save().await;
 
@@ -117,8 +117,9 @@ async fn s16_under_shutdown_a_clean_exit_still_deletes_the_entry() {
     end(r, handle).await;
 }
 
+/// "Shutdown freeze keeps the resume command".
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn s16_under_shutdown_a_close_still_deletes_the_entry() {
+async fn under_shutdown_a_close_still_deletes_the_entry() {
     let (r, handle) = resumed("resume-freeze-close").await;
     r.daemon.final_save().await;
 
@@ -128,8 +129,9 @@ async fn s16_under_shutdown_a_close_still_deletes_the_entry() {
     end(r, handle).await;
 }
 
+/// "Shutdown freeze keeps the resume command".
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn s16_under_shutdown_a_clear_still_clears() {
+async fn under_shutdown_a_clear_still_clears() {
     let (r, handle) = resumed("resume-freeze-clear").await;
     r.daemon.final_save().await;
 
@@ -140,9 +142,9 @@ async fn s16_under_shutdown_a_clear_still_clears() {
     end(r, handle).await;
 }
 
-// S28b
+// "Set with no holder is refused"
 #[tokio::test]
-async fn s28b_a_command_is_checked_before_its_holder() {
+async fn a_command_is_checked_before_its_holder() {
     let daemon = Daemon::new(tmp_dir("resume-no-holder").join("state.json")).await.unwrap();
     daemon.terms.lock().await.insert("T".into(), TermHandle::detached());
 

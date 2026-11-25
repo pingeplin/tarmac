@@ -30,46 +30,52 @@ final class DevUntilTests: XCTestCase {
         DevUntil.evaluate(try DevUntil.parse(source), against: against ?? snapshot())
     }
 
-    // MARK: - S25 ==
+    // MARK: - "Zoom equality expression compares numbers" ==
 
-    func testS25ComparesANumberAtADottedPath() throws {
+    /// "Zoom equality expression compares numbers".
+    func testComparesANumberAtADottedPath() throws {
         XCTAssertTrue(try holds("viewport.zoom == 0.5"))
         XCTAssertFalse(try holds("viewport.zoom == 0.5", against: snapshot(zoom: 1)))
     }
 
-    // MARK: - S26 ~= is |Δ| ≤ 1
+    // MARK: - "Approximate match allows one unit" ~= is |Δ| ≤ 1
 
     private func approx(_ width: Double) throws -> Bool {
         try holds("cards[t-1].board_rect.w ~= 800", against: snapshot(cards: [term(width: width)]))
     }
 
+    /// "Approximate match allows one unit".
     /// The load-bearing rows: at |Δ| = 1 a `< 1` implementation says false.
-    func testS26AcceptsADeltaOfExactlyOneInBothDirections() throws {
+    func testAcceptsADeltaOfExactlyOneInBothDirections() throws {
         XCTAssertTrue(try approx(799))
         XCTAssertTrue(try approx(801))
     }
 
-    func testS26AcceptsInsideTheBandAndRejectsOutsideIt() throws {
+    /// "Approximate match allows one unit".
+    func testAcceptsInsideTheBandAndRejectsOutsideIt() throws {
         XCTAssertTrue(try approx(799.4))
         XCTAssertTrue(try approx(800.9))
         XCTAssertFalse(try approx(798.9))
         XCTAssertFalse(try approx(801.5), "rules out a ≤ 2 band")
     }
 
-    func testS26IsFalseWhenEitherSideIsNotANumber() throws {
+    /// "Approximate match allows one unit".
+    func testIsFalseWhenEitherSideIsNotANumber() throws {
         XCTAssertFalse(try holds("cards[t-1].kind ~= 800"))
         XCTAssertFalse(try holds(#"cards[t-1].board_rect.w ~= "800""#))
     }
 
-    // MARK: - S27/S28 a bracketed card id is literal
+    // MARK: - a bracketed card id is literal
 
-    func testS27ResolvesAnIDContainingDotsAndSlashes() throws {
+    /// "Bracketed card id with dots resolves".
+    func testResolvesAnIDContainingDotsAndSlashes() throws {
         // A naive split on "." would look for a `cards[/Users/e/a` card.
         XCTAssertFalse(try holds("cards[/Users/e/a.b.md].focused == true"))
         XCTAssertTrue(try holds(#"cards[/Users/e/a.b.md].kind == "doc""#))
     }
 
-    func testS28RunsTheIDToTheLastBracketSoAnIDMayContainOne() throws {
+    /// "Bracketed card id runs to last bracket".
+    func testRunsTheIDToTheLastBracketSoAnIDMayContainOne() throws {
         XCTAssertTrue(try holds(#"cards[/tmp/a]b.md].kind == "doc""#))
     }
 
@@ -78,19 +84,22 @@ final class DevUntilTests: XCTestCase {
         XCTAssertTrue(try holds(#"cards[t-1].kind == "term""#))
     }
 
-    // MARK: - S29 contains
+    // MARK: - "Contains matches scrollback text"
 
-    func testS29IsASubstringTestOnAString() throws {
+    /// "Contains matches scrollback text".
+    func testIsASubstringTestOnAString() throws {
         XCTAssertTrue(try holds(#"cards[t-1].term.scrollback_tail contains "hi""#))
         XCTAssertFalse(try holds(#"cards[t-1].term.scrollback_tail contains "nope""#))
     }
 
+    /// "Contains matches scrollback text".
     /// `"abc".contains("")` is false in Swift; `includes("")` is true.
-    func testS29TheEmptyStringIsContainedInAnyString() throws {
+    func testTheEmptyStringIsContainedInAnyString() throws {
         XCTAssertTrue(try holds(#"cards[t-1].term.scrollback_tail contains """#))
     }
 
-    func testS29TheNeedleMatchesByCodeUnitsNotByGraphemeCluster() throws {
+    /// "Contains matches scrollback text".
+    func testTheNeedleMatchesByCodeUnitsNotByGraphemeCluster() throws {
         let tail: JSONValue = ["term": ["scrollback_tail": "e\u{301}"]]
         XCTAssertTrue(try holds(#"term.scrollback_tail contains "e""#, against: tail))
     }
@@ -106,9 +115,10 @@ final class DevUntilTests: XCTestCase {
         XCTAssertFalse(try holds("cards[\u{E9}].s != \"x\"", against: decomposed), "a different id does not resolve")
     }
 
-    // MARK: - S30 !=
+    // MARK: - "Not-equal works on strings and null"
 
-    func testS30WorksAgainstAStringAndAgainstNull() throws {
+    /// "Not-equal works on strings and null".
+    func testWorksAgainstAStringAndAgainstNull() throws {
         XCTAssertFalse(try holds(#"cards[t-1].term.proc != "sleep""#))
         XCTAssertTrue(try holds("cards[t-1].term.proc != null"))
         XCTAssertFalse(try holds("cards[t-1].term.selection != null"))
@@ -131,9 +141,10 @@ final class DevUntilTests: XCTestCase {
         XCTAssertFalse(try holds("\u{E9} != 1", against: decomposedKey), "unresolvable: neither polarity fires")
     }
 
-    // MARK: - S31 an unresolvable path is false, not an error
+    // MARK: - "Unresolved path evaluates to false" an unresolvable path is false, not an error
 
-    func testS31KeepsPollingForACardThatHasNotRenderedYet() throws {
+    /// "Unresolved path evaluates to false".
+    func testKeepsPollingForACardThatHasNotRenderedYet() throws {
         XCTAssertFalse(try holds("cards[t-9].term.cols == 80"))
         XCTAssertFalse(try holds("viewport.nope == 1"))
         XCTAssertFalse(try holds("cards[/Users/e/a.b.md].term.cols == 80"))
@@ -142,30 +153,34 @@ final class DevUntilTests: XCTestCase {
         XCTAssertFalse(try holds("cards[t-9].term.cols != 80"))
     }
 
-    func testS31AnUnclosedBracketOrADescentThroughAScalarDoesNotResolve() throws {
+    /// "Unresolved path evaluates to false".
+    func testAnUnclosedBracketOrADescentThroughAScalarDoesNotResolve() throws {
         XCTAssertFalse(try holds("cards[t-1.kind == 1"))
         XCTAssertFalse(try holds("viewport.zoom.deeper == 1"))
         XCTAssertFalse(try holds("cards[t-1].kind.deeper != 1"))
     }
 
-    // MARK: - S32 contains on a non-string
+    // MARK: - "Contains on number or null is false"
 
-    func testS32IsFalseAndDoesNotThrow() throws {
+    /// "Contains on number or null is false".
+    func testIsFalseAndDoesNotThrow() throws {
         XCTAssertFalse(try holds(#"viewport.zoom contains "0""#))
         XCTAssertFalse(try holds(#"cards[t-1].term.selection contains "x""#))
         XCTAssertFalse(try holds("cards[t-1].term.scrollback_tail contains 5"))
     }
 
-    // MARK: - S33 a malformed expression is a parse error, not false
+    // MARK: - "Malformed expression gives parse error" a malformed expression is a parse error, not false
 
-    func testS33IsDistinguishableFromAnExpressionThatSimplyDoesNotHold() throws {
+    /// "Malformed expression gives parse error".
+    func testIsDistinguishableFromAnExpressionThatSimplyDoesNotHold() throws {
         for bad in ["viewport.zoom =! 0.5", #"cards[t-1].kind == "unterminated"#, "", "   ", "viewport.zoom", "== 1"] {
             XCTAssertThrowsError(try DevUntil.parse(bad), bad.debugDescription)
         }
         XCTAssertNoThrow(try DevUntil.parse("viewport.zoom == 1"))
     }
 
-    func testS33TheErrorsSayWhatWasWrong() {
+    /// "Malformed expression gives parse error".
+    func testTheErrorsSayWhatWasWrong() {
         XCTAssertEqual(parseError("   "), "empty expression")
         XCTAssertEqual(parseError("== 1"), "missing path")
         XCTAssertEqual(parseError("viewport.zoom"), #"expected <path> <op> <value>, got "viewport.zoom""#)
@@ -184,9 +199,10 @@ final class DevUntilTests: XCTestCase {
         }
     }
 
-    // MARK: - S34 value literals
+    // MARK: - "Literal values parse as their types"
 
-    func testS34ParsesEachType() throws {
+    /// "Literal values parse as their types".
+    func testParsesEachType() throws {
         func value(_ source: String) throws -> JSONValue {
             try DevUntil.parse("x == \(source)").value
         }

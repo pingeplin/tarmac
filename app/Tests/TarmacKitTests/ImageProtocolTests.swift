@@ -20,7 +20,7 @@ final class ImageProtocolTests: XCTestCase {
         String(decoding: response.body, as: UTF8.self)
     }
 
-    /// S12: two types in one run, so a constant Content-Type fails.
+    /// 2609.0014 "Png file is served with image headers": two types in one run, so a constant Content-Type fails.
     func testAReadableImageIsServedByteForByteWithItsTypeAndImageOnlyHeaders() {
         // PNG signature plus 0xFF, never valid UTF-8: a text path would mangle it.
         let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0xFF, 0xFE])
@@ -44,7 +44,7 @@ final class ImageProtocolTests: XCTestCase {
         XCTAssertEqual(resp.headers, imageOnlyHeaders.merging(["Content-Type": "image/png"]) { $1 })
     }
 
-    /// S17
+    /// 2609.0014 "Image name with special characters is served".
     func testAnExoticPngNameRoundTripsAsOneEncodedSegment() {
         let path = "/var/folders/zz/T/tarmac-img-test-1-s17 spaces 圖表 100% hash# q?.png"
         let bytes = Data([0x89, 0x50, 0x4E, 0x47, 0xFF])
@@ -54,7 +54,7 @@ final class ImageProtocolTests: XCTestCase {
         XCTAssertEqual(resp.body, bytes)
     }
 
-    /// S14: the extension is judged on the path, so a refused file is never opened.
+    /// 2609.0014 "Non-image file type is refused with 403": the extension is judged on the path, so a refused file is never opened.
     func testAReadableFileWithoutAnImageExtensionIs403AndNeverServed() {
         for name in ["s14.html", "s14.md", "s14.png.html", "s14-no-extension"] {
             let path = "/tmp/\(name)"
@@ -76,7 +76,7 @@ final class ImageProtocolTests: XCTestCase {
         )
     }
 
-    /// S15
+    /// 2609.0014 "Missing image file gives 404".
     func testAMissingImageIs404NamingItsPathButAMissingHtmlIs403() {
         let png = "/tmp/tarmac-img-test-1-s15-missing.png"
         let html = "/tmp/tarmac-img-test-1-s15-missing.html"
@@ -98,7 +98,7 @@ final class ImageProtocolTests: XCTestCase {
         XCTAssertEqual(text(resp), "/tmp/a.png: disk on fire")
     }
 
-    /// S16
+    /// 2609.0014 "Malformed image URI gives 400".
     func testAnUndecodableURIIs400PlainText() {
         for uri in ["tarmac-card://img/?v=1", "tarmac-card://img/%FF?v=1", "tarmac-card://doc/x.png?v=1"] {
             let resp = serve(uri)
@@ -123,7 +123,7 @@ final class ImageProtocolTests: XCTestCase {
         XCTAssertEqual(serve("tarmac-card://img/%2Ftmp%2Fa.png%00?v=1").status, 403)
     }
 
-    /// S13: the test keeps its own copy — iterating the production table would pass
+    /// 2609.0014 "Content type table matches Appendix A": the test keeps its own copy — iterating the production table would pass
     /// however wrong it is; only its row count is read from production.
     func testEveryAppendixAExtensionMapsToExactlyItsType() {
         XCTAssertEqual(SchemeParityTables.appendixA.count, 128)
@@ -133,7 +133,7 @@ final class ImageProtocolTests: XCTestCase {
         XCTAssertEqual(ImageProtocol.imageTypes.count, SchemeParityTables.appendixA.count)
     }
 
-    /// S13
+    /// 2609.0014 "Content type table matches Appendix A".
     func testExtensionMatchIgnoresCase() {
         XCTAssertEqual(ImageProtocol.contentType(forPath: "/d/x.PNG"), "image/png")
         XCTAssertEqual(ImageProtocol.contentType(forPath: "/d/x.JpEg"), "image/jpeg")
@@ -142,7 +142,7 @@ final class ImageProtocolTests: XCTestCase {
         XCTAssertEqual(ImageProtocol.contentType(forPath: "/d/x.Svg"), "image/svg+xml")
     }
 
-    /// S13
+    /// 2609.0014 "Content type table matches Appendix A".
     func testANameWithoutAListedExtensionHasNoType() {
         for path in ["/d/x.png.txt", "/d/README", "/d/.png", "/d/x.", "/d/x.cgm"] {
             XCTAssertNil(ImageProtocol.contentType(forPath: path), path)

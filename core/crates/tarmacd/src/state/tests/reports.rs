@@ -1,7 +1,7 @@
 use super::*;
 use crate::term::TermHandle;
 
-// 2611.0009 S36: a caller the walk cannot place, in a terminal with no
+// 2611.0009 "Holder decision picks agent leader shell or none": a caller the walk cannot place, in a terminal with no
 // foreground leader, is refused. No live pty has no leader, so the handle is
 // one that no process holds.
 #[tokio::test]

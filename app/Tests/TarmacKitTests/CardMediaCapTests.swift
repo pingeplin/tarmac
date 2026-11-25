@@ -207,7 +207,8 @@ final class CardMediaCapTests: XCTestCase {
 
     // MARK: - The cap (G1, G2)
 
-    func testS1AWideImageIsCappedAt1080InEveryZoom() throws {
+    /// "PNG image scales to cap at any zoom".
+    func testAWideImageIsCappedAt1080InEveryZoom() throws {
         for zoom in [nil, 1, 3] as [Double?] {
             let view = try card(Self.s1, zoom: zoom)
             try assertBox(view, "m", 1080, 270, "zoom \(String(describing: zoom))")
@@ -216,33 +217,38 @@ final class CardMediaCapTests: XCTestCase {
         }
     }
 
-    func testS2AnImageSizedByItsAttributesKeepsItsRatio() throws {
+    /// "Image with width and height attributes is capped".
+    func testAnImageSizedByItsAttributesKeepsItsRatio() throws {
         let view = try card(Self.s2)
         try assertBox(view, "m", 1080, 270)
         try assertControl(view)
     }
 
-    func testS3AnSVGTheAuthorSizedFullWidthIsCappedAndScaled() throws {
+    /// "SVG with viewBox and full width is capped".
+    func testAnSVGTheAuthorSizedFullWidthIsCappedAndScaled() throws {
         let view = try card(Self.s3)
         try assertBox(view, "m", 1080, 270)
         try assertControl(view)
         try assertRedAtRightEdge(view, "m")
     }
 
-    func testS4AnSVGWithAViewBoxAndASizeIsCapped() throws {
+    /// "SVG with size attributes and viewBox is capped".
+    func testAnSVGWithAViewBoxAndASizeIsCapped() throws {
         let view = try card(Self.s4)
         try assertBox(view, "m", 1080, 270)
         try assertControl(view)
     }
 
-    func testS5AnSVGWithNoViewBoxKeepsItsSizeAndIsNotCropped() throws {
+    /// "SVG without viewBox keeps its own size".
+    func testAnSVGWithNoViewBoxKeepsItsSizeAndIsNotCropped() throws {
         let view = try card(Self.s5)
         try assertBox(view, "m", 1300, 325)
         try assertControl(view)
         try assertRedAtRightEdge(view, "m")
     }
 
-    func testS6ANestedSVGScalesWithItsParent() throws {
+    /// "Nested SVG scales with its parent".
+    func testANestedSVGScalesWithItsParent() throws {
         let view = try card(Self.s6)
         let outer = try box(view, "m")
         XCTAssertEqual(outer[2], 1080, accuracy: 1, "the outer svg")
@@ -250,7 +256,8 @@ final class CardMediaCapTests: XCTestCase {
         try assertControl(view)
     }
 
-    func testS7ACanvasWithAFixedHeightDrawsUndistorted() throws {
+    /// "Wide canvas is capped without distortion".
+    func testACanvasWithAFixedHeightDrawsUndistorted() throws {
         let view = try card(Self.s7)
         try assertBox(view, "m", 1080, 200)
         try assertControl(view)
@@ -262,7 +269,8 @@ final class CardMediaCapTests: XCTestCase {
         XCTAssertEqual(width, height, accuracy: 2, "the circle is round")
     }
 
-    func testS8AnImageWithAFixedHeightDrawsWholeAndUndistortedInItsBox() throws {
+    /// "Image with fixed height is contained".
+    func testAnImageWithAFixedHeightDrawsWholeAndUndistortedInItsBox() throws {
         let view = try card(Self.s8)
         try assertBox(view, "m", 1080, 400)
         try assertControl(view)
@@ -276,25 +284,29 @@ final class CardMediaCapTests: XCTestCase {
         XCTAssertTrue(pixels.isRed(b[0] + b[2] - 5, midY), "red at its right edge")
     }
 
-    func testS9AVideoSizedByItsAttributesIsCapped() throws {
+    /// "Video with size attributes is capped".
+    func testAVideoSizedByItsAttributesIsCapped() throws {
         let view = try card(Self.s9)
         try assertBox(view, "m", 1080, 270)
         try assertControl(view)
     }
 
-    func testS10AnImageInANarrowBoxIsNoWiderThanTheBox() throws {
+    /// "Image in a narrow box shrinks to fit".
+    func testAnImageInANarrowBoxIsNoWiderThanTheBox() throws {
         let view = try card(Self.s10)
         try assertBox(view, "m", 200, 50)
         try assertControl(view)
     }
 
-    func testS11AnImageInACellAFlexRowOrAnInlineBlockDoesNotCollapse() throws {
+    /// "Image in cell flex or inline is capped".
+    func testAnImageInACellAFlexRowOrAnInlineBlockDoesNotCollapse() throws {
         let view = try card(Self.s11.map(\.body).joined())
         for medium in Self.s11 { try assertBox(view, medium.id, 1080, 270) }
         try assertControl(view)
     }
 
-    func testS12SmallMediaKeepTheirSize() throws {
+    /// "Small media keep their own size".
+    func testSmallMediaKeepTheirSize() throws {
         let view = try card(Self.s12.map(\.body).joined())
         try assertBox(view, "icon", 24, 24)
         try assertBox(view, "glyph", 16, 16)
@@ -303,7 +315,8 @@ final class CardMediaCapTests: XCTestCase {
 
     // MARK: - The author's rules win (G3)
 
-    func testS13AnAuthorsMaxWidthLiftsTheCap() throws {
+    /// "Author max-width none overrides the cap".
+    func testAnAuthorsMaxWidthLiftsTheCap() throws {
         let pages: [(String, String, Double, Double)] = [
             ("img { max-width: none; }", #"<img id="m" src="\#(Self.wide)">"#, 2000, 500),
             (".w { max-width: 100%; }", #"<img id="m" class="w" src="\#(Self.wide)">"#, 1400, 350),
@@ -316,13 +329,15 @@ final class CardMediaCapTests: XCTestCase {
         }
     }
 
-    func testS14AnAuthorsOwnCapWins() throws {
+    /// "Author max-width of 300 pixels wins".
+    func testAnAuthorsOwnCapWins() throws {
         let view = try card(Self.s1, css: "img { max-width: 300px; }")
         try assertBox(view, "m", 300, 75)
         try assertControl(view)
     }
 
-    func testS15AnAuthorsObjectFitWins() throws {
+    /// "Author object-fit is kept".
+    func testAnAuthorsObjectFitWins() throws {
         let view = try card(Self.s8, css: "img { object-fit: cover; }")
         XCTAssertEqual(try eval(view, "getComputedStyle(document.getElementById('m')).objectFit") as? String, "cover")
         try assertControl(view)
@@ -330,14 +345,16 @@ final class CardMediaCapTests: XCTestCase {
 
     // MARK: - When (D4, D5)
 
-    func testS16ARevealCardIsCappedToo() throws {
+    /// "Zoom reveal meta does not change the cap".
+    func testARevealCardIsCappedToo() throws {
         let view = try card(Self.s1, head: #"<meta name="tarmac-zoom" content="reveal">"#)
         try assertBox(view, "m", 1080, 270)
         try assertControl(view)
         try assertRedAtRightEdge(view, "m")
     }
 
-    func testS17TheCapIsThereBeforeTheBodyIsParsed() throws {
+    /// "Cap sheet exists before the body is parsed".
+    func testTheCapIsThereBeforeTheBodyIsParsed() throws {
         let probe = """
             <script>
               window.seenMaxWidth = (() => {
@@ -355,7 +372,8 @@ final class CardMediaCapTests: XCTestCase {
         try assertControl(view)
     }
 
-    func testS18OneMediaSheetFirstBesideTheFontAndMarkerSheets() throws {
+    /// "Media font and marker sheets stay separate".
+    func testOneMediaSheetFirstBesideTheFontAndMarkerSheets() throws {
         let fonts = CardFontVariables(interfaceFamily: "Menlo", documentFamily: "Georgia", documentSize: 16)
         let later = CardFontVariables(interfaceFamily: nil, documentFamily: nil, documentSize: 20)
         let view = try card("<ul><li>a</li></ul>", zoom: 3, fonts: fonts)
@@ -394,20 +412,23 @@ final class CardMediaCapTests: XCTestCase {
 
     // MARK: - height: auto with a width attribute only (D1a, G5)
 
-    func testS21AWidthAttributeGivesTheImageItsOwnRatio() throws {
+    /// "Auto height beats the height attribute".
+    func testAWidthAttributeGivesTheImageItsOwnRatio() throws {
         let view = try card(Self.s21)
         try assertBox(view, "m", 400, 100)
         try assertControl(view)
     }
 
-    func testS22AnSVGKeepsTheHeightItWasGiven() throws {
+    /// "SVG with explicit height keeps that height".
+    func testAnSVGKeepsTheHeightItWasGiven() throws {
         let view = try card(Self.s22.map(\.body).joined())
         try assertBox(view, "tall", 1080, 200)
         try assertBox(view, "square", 300, 100)
         try assertControl(view)
     }
 
-    func testS23AnSVGInAnAuthorsScrollerIsCappedAndTheScrollerNoLongerScrolls() throws {
+    /// "SVG in a scrolling box shrinks to fit".
+    func testAnSVGInAnAuthorsScrollerIsCappedAndTheScrollerNoLongerScrolls() throws {
         let view = try card(Self.s23)
         try assertBox(view, "m", 600, 150)
         let scroller = try XCTUnwrap(
@@ -419,13 +440,15 @@ final class CardMediaCapTests: XCTestCase {
         try assertControl(view)
     }
 
-    func testS24ACanvasSizedByItsAttributesIsCapped() throws {
+    /// "Canvas with no CSS size is capped".
+    func testACanvasSizedByItsAttributesIsCapped() throws {
         let view = try card(Self.s24)
         try assertBox(view, "m", 1080, 270)
         try assertControl(view)
     }
 
-    func testS25TheCapNeverMakesAMediumLarger() throws {
+    /// "Cap never makes any box bigger".
+    func testTheCapNeverMakesAMediumLarger() throws {
         let short = Medium(id: "m", body: #"<img id="m" height="40" src="\#(Self.wide)">"#)
         let sparkline = Self.svg("m", #"viewBox="0 0 100 20" height="20""#, width: 100, height: 20)
         let inline = Medium(id: "m", body: #"<span style="display:inline-block">\#(sparkline)</span>"#)

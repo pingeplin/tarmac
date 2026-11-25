@@ -47,9 +47,9 @@ fn set_by_agent(daemon: &TestDaemon, secs: u32) -> (Conn, FrameLog, Instant) {
     (app, log, sent)
 }
 
-// S1, S2
+// "Agent sets a resume command", "Agent exit drops the resume command"
 #[test]
-fn s1_s2_an_agent_sets_the_command_and_its_exit_drops_it() {
+fn an_agent_sets_the_command_and_its_exit_drops_it() {
     let daemon = TestDaemon::start_sh();
     let (_app, _log, sent) = set_by_agent(&daemon, 3);
 
@@ -67,7 +67,7 @@ fn s1_s2_an_agent_sets_the_command_and_its_exit_drops_it() {
     assert!(!term_records(&daemon.state_json(), 0)["T"]["last_cwd"].is_null());
 }
 
-/// S3: a command whose agent still runs survives the daemon's death.
+/// "Resume command survives a daemon kill": a command whose agent still runs survives the daemon's death.
 fn survives(kill: impl FnOnce(&mut TestDaemon)) {
     let mut daemon = TestDaemon::start_sh();
     let _set = set_by_agent(&daemon, 30);
@@ -80,15 +80,15 @@ fn survives(kill: impl FnOnce(&mut TestDaemon)) {
     assert_eq!(restore.resume_cmd("T"), Some("echo HI"));
 }
 
-// S3
+// "Resume command survives a daemon kill"
 #[test]
-fn s3_a_sigkilled_daemon_leaves_the_command_for_the_next() {
+fn a_sigkilled_daemon_leaves_the_command_for_the_next() {
     survives(TestDaemon::restart);
 }
 
-// S3
+// "Resume command survives a daemon kill"
 #[test]
-fn s3_a_sigtermed_daemon_saves_the_command_for_the_next() {
+fn a_sigtermed_daemon_saves_the_command_for_the_next() {
     survives(|daemon| {
         let status = signal_and_wait(&mut daemon.child, libc::SIGTERM);
         assert!(status.success(), "the daemon exited with {status:?}");
@@ -107,9 +107,9 @@ fn moved(log: &mut FrameLog) -> (TestDaemon, String, Conn) {
     (daemon, a, app)
 }
 
-// S4
+// "Moved record drops resume on typed key"
 #[test]
-fn s4_a_moved_command_is_dropped_by_typed_input_only() {
+fn a_moved_command_is_dropped_by_typed_input_only() {
     let mut log = FrameLog::default();
     let (daemon, a, mut app) = moved(&mut log);
 
@@ -126,9 +126,9 @@ fn s4_a_moved_command_is_dropped_by_typed_input_only() {
     });
 }
 
-// S4b
+// "New set over unclaimed record is kept"
 #[test]
-fn s4b_a_set_over_a_moved_command_is_held() {
+fn a_set_over_a_moved_command_is_held() {
     let mut log = FrameLog::default();
     let (daemon, _a, mut app) = moved(&mut log);
     agent_sets(&daemon, &mut app, &mut log, "T2", "echo HO", 30);
@@ -140,9 +140,9 @@ fn s4b_a_set_over_a_moved_command_is_held() {
     assert_eq!(restore.resume_cmd("T2"), Some("echo HO"));
 }
 
-// S13
+// "Typed key keeps a held record"
 #[test]
-fn s13_typed_input_does_not_drop_a_held_command() {
+fn typed_input_does_not_drop_a_held_command() {
     let daemon = TestDaemon::start_sh();
     let (mut app, _log, _) = set_by_agent(&daemon, 30);
 
@@ -153,9 +153,9 @@ fn s13_typed_input_does_not_drop_a_held_command() {
     assert_eq!(restore.resume_cmd("T"), Some("echo HI"));
 }
 
-// S14
+// "Prompt set lasts while the shell lives"
 #[test]
-fn s14_a_command_set_at_the_prompt_lasts_while_the_shell_lives() {
+fn a_command_set_at_the_prompt_lasts_while_the_shell_lives() {
     let daemon = TestDaemon::start_sh();
     let mut log = FrameLog::default();
     let mut app = daemon.shell_at_prompt("T", Spawn::default(), &mut log);
@@ -172,7 +172,7 @@ fn s14_a_command_set_at_the_prompt_lasts_while_the_shell_lives() {
     assert_eq!(restore.resume_cmd("T"), Some("echo HI"));
 }
 
-/// S15: `T` with a command held by a live agent ends with `exit <code>`.
+/// "Ended terminal drops command but keeps folder": `T` with a command held by a live agent ends with `exit <code>`.
 fn ends_with(code: i64) -> TestDaemon {
     let daemon = TestDaemon::start_sh();
     let (mut app, _log, _) = set_by_agent(&daemon, 30);
@@ -185,9 +185,9 @@ fn ends_with(code: i64) -> TestDaemon {
     daemon
 }
 
-// S15
+// "Ended terminal drops command but keeps folder"
 #[test]
-fn s15_a_failed_exit_drops_the_command_and_keeps_the_folder() {
+fn a_failed_exit_drops_the_command_and_keeps_the_folder() {
     let daemon = ends_with(3);
     daemon.wait_for_state("T with no resume", |v| {
         let record = &term_records(v, 0)["T"];
@@ -195,16 +195,16 @@ fn s15_a_failed_exit_drops_the_command_and_keeps_the_folder() {
     });
 }
 
-// S15
+// "Ended terminal drops command but keeps folder"
 #[test]
-fn s15_a_clean_exit_drops_the_entry() {
+fn a_clean_exit_drops_the_entry() {
     let daemon = ends_with(0);
     daemon.wait_for_state("no entry for T", |v| term_records(v, 0)["T"].is_null());
 }
 
-// S17
+// "Repeated set does not save"
 #[test]
-fn s17_a_repeat_of_the_same_command_does_not_save() {
+fn a_repeat_of_the_same_command_does_not_save() {
     let daemon = TestDaemon::start_sh();
     let mut log = FrameLog::default();
     let mut app = daemon.shell_at_prompt("T", Spawn::default(), &mut log);
@@ -242,9 +242,9 @@ fn s17_a_repeat_of_the_same_command_does_not_save() {
     assert_ne!(daemon.state_inode(), kept, "the control: a set that changes the command saves");
 }
 
-// S18
+// "Clear removes the resume command"
 #[test]
-fn s18_a_clear_saves_once_and_a_second_clear_does_not() {
+fn a_clear_saves_once_and_a_second_clear_does_not() {
     let daemon = TestDaemon::start_sh();
     let _set = set_by_agent(&daemon, 30);
     wait_saved(&daemon, "T", &json!({"cmd": "echo HI"}));
@@ -258,9 +258,9 @@ fn s18_a_clear_saves_once_and_a_second_clear_does_not() {
     assert_no_save(&daemon, kept);
 }
 
-// S28
+// "Daemon refuses bad resume requests"
 #[test]
-fn s28_the_daemon_refuses_an_unknown_terminal_then_a_bad_command() {
+fn the_daemon_refuses_an_unknown_terminal_then_a_bad_command() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     app.spawn_term("T", &["/bin/sh", "-c", "echo UP; read _"]);
@@ -315,9 +315,9 @@ fn assert_no_term_resume(app: &mut Conn, log: &FrameLog, from: usize) {
     assert!(common::none_within(app, QUIET, is_term_resume), "a term_resume came");
 }
 
-// S11
+// "Push comes at a set not a repeat"
 #[test]
-fn s11_a_set_pushes_the_command_and_a_repeat_of_it_does_not() {
+fn a_set_pushes_the_command_and_a_repeat_of_it_does_not() {
     let daemon = TestDaemon::start_sh();
     let mut log = FrameLog::default();
     let mut app = daemon.shell_at_prompt("T", Spawn::default(), &mut log);
@@ -342,9 +342,9 @@ fn s11_a_set_pushes_the_command_and_a_repeat_of_it_does_not() {
     assert_eq!(restore.resume_cmd("T"), Some("echo HO"));
 }
 
-// S12
+// "Push at a CLI clear"
 #[test]
-fn s12_a_cli_clear_pushes_once() {
+fn a_cli_clear_pushes_once() {
     let daemon = TestDaemon::start_sh();
     let (mut app, mut log, _) = set_by_agent(&daemon, 30);
     await_term_resume(&mut app, &mut log, 0);
@@ -359,9 +359,9 @@ fn s12_a_cli_clear_pushes_once() {
     assert_no_term_resume(&mut app, &log, again);
 }
 
-// S13
+// "Push when the poll drops the command"
 #[test]
-fn s13_the_polls_drop_pushes_a_clear() {
+fn the_polls_drop_pushes_a_clear() {
     let daemon = TestDaemon::start_sh();
     let (mut app, mut log, sent) = set_by_agent(&daemon, 3);
     let set = await_term_resume(&mut app, &mut log, 0);
@@ -400,9 +400,9 @@ fn seeded_successor(log: &mut FrameLog) -> (TestDaemon, String, Conn) {
     (daemon, a, app)
 }
 
-// S14
+// "Push at the typed drop only"
 #[test]
-fn s14_the_move_pushes_nothing_and_the_typed_drop_pushes_a_clear() {
+fn the_move_pushes_nothing_and_the_typed_drop_pushes_a_clear() {
     let mut log = FrameLog::default();
     let (_daemon, mut app) = moved_on_one_connection(&mut log);
     assert_no_term_resume(&mut app, &log, 0);
@@ -413,9 +413,9 @@ fn s14_the_move_pushes_nothing_and_the_typed_drop_pushes_a_clear() {
     assert_eq!(log.0[at].msg, term_resume("T2", None));
 }
 
-// S15
+// "App session clear only drops unclaimed records"
 #[test]
-fn s15_the_app_clear_drops_an_unclaimed_record_and_a_cmd_from_the_app_sets_none() {
+fn the_app_clear_drops_an_unclaimed_record_and_a_cmd_from_the_app_sets_none() {
     let mut log = FrameLog::default();
     let (daemon, mut app) = moved_on_one_connection(&mut log);
 
@@ -440,9 +440,9 @@ fn s15_the_app_clear_drops_an_unclaimed_record_and_a_cmd_from_the_app_sets_none(
     assert_eq!(restore.resume_cmd("T2"), None);
 }
 
-// S15
+// "App session clear only drops unclaimed records"
 #[test]
-fn s15_the_app_clear_never_drops_a_held_record() {
+fn the_app_clear_never_drops_a_held_record() {
     let daemon = TestDaemon::start_sh();
     let (mut app, mut log, _) = set_by_agent(&daemon, 30);
     await_term_resume(&mut app, &mut log, 0);
@@ -454,9 +454,9 @@ fn s15_the_app_clear_never_drops_a_held_record() {
     assert_eq!(restore.resume_cmd("T"), Some("echo HI"));
 }
 
-// S20
+// "No push at terminal end or close"
 #[test]
-fn s20_the_end_of_a_terminal_and_a_close_push_nothing() {
+fn the_end_of_a_terminal_and_a_close_push_nothing() {
     let daemon = TestDaemon::start_sh();
     let (mut app, mut log, _) = set_by_agent(&daemon, 30);
     await_term_resume(&mut app, &mut log, 0);
@@ -477,9 +477,9 @@ fn s20_the_end_of_a_terminal_and_a_close_push_nothing() {
     assert_no_term_resume(&mut app, &log, closed);
 }
 
-// S21
+// "Resume push is not an event"
 #[test]
-fn s21_a_subscriber_never_gets_a_term_resume() {
+fn a_subscriber_never_gets_a_term_resume() {
     let daemon = TestDaemon::start_sh();
     let mut log = FrameLog::default();
     let mut app = daemon.shell_at_prompt("T", Spawn::default(), &mut log);
@@ -495,9 +495,9 @@ fn s21_a_subscriber_never_gets_a_term_resume() {
     assert!(exit.is_some(), "the control: the subscriber got no exit");
 }
 
-// S24
+// "App clear for an unknown terminal changes nothing"
 #[test]
-fn s24_an_app_clear_for_an_unknown_terminal_changes_nothing() {
+fn an_app_clear_for_an_unknown_terminal_changes_nothing() {
     let daemon = TestDaemon::start_sh();
     let mut log = FrameLog::default();
     let mut app = daemon.shell_at_prompt("T", Spawn::default(), &mut log);

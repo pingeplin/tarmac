@@ -181,7 +181,7 @@ pub(super) fn changed(mut helper: Command, settle: Option<Duration>, deadline: O
 mod tests {
     use super::*;
 
-    // S27
+    // "Wait changed polls and settles on time"
     #[test]
     fn the_poll_is_fast_for_2_s_then_slow() {
         let ms = Duration::from_millis;
@@ -211,7 +211,7 @@ mod tests {
         }
     }
 
-    // S27
+    // "Wait changed polls and settles on time"
     #[test]
     fn the_helper_samples_at_the_poll_cadence_and_ends_when_its_reader_has_gone() {
         let now = std::cell::Cell::new(Duration::ZERO);
@@ -234,7 +234,7 @@ mod tests {
         assert_eq!(String::from_utf8(reader.got).unwrap(), format!("{MISSING}\n").repeat(23));
     }
 
-    // S27
+    // "Wait changed polls and settles on time"
     #[test]
     fn the_wait_settles_only_after_a_quiet_settle_since_the_last_change() {
         let start = Instant::now();
@@ -258,7 +258,7 @@ mod tests {
         assert_eq!(quiet_at(Some(start), None), None);
     }
 
-    // S27: the line holds the mtime to the nanosecond.
+    // "Wait changed polls and settles on time": the line holds the mtime to the nanosecond.
     #[test]
     fn a_sample_holds_the_mtime_in_nanoseconds() {
         let dir = crate::fixtures::scratch();
@@ -310,7 +310,7 @@ mod tests {
         Some(Instant::now() + Duration::from_millis(ms))
     }
 
-    // S27
+    // "Wait changed polls and settles on time"
     #[test]
     fn a_sample_line_differs_in_any_of_its_facts() {
         let base = a();

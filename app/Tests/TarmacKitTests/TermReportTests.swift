@@ -15,7 +15,8 @@ final class TermReportTests: XCTestCase {
         .termReport(termID: "t1", kind: kind, text: text, atMs: atMs, proc: proc, read: read)
     }
 
-    func testS19AFrameWithNoKindAnUnknownKindOrNoAtMsIsNoReportForItsTerminal() {
+    /// "Chip copy without proc or text".
+    func testAFrameWithNoKindAnUnknownKindOrNoAtMsIsNoReportForItsTerminal() {
         for message in [frame(kind: nil), frame(kind: "later"), frame(atMs: nil)] {
             let parsed = TermReport.frame(message)
             XCTAssertEqual(parsed?.termID, "t1")

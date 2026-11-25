@@ -93,7 +93,7 @@ impl Drop for Card {
     }
 }
 
-// S8a. The doc's own open is the one watch.
+// "Refused paths ask for no extra watch". The doc's own open is the one watch.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_data_file_that_is_refused_asks_for_no_watch() {
     let (source, calls, _release) = held_source(&[]);
@@ -128,7 +128,7 @@ async fn a_data_file_that_is_refused_asks_for_no_watch() {
     }
 }
 
-// S8b
+// "Refused paths leave the earlier watch alone"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_data_file_that_is_refused_leaves_the_registration_and_its_count() {
     let mut card = Card::silent("s8b").await;
@@ -147,7 +147,7 @@ async fn a_data_file_that_is_refused_leaves_the_registration_and_its_count() {
     assert!(!card.watched(&sub).await);
 }
 
-// S14a
+// "Failed watch is retried only on a wake"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_watch_that_fails_is_tried_again_at_a_wake_of_the_file_system_only() {
     let tmp = canon_tmp("s14a");
@@ -178,7 +178,7 @@ async fn a_watch_that_fails_is_tried_again_at_a_wake_of_the_file_system_only() {
     }
 }
 
-// S14d
+// "Repeated doc data picks up new subdirectory"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_same_name_again_tries_a_directory_that_is_wanted() {
     let card = Card::silent("s14d").await;
@@ -191,7 +191,7 @@ async fn the_same_name_again_tries_a_directory_that_is_wanted() {
     assert!(card.watched(&sub).await);
 }
 
-// S14e
+// "Unnamed file after a held try is unwatched"
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_registration_cleared_during_its_try_keeps_nothing_of_it() {
     let mut card = Card::within(canon_tmp("s14e"), Box::new(Silent), Duration::from_secs(30)).await;
@@ -209,7 +209,7 @@ async fn a_registration_cleared_during_its_try_keeps_nothing_of_it() {
     assert!(!card.watched(&sub).await);
 }
 
-// S17
+// "Doc data with no name unwatches the subdirectory"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_subdirectory_is_watched_while_a_doc_reads_a_file_in_it() {
     let mut card = Card::silent("s17").await;
@@ -224,7 +224,7 @@ async fn a_subdirectory_is_watched_while_a_doc_reads_a_file_in_it() {
     assert_eq!(file_events(&mut card.app), vec![]);
 }
 
-// S18
+// "New data name moves the watch"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn another_name_moves_the_count_to_its_directory() {
     let mut card = Card::silent("s18").await;
@@ -240,7 +240,7 @@ async fn another_name_moves_the_count_to_its_directory() {
     assert!(card.watched(&card.dir).await);
 }
 
-// S19
+// "Repeated doc data keeps one watch"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_same_name_again_counts_nothing_more() {
     let mut card = Card::silent("s19").await;
@@ -258,7 +258,7 @@ async fn the_same_name_again_counts_nothing_more() {
     assert!(!card.watched(&sub).await);
 }
 
-// S20
+// "Shared subdirectory stays watched until both drop it"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_subdirectory_two_docs_read_in_is_watched_until_both_name_none() {
     let mut card = Card::silent("s20").await;
@@ -275,7 +275,7 @@ async fn a_subdirectory_two_docs_read_in_is_watched_until_both_name_none() {
     assert!(!card.watched(&sub).await);
 }
 
-// S21
+// "Closed doc unwatches the subdirectory"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn closing_the_doc_gives_back_the_count_of_its_data_directory() {
     let mut card = Card::silent("s21").await;
@@ -289,7 +289,7 @@ async fn closing_the_doc_gives_back_the_count_of_its_data_directory() {
     assert!(card.watched(&card.dir).await);
 }
 
-// S21a
+// "Doc data refused when doc closes mid-resolve"
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_doc_closed_while_its_data_directory_is_counted_gives_the_count_back() {
     let mut card = Card::within(canon_tmp("s21a"), Box::new(Silent), Duration::from_secs(30)).await;
@@ -308,7 +308,7 @@ async fn a_doc_closed_while_its_data_directory_is_counted_gives_the_count_back()
     assert!(!card.watched(&sub).await);
 }
 
-// S22
+// "Deleted board unwatches the subdirectory"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn deleting_the_board_gives_back_the_count_of_a_data_directory() {
     let card = Card::silent("s22").await;
@@ -324,7 +324,7 @@ async fn deleting_the_board_gives_back_the_count_of_a_data_directory() {
     assert!(!card.watched(&sub).await);
 }
 
-// S23
+// "Open doc in the subdirectory keeps it watched"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_doc_open_in_the_subdirectory_keeps_its_own_count() {
     let mut card = Card::silent("s23").await;
@@ -339,7 +339,7 @@ async fn a_doc_open_in_the_subdirectory_keeps_its_own_count() {
     assert!(!card.watched(&sub).await);
 }
 
-// S24
+// "Closed doc unwatches its own directory"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_file_beside_the_doc_counts_nothing() {
     let mut card = Card::silent("s24").await;
@@ -353,7 +353,7 @@ async fn a_file_beside_the_doc_counts_nothing() {
     assert!(card.watched(&card.dir).await);
 }
 
-// S25
+// "Background board watches without events"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_doc_of_a_board_in_the_background_counts_its_data_directory() {
     let mut card = Card::silent("s25").await;
@@ -366,7 +366,7 @@ async fn a_doc_of_a_board_in_the_background_counts_its_data_directory() {
     assert_eq!(file_events(&mut card.app), vec![]);
 }
 
-// S27. The harness of `an_open_reports_a_change_that_no_wake_told_of`.
+// "New watch reports other doc changes at once". The harness of `an_open_reports_a_change_that_no_wake_told_of`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_data_file_that_makes_a_watch_reports_a_change_that_no_wake_told_of() {
     let mut card = Card::silent("s27").await;
@@ -380,7 +380,7 @@ async fn a_data_file_that_makes_a_watch_reports_a_change_that_no_wake_told_of() 
     assert!(file_events(&mut card.app).contains(&(kept, changed)));
 }
 
-// S28, the restart. The data file is not in the state file (S28 [it]).
+// "State file holds no data path", the restart. The data file is not in the state file ("State file holds no data path" [it]).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_restart_watches_no_data_directory_until_a_data_file_names_the_file() {
     let tmp = canon_tmp("s28");
@@ -415,7 +415,7 @@ async fn wake_from_fs(card: &mut Card) {
     assert_eq!(next_change(&mut card.app).await, (card.dash.clone(), changed), "the look of the wake");
 }
 
-// S14. `sub` is not there, then a regular file.
+// "Missing subdirectory is neither watched nor polled". `sub` is not there, then a regular file.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_data_directory_that_is_not_there_is_not_tried_until_a_wake() {
     for sub_is_a_file in [false, true] {
@@ -434,7 +434,7 @@ async fn a_data_directory_that_is_not_there_is_not_tried_until_a_wake() {
     }
 }
 
-// S14b
+// "Made subdirectory is watched only while named"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_data_directory_made_later_is_watched_at_a_wake_of_the_file_system() {
     let mut card = Card::silent("s14b").await;
@@ -457,7 +457,7 @@ async fn a_data_directory_made_later_is_watched_at_a_wake_of_the_file_system() {
     assert_eq!(calls.of(Change::Watch, &sub), 0);
 }
 
-// S14c. The resolve of `sub` does not return. Only that call is held: a
+// "Stuck resolve does not stop the registration". The resolve of `sub` does not return. Only that call is held: a
 // stamp of the data file held too would leave its key busy, and a look skips
 // a busy key with no call (`PathGate::stamps`), so nothing could show that
 // the registration stands.
@@ -483,7 +483,7 @@ async fn a_data_directory_whose_resolve_does_not_answer_is_watched_when_it_retur
     card.becomes_watched(&sub).await;
 }
 
-// S29a
+// "Link to the doc directory is not unwatched"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_data_path_through_a_link_to_the_doc_directory_counts_nothing() {
     let (source, calls, _release) = held_source(&[]);
@@ -500,7 +500,7 @@ async fn a_data_path_through_a_link_to_the_doc_directory_counts_nothing() {
     assert_eq!(calls.of(Change::Unwatch, &card.dir.join("self")), 0);
 }
 
-// S30
+// "Link leaving the directory is not watched"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_data_path_through_a_link_out_of_the_tree_watches_nothing() {
     let (source, calls, _release) = held_source(&[]);
@@ -530,7 +530,7 @@ async fn reading_through_in(card: &mut Card) -> PathBuf {
     real
 }
 
-// S31a
+// "Link inside the directory watches its target"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_data_path_through_a_link_in_the_tree_watches_the_directory_it_leads_to() {
     let (source, calls, _release) = held_source(&[]);
@@ -545,7 +545,7 @@ async fn a_data_path_through_a_link_in_the_tree_watches_the_directory_it_leads_t
     assert_eq!(calls.of(Change::Watch, &card.dir.join("in")), 0);
 }
 
-// S31b
+// "Retargeted link leaves no watch"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_count_is_given_back_for_the_directory_it_was_taken_for() {
     let (source, calls, _release) = held_source(&[]);
@@ -563,7 +563,7 @@ async fn the_count_is_given_back_for_the_directory_it_was_taken_for() {
     assert_eq!(calls.of(Change::Watch, &real2), 0);
 }
 
-// S34a
+// "Link to a hidden directory is not watched"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_data_path_through_a_link_to_a_hidden_directory_watches_nothing() {
     let (source, calls, _release) = held_source(&[]);
@@ -579,7 +579,7 @@ async fn a_data_path_through_a_link_to_a_hidden_directory_watches_nothing() {
     }
 }
 
-// S26
+// "App connection end unwatches until doc data returns"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_end_of_the_app_drops_every_data_registration_of_every_board() {
     let mut card = Card::silent("s26").await;
@@ -604,7 +604,7 @@ async fn the_end_of_the_app_drops_every_data_registration_of_every_board() {
     assert_eq!(next_change(&mut next).await.0, stats);
 }
 
-// S26a. Only this harness can put B's frames and A's end in a set order:
+// "New app connection takes over the watches". Only this harness can put B's frames and A's end in a set order:
 // `conn::handshake` sends `hello_ok` before `app_session` takes the place.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_end_of_an_app_that_lost_its_place_drops_nothing() {
@@ -631,7 +631,7 @@ async fn the_end_of_an_app_that_lost_its_place_drops_nothing() {
     }
 }
 
-// S26c. The name is in flight, with no count of its own (it was held), when
+// "Late old-connection doc data keeps new watch". The name is in flight, with no count of its own (it was held), when
 // another connection takes the place and drops the registration.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_name_in_flight_when_the_place_is_taken_leaves_the_new_apps_name_counted() {
@@ -672,7 +672,7 @@ async fn try_held_in_the_watcher(tag: &str) -> (Card, Arc<SourceCalls>, std::syn
     (card, calls, release, changed)
 }
 
-// S14f
+// "Name again during a held try is watched"
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_try_that_ends_after_the_name_was_counted_again_keeps_one_count() {
     let (mut card, _calls, release, changed) = try_held_in_the_watcher("s14f").await;
@@ -686,7 +686,7 @@ async fn a_try_that_ends_after_the_name_was_counted_again_keeps_one_count() {
     assert!(!card.watched(&sub).await, "one count only was kept");
 }
 
-// S14g
+// "Replacement during a held try leaves no watch"
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_try_that_ends_after_the_name_was_replaced_keeps_nothing_for_the_new_name() {
     let (mut card, _calls, release, changed) = try_held_in_the_watcher("s14g").await;

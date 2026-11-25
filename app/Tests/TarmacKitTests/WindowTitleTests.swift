@@ -4,7 +4,7 @@ import XCTest
 /// Spec 2609.0009 for the suffix (ported from `desktop/src/kit/devTitle.test.ts`)
 /// and `App.tsx`'s title effect for the rest.
 final class WindowTitleTests: XCTestCase {
-    /// S1 — a label yields a suffix.
+    /// "Dev title suffix trims its label" — a label yields a suffix.
     func testTheSuffixAppendsTheWorktreeLabel() {
         XCTAssertEqual(WindowTitle.devSuffix(label: "102-dev-bundle-id"), " · 102-dev-bundle-id")
     }
@@ -14,7 +14,7 @@ final class WindowTitleTests: XCTestCase {
         XCTAssertEqual(WindowTitle.devSuffix(label: "\n41-reload\t"), " · 41-reload")
     }
 
-    /// S2 — no label yields none.
+    /// "Blank dev label gives no suffix".
     func testAnAbsentOrBlankLabelYieldsNoSuffix() {
         XCTAssertEqual(WindowTitle.devSuffix(label: nil), "")
         XCTAssertEqual(WindowTitle.devSuffix(label: ""), "")

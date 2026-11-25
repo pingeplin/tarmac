@@ -14,11 +14,11 @@
 //
 // D12–D19 (spec 2609.0018, issue #183) press a native ⌘ chord with `tarmac dev
 // press` and read what the guard did off the snapshot: a tap from a plain
-// shell (D12, with S21's activation check), through kitty flags 5 (D13), from
+// shell (D12, with the activation check of "Press verb activates a background app"), through kitty flags 5 (D13), from
 // the board (D14), the re-show (D15), a page shortcut ⌘T/⌘W (D16), from a
 // markdown card (D17) and an HTML card (D18), and into a frozen page (D19).
 // D22 (#315) switches boards with `board` and makes one with `board --new`.
-// S35 (spec 2611.0013, #364) opens the inbox with ⌘I, jumps to a report on
+// "QA smoke run inbox jump" (spec 2611.0013, #364) opens the inbox with ⌘I, jumps to a report on
 // another board with ↵, and closes the panel with escape (`press` plain keys).
 // The cases that END the app are `make qa-quit` (`quit.mjs`).
 //
@@ -93,7 +93,7 @@ function activeBoardZoom(state, boardId) {
   return typeof zoom === "number" ? zoom : null;
 }
 
-// ------------------------------------------------------------- pids (S21)
+// ------------------------------------------------------------- pids ("Press verb activates a background app")
 
 /** `lsappinfo front` prints an ASN, not a pid; `info -only pid` prints
  *  `"pid"=637`. */
@@ -333,7 +333,7 @@ async function main() {
     reset(term);
     dev("type", term, `printf ${s6}\n`);
     const echoed = waitFor(term, `cards[${term}].term.scrollback_tail contains "${s6}"`);
-    // The end-to-end guard on S19's inert bracket: if the keydown ALSO delivered
+    // The end-to-end guard on the inert bracket of "Typed char plans inert bracket and insert": if the keydown ALSO delivered
     // the character, every character would echo twice and every #162 scenario
     // would be vacuous.
     // Read off the snapshot the wait already returned, not a fresh one: nothing
@@ -355,7 +355,7 @@ async function main() {
     waitFor(term, `cards[${term}].term.proc == "sleep"`);
     const body = json(dev("key", term, "ctrl+c"));
     eq(body.combo, "ctrl+c", "reply combo");
-    // No keypress — the app produces none for a combo the terminal owns (S10).
+    // No keypress — the app produces none for a combo the terminal owns ("Ctrl-C plans keydown and keyup only").
     eq(JSON.stringify(body.events), '["keydown","keyup"]', "reply events");
     waitFor(term, `cards[${term}].term.proc != "sleep"`, "--timeout", "3000");
   });

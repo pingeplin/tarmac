@@ -240,7 +240,7 @@ public struct Inbox: Equatable, Sendable {
         return true
     }
 
-    /// Takes the item out, hiding nothing: a jump whose card went (S36).
+    /// Takes the item out, hiding nothing: a jump whose card went ("Jump to a gone card is dropped").
     @discardableResult
     public mutating func remove(_ id: ItemID) -> Bool {
         entries.removeValue(forKey: id) != nil

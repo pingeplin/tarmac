@@ -44,7 +44,7 @@ const bashOf = (command) => ({ ...SENT["PreToolUse.Bash"], tool_input: { ...SENT
 
 // ------------------------------------------------------------------ edit
 
-test("S1: a new Swift file with a layout fault is formatted, and the hook says nothing", () => {
+test("Edit hook formats a new Swift file: a new Swift file with a layout fault is formatted, and the hook says nothing", () => {
   const dir = repo();
   write(dir, { "app/New.swift": "let  x=1\n" });
 
@@ -52,7 +52,7 @@ test("S1: a new Swift file with a layout fault is formatted, and the hook says n
   assert.equal(readFileSync(join(dir, "app/New.swift"), "utf8"), "let x = 1\n");
 });
 
-test("S2: a force unwrap in the edited file is shown to the model, and the file is still formatted", () => {
+test("Edit hook reports a Swift lint finding: a force unwrap in the edited file is shown to the model, and the file is still formatted", () => {
   const dir = repo();
   write(dir, { "app/New.swift": UNWRAP.replace("let y = x!", "let  y = x!") });
 
@@ -63,7 +63,7 @@ test("S2: a force unwrap in the edited file is shown to the model, and the file 
   assert.equal(readFileSync(join(dir, "app/New.swift"), "utf8"), UNWRAP);
 });
 
-test("S3/S29: a file the checks do not own is left alone, with no output", () => {
+test("Edit hook ignores files it cannot judge / Edit hook ignores input with no file path: a file the checks do not own is left alone, with no output", () => {
   // The tree has a finding, so a check that ran for one of these files would be heard.
   const dir = repo({ ".gitignore": "build/\n", "app/Sources/TarmacKit/A.swift": "import AppKit\n", "app/Tests/TarmacKitTests/ATests.swift": "" });
   write(dir, { "build/Gen.swift": "let  x=1\n", "notes.md": "#  x\n" });
@@ -78,14 +78,14 @@ test("S3/S29: a file the checks do not own is left alone, with no output", () =>
   assert.equal(readFileSync(join(outside, "Loose.swift"), "utf8"), "let  x=1\n");
 });
 
-test("S3: an edit of an ignored file runs no check at all, whatever state the tree is in", () => {
+test("Edit hook ignores files it cannot judge: an edit of an ignored file runs no check at all, whatever state the tree is in", () => {
   const dir = repo({ ".gitignore": "build/\n", "app/Sources/TarmacKit/A.swift": "import AppKit\n", "app/Tests/TarmacKitTests/ATests.swift": "" });
   write(dir, { "build/Gen.swift": "let x = 1\n" });
 
   assert.deepEqual(hook("edit", editOf(join(dir, "build/Gen.swift"))), QUIET);
 });
 
-test("S4: a TarmacKit file that now imports AppKit is refused by the tree's rules", () => {
+test("Edit hook reports an arch violation: a TarmacKit file that now imports AppKit is refused by the tree's rules", () => {
   const dir = repo({ "app/Sources/TarmacKit/A.swift": "import Foundation\n", "app/Tests/TarmacKitTests/ATests.swift": "" });
   write(dir, { "app/Sources/TarmacKit/A.swift": "import AppKit\n" });
 
@@ -95,7 +95,7 @@ test("S4: a TarmacKit file that now imports AppKit is refused by the tree's rule
   assert.match(run.err, /^✗ arch: TarmacKit must not import AppKit, WebKit or a sibling target\n {2}at {3}app\/Sources\/TarmacKit\/A\.swift:1$/m);
 });
 
-test("S5: a Rust file that does not parse is said to be so, and is not changed", () => {
+test("Edit hook leaves an unparseable Rust file: a Rust file that does not parse is said to be so, and is not changed", () => {
   const dir = repo();
   write(dir, { "core/src/bad.rs": "fn x( {\n" });
 
@@ -138,11 +138,11 @@ test("a repository with no check scripts is not judged", () => {
 
 const NOTE = "(the same findings as at the last stop of this session: reported, not blocking)";
 
-test("S6: a tree with no changed file lets the turn end, and says nothing", () => {
+test("Stop hook with no changed file passes: a tree with no changed file lets the turn end, and says nothing", () => {
   assert.deepEqual(hook("stop", stopIn(repo())), QUIET);
 });
 
-test("S7: a finding blocks once for a session; the same finding again is reported and does not block", () => {
+test("Stop hook blocks once per session: a finding blocks once for a session; the same finding again is reported and does not block", () => {
   const dir = repo();
   write(dir, { "app/New.swift": UNWRAP });
 
@@ -157,7 +157,7 @@ test("S7: a finding blocks once for a session; the same finding again is reporte
   assert.equal(other.code, 2);
 });
 
-test("S8/S21: another set of findings blocks again, and so does the first set when it comes back", () => {
+test("Stop hook blocks again when findings change / Stop hook blocks again on a returning finding: another set of findings blocks again, and so does the first set when it comes back", () => {
   const dir = repo();
   const a = () => write(dir, { "app/New.swift": UNWRAP });
   const b = () => write(dir, { "app/New.swift": `\n${UNWRAP}` });
@@ -222,14 +222,14 @@ test("a file whose name starts with a dash is linted, and hides no other file's 
   assert.deepEqual(run.err.match(/^ {2}at .*$/gm), ["  at   app/a b.swift:2:13 NeverForceUnwrap"]);
 });
 
-test("S22: stop_hook_active does not let other findings through", () => {
+test("Stop hook blocks when stop hook is active: stop_hook_active does not let other findings through", () => {
   const dir = repo();
   write(dir, { "app/New.swift": UNWRAP });
 
   assert.equal(hook("stop", stopIn(dir, "s1", { stop_hook_active: true })).code, 2);
 });
 
-test("S9: a Rust stub is not the stop hook's business", () => {
+test("Stop hook does not lint Rust: a Rust stub is not the stop hook's business", () => {
   const dir = repo();
   write(dir, { "core/src/lib.rs": "pub fn f() -> u8 {\n    todo!()\n}\n" });
 
@@ -244,7 +244,7 @@ function oldSwift() {
   return { ...process.env, PATH: `${bin}:${process.env.PATH}` };
 }
 
-test("S10: a check that cannot run is said, and does not block", () => {
+test("Stop hook reports a check that cannot run: a check that cannot run is said, and does not block", () => {
   const dir = repo();
   write(dir, { "app/New.swift": UNWRAP });
 
@@ -255,7 +255,7 @@ test("S10: a check that cannot run is said, and does not block", () => {
   assert.ok(!run.err.includes(NOTE));
 });
 
-test("S23: findings block and a check that cannot run is said beside them; only the findings are remembered", () => {
+test("Stop hook ignores a changed cannot run text: findings block and a check that cannot run is said beside them; only the findings are remembered", () => {
   const dir = repo({ "app/Sources/TarmacKit/A.swift": "import Foundation\n", "app/Tests/TarmacKitTests/ATests.swift": "" });
   write(dir, { "app/Sources/TarmacKit/A.swift": "import AppKit\n" });
 
@@ -269,7 +269,7 @@ test("S23: findings block and a check that cannot run is said beside them; only 
   assert.ok(second.err.startsWith(NOTE));
 });
 
-test("S24: a deleted file and an ignored new file are not checked; a staged change is", () => {
+test("Stop hook checks only existing changed files: a deleted file and an ignored new file are not checked; a staged change is", () => {
   const dir = repo({ ".gitignore": "build/\n", "app/Old.swift": "let x = 1\n", "app/Staged.swift": "let x = 1\n" });
   rmSync(join(dir, "app/Old.swift"));
   write(dir, { "build/Gen.swift": UNWRAP, "app/Staged.swift": UNWRAP });
@@ -281,7 +281,7 @@ test("S24: a deleted file and an ignored new file are not checked; a staged chan
   assert.deepEqual(run.err.match(/^ {2}at .*$/gm), ["  at   app/Staged.swift:2:13 NeverForceUnwrap"]);
 });
 
-test("S25: a session id that is not a plain name writes no file, so nothing is remembered", () => {
+test("Session id cannot escape the state directory: a session id that is not a plain name writes no file, so nothing is remembered", () => {
   const dir = repo();
   write(dir, { "app/New.swift": UNWRAP });
 
@@ -391,7 +391,7 @@ for (const command of [
   `${"$(".repeat(6000)}pkill tarmacd`,
   "echo a\npkill tarmacd",
 ]) {
-  test(`S11/S26: \`${command.replaceAll("\n", "\\n").slice(0, 80)}\` is refused`, () => {
+  test(`Bash guard refuses a kill by name / Bash guard refuses kills inside compound commands: \`${command.replaceAll("\n", "\\n").slice(0, 80)}\` is refused`, () => {
     const run = hook("bash", bashOf(command));
 
     assert.equal(run.code, 2);
@@ -446,7 +446,7 @@ for (const command of [
   `${"$(".repeat(6000)}ls`,
   SENT["PreToolUse.Bash"].tool_input.command,
 ]) {
-  test(`S11/S26: \`${command.replaceAll("\n", "\\n").slice(0, 80)}\` passes`, () => {
+  test(`Bash guard refuses a kill by name / Bash guard refuses kills inside compound commands: \`${command.replaceAll("\n", "\\n").slice(0, 80)}\` passes`, () => {
     assert.deepEqual(hook("bash", bashOf(command)), QUIET);
   });
 }
@@ -549,11 +549,11 @@ const stagedIn = (dir, env = process.env) => {
 };
 const stage = (dir, ...paths) => execFileSync("git", ["add", ...paths], { cwd: dir });
 
-test("S13: nothing staged passes", () => {
+test("Staged script checks staged files only: nothing staged passes", () => {
   assert.deepEqual(stagedIn(repo()), { code: 0, err: "" });
 });
 
-test("S13: a staged file with a finding is named; an unstaged one is not", () => {
+test("Staged script checks staged files only: a staged file with a finding is named; an unstaged one is not", () => {
   const dir = repo();
   write(dir, { "app/Staged.swift": UNWRAP, "app/Loose.swift": UNWRAP });
   stage(dir, "app/Staged.swift");
@@ -588,7 +588,7 @@ test("#502: the root of a directory is the top of its work tree, whatever GIT_DI
   assert.equal(run.stdout.trim(), dir);
 });
 
-test("S13: a staged Rust file brings clippy in, with the workspace's lint table", () => {
+test("Staged script checks staged files only: a staged Rust file brings clippy in, with the workspace's lint table", () => {
   const dir = repo({ "core/Cargo.toml": PROBE, "core/src/main.rs": "fn main() {}\n" });
   write(dir, { "core/src/main.rs": "fn main() {\n    todo!()\n}\n" });
   stage(dir, "core/src/main.rs");
@@ -599,7 +599,7 @@ test("S13: a staged Rust file brings clippy in, with the workspace's lint table"
   assert.match(run.err, /^ {2}at {3}core\/src\/main\.rs:2:5 clippy::todo$/m);
 });
 
-test("S13: a staged Swift file alone does not start clippy", () => {
+test("Staged script checks staged files only: a staged Swift file alone does not start clippy", () => {
   const dir = repo({ "core/Cargo.toml": PROBE, "core/src/main.rs": "fn main() {\n    todo!()\n}\n" });
   write(dir, { "app/A.swift": "let x = 1\n" });
   stage(dir, "app/A.swift");
@@ -607,7 +607,7 @@ test("S13: a staged Swift file alone does not start clippy", () => {
   assert.deepEqual(stagedIn(dir), { code: 0, err: "" });
 });
 
-test("S28: a check that cannot run is exit 2, and a staged deletion alone passes", () => {
+test("Staged script reports a wrong swift version: a check that cannot run is exit 2, and a staged deletion alone passes", () => {
   const dir = repo({ "app/Old.swift": "let x = 1\n" });
   execFileSync("git", ["rm", "-q", "app/Old.swift"], { cwd: dir });
   const deleted = stagedIn(dir);
@@ -621,7 +621,7 @@ test("S28: a check that cannot run is exit 2, and a staged deletion alone passes
   assert.match(blocked.err, /cannot run swift-format/);
 });
 
-test("S13: the rules about the whole tree run with a commit too", () => {
+test("Staged script checks staged files only: the rules about the whole tree run with a commit too", () => {
   const dir = repo({ ".gitignore": "DOCS_BROKEN\n" });
   write(dir, { DOCS_BROKEN: "" });
 
@@ -630,7 +630,7 @@ test("S13: the rules about the whole tree run with a commit too", () => {
 
 // -------------------------------------------------------- the hook files
 
-test("S14: each git hook runs one command, and it is a make target or a script under scripts/check", () => {
+test("Lefthook runs one command per hook: each git hook runs one command, and it is a make target or a script under scripts/check", () => {
   const text = readFileSync(join(HERE, "../../lefthook.yml"), "utf8");
   const hooks = {};
   let current;

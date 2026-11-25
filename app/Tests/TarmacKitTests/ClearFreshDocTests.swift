@@ -18,29 +18,34 @@ final class ClearFreshDocTests: XCTestCase {
     private func doc(_ id: String, fresh: Bool) -> Card { Card(kind: .doc, id: id, fresh: fresh) }
     private func term(_ id: String) -> Card { Card(kind: .term, id: id, fresh: false) }
 
-    func testS1ClearsFreshOnAFreshDocKeepingItsOtherFields() {
+    /// "Fresh doc card is cleared with fields intact".
+    func testClearsFreshOnAFreshDocKeepingItsOtherFields() {
         let card = doc("/a.md", fresh: true)
         XCTAssertEqual(ClearFreshDoc.apply(to: [card]), [doc("/a.md", fresh: false)])
     }
 
-    func testS2OnlyTheFreshCardChangesItsSiblingsAreUntouched() {
+    /// "Only fresh doc card object changes".
+    func testOnlyTheFreshCardChangesItsSiblingsAreUntouched() {
         let cards = [doc("/a.md", fresh: true), doc("/b.md", fresh: false), term("t1")]
         let result = ClearFreshDoc.apply(to: cards)
         XCTAssertEqual(result, [doc("/a.md", fresh: false), doc("/b.md", fresh: false), term("t1")])
         XCTAssertEqual(result.map(\.id), cards.map(\.id), "never removes or reorders a card")
     }
 
-    func testS3IsANoOpWhenNothingIsFresh() {
+    /// "No fresh doc card returns same references".
+    func testIsANoOpWhenNothingIsFresh() {
         let cards = [doc("/a.md", fresh: false), term("t1")]
         XCTAssertEqual(ClearFreshDoc.apply(to: cards), cards)
     }
 
-    func testS4ClearsEveryFreshDocWhenMoreThanOneIsFresh() {
+    /// "Every fresh doc card is cleared".
+    func testClearsEveryFreshDocWhenMoreThanOneIsFresh() {
         let result = ClearFreshDoc.apply(to: [doc("/a.md", fresh: true), doc("/b.md", fresh: true)])
         XCTAssertEqual(result.map(\.fresh), [false, false])
     }
 
-    func testS5EmptyInputGivesEmptyOutput() {
+    /// "Empty card list returns empty array".
+    func testEmptyInputGivesEmptyOutput() {
         XCTAssertEqual(ClearFreshDoc.apply(to: [Card]()), [])
     }
 

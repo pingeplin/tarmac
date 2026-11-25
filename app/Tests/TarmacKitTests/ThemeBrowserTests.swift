@@ -8,8 +8,8 @@ final class ThemeBrowserTests: XCTestCase {
         ThemeBrowser.box(shown: ThemeCatalog.theme(shown), chosen: ThemeCatalog.theme(chosen), for: variant)
     }
 
-    /// S58
-    func testS58ABoxIsOnForTheChosenThemeWhateverItsVariant() {
+    /// "Apply box state follows shown and chosen themes"
+    func testABoxIsOnForTheChosenThemeWhateverItsVariant() {
         XCTAssertEqual(
             box("catppuccin-mocha", chosen: "catppuccin-mocha", for: .dark),
             ThemeBrowser.Box(isOn: true, isEnabled: true)
@@ -20,8 +20,8 @@ final class ThemeBrowserTests: XCTestCase {
         )
     }
 
-    /// S58 — there is no theme to go back to.
-    func testS58TheBoxOfAStandardThemeThatIsChosenCannotBeCleared() {
+    /// "Apply box state follows shown and chosen themes" — there is no theme to go back to.
+    func testTheBoxOfAStandardThemeThatIsChosenCannotBeCleared() {
         XCTAssertEqual(
             box("breeze-dark", chosen: "breeze-dark", for: .dark), ThemeBrowser.Box(isOn: true, isEnabled: false)
         )
@@ -30,16 +30,16 @@ final class ThemeBrowserTests: XCTestCase {
         )
     }
 
-    /// S58
-    func testS58TheBoxOfAStandardThemeThatIsNotChosenCanBeSet() {
+    /// "Apply box state follows shown and chosen themes"
+    func testTheBoxOfAStandardThemeThatIsNotChosenCanBeSet() {
         XCTAssertEqual(
             box("breeze-dark", chosen: "catppuccin-mocha", for: .dark), ThemeBrowser.Box(isOn: false, isEnabled: true)
         )
     }
 
-    /// S58 — a Breeze theme is locked only for the appearance it is the
+    /// "Apply box state follows shown and chosen themes" — a Breeze theme is locked only for the appearance it is the
     /// standard theme of.
-    func testS58ABreezeThemeChosenForTheOtherAppearanceCanBeCleared() {
+    func testABreezeThemeChosenForTheOtherAppearanceCanBeCleared() {
         XCTAssertEqual(
             box("breeze-dark", chosen: "breeze-dark", for: .light), ThemeBrowser.Box(isOn: true, isEnabled: true)
         )
@@ -52,21 +52,21 @@ final class ThemeBrowserTests: XCTestCase {
         ThemeBrowser.toggled(shown: ThemeCatalog.theme(shown), on: on, for: variant).id
     }
 
-    /// S59
-    func testS59ASetBoxGivesTheShownThemeWhateverItsVariant() {
+    /// "Toggling the apply box gives the right theme"
+    func testASetBoxGivesTheShownThemeWhateverItsVariant() {
         XCTAssertEqual(toggled("catppuccin-mocha", on: true, for: .light), "catppuccin-mocha")
         XCTAssertEqual(toggled("github-light", on: true, for: .dark), "github-light")
     }
 
-    /// S59 — of the box's appearance, not of the shown theme's variant.
-    func testS59AClearedBoxGivesTheStandardThemeOfItsAppearance() {
+    /// "Toggling the apply box gives the right theme" — of the box's appearance, not of the shown theme's variant.
+    func testAClearedBoxGivesTheStandardThemeOfItsAppearance() {
         XCTAssertEqual(toggled("catppuccin-mocha", on: false, for: .light), "breeze-light")
         XCTAssertEqual(toggled("catppuccin-mocha", on: false, for: .dark), "breeze-dark")
         XCTAssertEqual(toggled("github-light", on: false, for: .dark), "breeze-dark")
     }
 
-    /// S59
-    func testS59ABoxThatWasSetIsOn() {
+    /// "Toggling the apply box gives the right theme"
+    func testABoxThatWasSetIsOn() {
         var pairs = 0
         for shown in ThemeCatalog.all {
             for variant in ThemeVariant.allCases {
@@ -105,9 +105,9 @@ final class ThemeBrowserTests: XCTestCase {
         }
     }
 
-    /// S60 — a rule that compares the saved id with the entry's fails here:
+    /// "Marks show which appearance uses each theme" — a rule that compares the saved id with the entry's fails here:
     /// nothing is saved for a standard theme.
-    func testS60WithNothingChosenTheMarksAreOnTheStandardThemes() {
+    func testWithNothingChosenTheMarksAreOnTheStandardThemes() {
         let marks = marks([:])
 
         XCTAssertEqual(marks["breeze-light"], [.light])
@@ -116,8 +116,8 @@ final class ThemeBrowserTests: XCTestCase {
         assertEachAppearanceMarksOneTheme(marks)
     }
 
-    /// S60
-    func testS60OneThemeHasBothMarksLightFirst() {
+    /// "Marks show which appearance uses each theme"
+    func testOneThemeHasBothMarksLightFirst() {
         let marks = marks([.light: "catppuccin-mocha", .dark: "catppuccin-mocha"])
 
         XCTAssertEqual(marks["catppuccin-mocha"], [.light, .dark])
@@ -125,8 +125,8 @@ final class ThemeBrowserTests: XCTestCase {
         assertEachAppearanceMarksOneTheme(marks)
     }
 
-    /// S60 — a rule that gives an entry its own variant fails here.
-    func testS60AMarkIsTheAppearanceTheThemeIsChosenForNotItsVariant() {
+    /// "Marks show which appearance uses each theme" — a rule that gives an entry its own variant fails here.
+    func testAMarkIsTheAppearanceTheThemeIsChosenForNotItsVariant() {
         let marks = marks([.dark: "solarized-light"])
 
         XCTAssertEqual(marks["solarized-light"], [.dark])
@@ -135,17 +135,17 @@ final class ThemeBrowserTests: XCTestCase {
         assertEachAppearanceMarksOneTheme(marks)
     }
 
-    /// S60
-    func testS60AnIdNoThemeHasLeavesTheMarkOnTheStandardTheme() {
+    /// "Marks show which appearance uses each theme"
+    func testAnIdNoThemeHasLeavesTheMarkOnTheStandardTheme() {
         let marks = marks([.dark: "sepia"])
 
         XCTAssertEqual(marks["breeze-dark"], [.dark])
         assertEachAppearanceMarksOneTheme(marks)
     }
 
-    /// S61 — the three forms. Solarized Light's eight are its seven ANSI
+    /// "Contrast note counts low contrast colours" — the three forms. Solarized Light's eight are its seven ANSI
     /// findings and its foreground.
-    func testS61TheNoteCountsTheTerminalColoursWithLowContrast() {
+    func testTheNoteCountsTheTerminalColoursWithLowContrast() {
         XCTAssertEqual(
             ThemeBrowser.contrastNote(ThemeCatalog.theme("github-light").palette),
             "Every terminal colour passes the contrast floors."
@@ -164,8 +164,8 @@ final class ThemeBrowserTests: XCTestCase {
         )
     }
 
-    /// S61 — the numbers of the spec's table.
-    func testS61EveryThemeHasTheNoteOfItsNumber() {
+    /// "Contrast note counts low contrast colours" — the numbers of the spec's table.
+    func testEveryThemeHasTheNoteOfItsNumber() {
         let numbers = [
             "breeze-light": 0, "breeze-dark": 5, "catppuccin-latte": 9, "catppuccin-mocha": 2, "github-light": 0,
             "github-dark": 1, "solarized-light": 8, "solarized-dark": 4,
@@ -182,8 +182,8 @@ final class ThemeBrowserTests: XCTestCase {
         }
     }
 
-    /// 2610.0009 S36 — a note that counts findings and not colours says 3.
-    func testS36AChromeColourWithLowContrastIsCountedOnce() {
+    /// 2610.0009 "Contrast note counts chrome and terminal findings" — a note that counts findings and not colours says 3.
+    func testAChromeColourWithLowContrastIsCountedOnce() {
         let breeze = ThemeCatalog.theme("breeze-light").palette
         let palette = breeze.changed(agent: breeze.bg0)
         let findings = PaletteCheck.findings(palette)
@@ -197,16 +197,16 @@ final class ThemeBrowserTests: XCTestCase {
         )
     }
 
-    /// 2610.0009 S36 — six chrome findings of two colours.
-    func testS36TheNoteCountsTheTerminalAndTheChromeColours() {
+    /// 2610.0009 "Contrast note counts chrome and terminal findings" — six chrome findings of two colours.
+    func testTheNoteCountsTheTerminalAndTheChromeColours() {
         XCTAssertEqual(
             ThemeBrowser.contrastNote(ThemeFile.palette(from: ThemeFixture.hotDogStandColours)),
             "3 terminal colours have low contrast on the background. 2 chrome colours have low contrast."
         )
     }
 
-    /// 2610.0009 S37
-    func testS37TheDetailHasOneLineForEachFinding() {
+    /// 2610.0009 "Contrast detail lists each finding"
+    func testTheDetailHasOneLineForEachFinding() {
         XCTAssertEqual(
             ThemeBrowser.contrastDetail(ThemeCatalog.theme("github-dark").palette),
             ["ansi 0 on background: 2.28 (floor 3)"]
@@ -223,8 +223,8 @@ final class ThemeBrowserTests: XCTestCase {
         }
     }
 
-    /// 2610.0009 S37 — the floors 3 and 4.5, each as it is written.
-    func testS37TheDetailOfAFileThemeNamesItsChromeFindings() {
+    /// 2610.0009 "Contrast detail lists each finding" — the floors 3 and 4.5, each as it is written.
+    func testTheDetailOfAFileThemeNamesItsChromeFindings() {
         var colours = ThemeFixture.draculaColours
         colours.chrome = [.bg0: 0x101010, .agent: 0xff00ff, .muted: 0x6272a4]
 
@@ -238,8 +238,8 @@ final class ThemeBrowserTests: XCTestCase {
         }
     }
 
-    /// 2610.0009 S37 — the floor of the foreground.
-    func testS37TheFloorOfTheForegroundIsWrittenAs7() {
+    /// 2610.0009 "Contrast detail lists each finding" — the floor of the foreground.
+    func testTheFloorOfTheForegroundIsWrittenAs7() {
         XCTAssertEqual(
             ThemeBrowser.contrastDetail(ThemeFile.palette(from: ThemeFixture.hotDogStandColours)).first {
                 $0.hasPrefix("foreground")
@@ -248,14 +248,14 @@ final class ThemeBrowserTests: XCTestCase {
         )
     }
 
-    /// S62
-    func testS62ABoxIsTitledForItsAppearance() {
+    /// "Box title and caption name the appearance"
+    func testABoxIsTitledForItsAppearance() {
         XCTAssertEqual(ThemeBrowser.boxTitle(for: .light), "Apply to Light")
         XCTAssertEqual(ThemeBrowser.boxTitle(for: .dark), "Apply to Dark")
     }
 
-    /// S62 — the variants of the spec's table.
-    func testS62TheCaptionSaysWhatTheThemeIs() {
+    /// "Box title and caption name the appearance" — the variants of the spec's table.
+    func testTheCaptionSaysWhatTheThemeIs() {
         XCTAssertEqual(ThemeBrowser.caption(of: ThemeCatalog.theme("catppuccin-latte")), "light theme")
         XCTAssertEqual(ThemeBrowser.caption(of: ThemeCatalog.theme("catppuccin-mocha")), "dark theme")
 
@@ -267,8 +267,8 @@ final class ThemeBrowserTests: XCTestCase {
 
     // MARK: - A theme from a file (spec 2610.0009)
 
-    /// S34
-    func testS34ABoxOfAFileThemeFollowsTheRuleOfEveryTheme() {
+    /// "Apply box compares file theme ids"
+    func testABoxOfAFileThemeFollowsTheRuleOfEveryTheme() {
         let breezeLight = ThemeCatalog.standard(for: .light)
 
         XCTAssertEqual(
@@ -282,15 +282,15 @@ final class ThemeBrowserTests: XCTestCase {
         XCTAssertEqual(ThemeBrowser.toggled(shown: dracula, on: true, for: .light), dracula)
     }
 
-    /// S34 — a file that was changed is still the chosen theme.
-    func testS34ABoxComparesIds() {
+    /// "Apply box compares file theme ids" — a file that was changed is still the chosen theme.
+    func testABoxComparesIds() {
         let changed = ThemeCatalog.Entry(id: dracula.id, title: dracula.title, palette: ThemeCatalog.all[0].palette)
 
         XCTAssertTrue(ThemeBrowser.box(shown: changed, chosen: dracula, for: .dark).isOn)
     }
 
-    /// S35
-    func testS35WithNothingChosenAFileThemeHasNoMark() {
+    /// "Marks follow the chosen entries"
+    func testWithNothingChosenAFileThemeHasNoMark() {
         let marks = marks([:], in: withDracula)
 
         XCTAssertEqual(marks["breeze-light"], [.light])
@@ -299,8 +299,8 @@ final class ThemeBrowserTests: XCTestCase {
         assertEachAppearanceMarksOneTheme(marks)
     }
 
-    /// S35
-    func testS35AFileThemeHasBothMarksLightFirst() {
+    /// "Marks follow the chosen entries"
+    func testAFileThemeHasBothMarksLightFirst() {
         let marks = marks([.light: "file:Dracula", .dark: "file:Dracula"], in: withDracula)
 
         XCTAssertEqual(marks["file:Dracula"], [.light, .dark])
@@ -308,8 +308,8 @@ final class ThemeBrowserTests: XCTestCase {
         assertEachAppearanceMarksOneTheme(marks)
     }
 
-    /// S35
-    func testS35ABuiltInThemeKeepsItsMarkBesideAFileTheme() {
+    /// "Marks follow the chosen entries"
+    func testABuiltInThemeKeepsItsMarkBesideAFileTheme() {
         let marks = marks([.dark: "solarized-light"], in: withDracula)
 
         XCTAssertEqual(marks["solarized-light"], [.dark])
@@ -318,24 +318,24 @@ final class ThemeBrowserTests: XCTestCase {
         assertEachAppearanceMarksOneTheme(marks)
     }
 
-    /// S35 — a file that was changed while it is the chosen theme keeps its
+    /// "Marks follow the chosen entries" — a file that was changed while it is the chosen theme keeps its
     /// marks: a row is compared by id, as a box is.
-    func testS35AMarkComparesIds() {
+    func testAMarkComparesIds() {
         let changed = ThemeCatalog.Entry(id: dracula.id, title: dracula.title, palette: ThemeCatalog.all[0].palette)
 
         XCTAssertEqual(ThemeBrowser.marks(of: changed) { _ in dracula }, [.light, .dark])
     }
 
-    /// S35 — the file is away: its appearance has the standard theme.
-    func testS35AFileThatIsGoneLeavesTheMarkOnTheStandardTheme() {
+    /// "Marks follow the chosen entries" — the file is away: its appearance has the standard theme.
+    func testAFileThatIsGoneLeavesTheMarkOnTheStandardTheme() {
         let marks = marks([.dark: "file:Gone"], in: withDracula)
 
         XCTAssertEqual(marks["breeze-dark"], [.dark])
         assertEachAppearanceMarksOneTheme(marks)
     }
 
-    /// S38
-    func testS38TheCaptionOfAFileThemeSaysSo() {
+    /// "Caption says a theme is from a file"
+    func testTheCaptionOfAFileThemeSaysSo() {
         let latte = ThemeCatalog.Entry(
             id: "file:Latte", title: "Latte", palette: ThemeFile.palette(from: ThemeFixture.latteColours)
         )
@@ -347,16 +347,16 @@ final class ThemeBrowserTests: XCTestCase {
         }
     }
 
-    /// S39 — the tooltip of the note and of the line under the list: one
+    /// "Files note and tooltip give their texts" — the tooltip of the note and of the line under the list: one
     /// line for each detail, and none at all with no detail.
-    func testS39ATooltipHasOneLineForEachDetail() {
+    func testATooltipHasOneLineForEachDetail() {
         XCTAssertNil(ThemeBrowser.toolTip([]))
         XCTAssertEqual(ThemeBrowser.toolTip(["a: has no background"]), "a: has no background")
         XCTAssertEqual(ThemeBrowser.toolTip(["a: x", "b: y"]), "a: x\nb: y")
     }
 
-    /// S39
-    func testS39TheLineUnderTheListCountsTheThemesAndTheFilesNotRead() {
+    /// "Files note and tooltip give their texts"
+    func testTheLineUnderTheListCountsTheThemesAndTheFilesNotRead() {
         XCTAssertEqual(ThemeBrowser.filesNote(themes: 0, refused: 0), "No theme files.")
         XCTAssertEqual(ThemeBrowser.filesNote(themes: 1, refused: 0), "1 theme from a file.")
         XCTAssertEqual(ThemeBrowser.filesNote(themes: 5, refused: 0), "5 themes from files.")
@@ -365,8 +365,8 @@ final class ThemeBrowserTests: XCTestCase {
         XCTAssertEqual(ThemeBrowser.filesNote(themes: 2, refused: 1), "2 themes from files. 1 file was not read.")
     }
 
-    /// S40 — a file that changed is shown with its new colours.
-    func testS40AShownThemeKeepsItsIdWhenTheThemesChange() {
+    /// "Shown theme refreshes from the library" — a file that changed is shown with its new colours.
+    func testAShownThemeKeepsItsIdWhenTheThemesChange() {
         let changed = ThemeLibrary(files: [ThemeFixture.file("Dracula", ThemeFixture.dracula(background: "#1e1f29"))])
         let inEffect = ThemeCatalog.standard(for: .dark)
 
@@ -376,15 +376,15 @@ final class ThemeBrowserTests: XCTestCase {
         XCTAssertEqual(shown.palette.terminal.background, 0x1e1f29)
     }
 
-    /// S40
-    func testS40AShownThemeWhoseFileIsGoneGivesWayToTheThemeInEffect() {
+    /// "Shown theme refreshes from the library"
+    func testAShownThemeWhoseFileIsGoneGivesWayToTheThemeInEffect() {
         let inEffect = ThemeCatalog.theme("github-light")
 
         XCTAssertEqual(ThemeBrowser.shown(dracula, in: .shipped, inEffect: inEffect), inEffect)
     }
 
-    /// S40
-    func testS40AShownBuiltInThemeStays() {
+    /// "Shown theme refreshes from the library"
+    func testAShownBuiltInThemeStays() {
         let githubDark = ThemeCatalog.theme("github-dark")
 
         for library in [ThemeLibrary.shipped, withDracula] {

@@ -20,19 +20,22 @@ final class ScrollIndicatorTests: XCTestCase {
 
     // MARK: - thumb
 
-    func testS3TheThumbIsTheVisibleShareOfTheTrackAtTheOffsetsShare() {
+    /// "Thumb position and length follow the offset".
+    func testTheThumbIsTheVisibleShareOfTheTrackAtTheOffsetsShare() {
         XCTAssertEqual(ScrollIndicator.thumb(metrics(0), track: 200), ScrollIndicator.Thumb(y: 0, length: 50))
         XCTAssertEqual(ScrollIndicator.thumb(metrics(150), track: 200), ScrollIndicator.Thumb(y: 75, length: 50))
         XCTAssertEqual(ScrollIndicator.thumb(metrics(300), track: 200), ScrollIndicator.Thumb(y: 150, length: 50))
     }
 
-    func testS4TheThumbIsNeverShorterThanItsMinimum() {
+    /// "Thumb keeps a minimum length".
+    func testTheThumbIsNeverShorterThanItsMinimum() {
         XCTAssertEqual(
             ScrollIndicator.thumb(metrics(9990, 10, 10000), track: 200), ScrollIndicator.Thumb(y: 176, length: 24)
         )
     }
 
-    func testS21ThereIsNoThumbForNothingToScrollOrNoRoom() {
+    /// "Thumb is nil without overflow or room".
+    func testThereIsNoThumbForNothingToScrollOrNoRoom() {
         XCTAssertNil(ScrollIndicator.thumb(nil, track: 200))
         XCTAssertNil(ScrollIndicator.thumb(metrics(0, 100, 100), track: 200))
         XCTAssertNil(ScrollIndicator.thumb(metrics(0), track: 23.5))
@@ -41,9 +44,10 @@ final class ScrollIndicatorTests: XCTestCase {
 
     // MARK: - frame
 
+    /// "Thumb frame at zoom 1 in body".
     /// Ten wide, two in from the body's right edge, two below its top, and
     /// clear of the card's rounded corner at the bottom.
-    func testS5TheFrameSitsAtTheBodysRightEdge() {
+    func testTheFrameSitsAtTheBodysRightEdge() {
         XCTAssertEqual(frame(0), CGRect(x: 378, y: 32, width: 10, height: 67))
         XCTAssertEqual(frame(300), CGRect(x: 378, y: 233, width: 10, height: 67))
         XCTAssertEqual(frame(300)?.maxY, 300)
@@ -52,7 +56,8 @@ final class ScrollIndicatorTests: XCTestCase {
         XCTAssertEqual(frame(0, body: CGRect(x: 10, y: 30, width: 390, height: 280))?.minX, 388)
     }
 
-    func testS6TheFrameFollowsTheZoom() {
+    /// "Thumb frame scales and snaps with zoom".
+    func testTheFrameFollowsTheZoom() {
         let double = CGRect(x: 0, y: 60, width: 780, height: 560)
         XCTAssertEqual(frame(0, zoom: 2, body: double), CGRect(x: 756, y: 64, width: 20, height: 134))
         XCTAssertEqual(frame(300, zoom: 2, body: double)?.minY, 466)
@@ -64,21 +69,24 @@ final class ScrollIndicatorTests: XCTestCase {
         XCTAssertEqual(frame(300, zoom: 0.5, backing: 1, body: half)?.minY, 117)
     }
 
+    /// "Thumb frame scales and snaps with zoom".
     /// Unsnapped these are 285.25, 99.875, 7.5 and 50.25; and x leaves room
     /// for the snapped width, or it would read 286.
-    func testS6EveryTermOfTheFrameIsOnAWholeDevicePixel() {
+    func testEveryTermOfTheFrameIsOnAWholeDevicePixel() {
         let body = CGRect(x: 0, y: 23, width: 294.75, height: 210)
         XCTAssertEqual(frame(150, zoom: 0.75, backing: 1, body: body), CGRect(x: 285, y: 100, width: 8, height: 50))
     }
 
-    func testS7AnOverlayAtTheBodysBottomShortensTheTrack() {
+    /// "Covered height shortens the thumb track".
+    func testAnOverlayAtTheBodysBottomShortensTheTrack() {
         XCTAssertEqual(frame(300, covered: 112), CGRect(x: 378, y: 155, width: 10, height: 41))
         XCTAssertEqual(frame(300, covered: 112)?.maxY, 196)
         XCTAssertEqual(frame(300, covered: 4), frame(300))
         XCTAssertEqual(frame(300, covered: 4), CGRect(x: 378, y: 233, width: 10, height: 67))
     }
 
-    func testS22ThereIsNoFrameWhereThereIsNoThumb() {
+    /// "Frame is nil when the thumb is nil".
+    func testThereIsNoFrameWhereThereIsNoThumb() {
         let short = CGRect(x: 0, y: 30, width: 160, height: 58)
         let scale = CardScale(zoom: 1, backing: 2)
         XCTAssertNil(ScrollIndicator.frame(nil, body: short, covered: 0, scale: scale))
@@ -89,7 +97,8 @@ final class ScrollIndicatorTests: XCTestCase {
 
     // MARK: - visibility
 
-    func testS8AThumbShowsFromAWheelUntilTheHoldEndsThenFades() {
+    /// "Visibility fades out after a wheel".
+    func testAThumbShowsFromAWheelUntilTheHoldEndsThenFades() {
         var visibility = ScrollIndicator.Visibility()
         for now in [0, 5000, UInt64.max] {
             XCTAssertEqual(visibility.alpha(atMs: now), 0, "never wheeled, at \(now)")
@@ -104,7 +113,8 @@ final class ScrollIndicatorTests: XCTestCase {
         }
     }
 
-    func testS9AWheelDuringTheFadeRestoresTheThumb() {
+    /// "Wheel during the fade restores visibility".
+    func testAWheelDuringTheFadeRestoresTheThumb() {
         var visibility = ScrollIndicator.Visibility()
         visibility.wheeled(atMs: 5000)
         visibility.wheeled(atMs: 6100)
@@ -114,7 +124,8 @@ final class ScrollIndicatorTests: XCTestCase {
         XCTAssertEqual(visibility.alpha(atMs: 7300), 0)
     }
 
-    func testS9AResetHidesTheThumbAtOnceAndAWheelStartsAgain() {
+    /// "Wheel during the fade restores visibility".
+    func testAResetHidesTheThumbAtOnceAndAWheelStartsAgain() {
         var visibility = ScrollIndicator.Visibility()
         visibility.wheeled(atMs: 5000)
         visibility.reset()
@@ -127,7 +138,8 @@ final class ScrollIndicatorTests: XCTestCase {
         XCTAssertEqual(visibility.alpha(atMs: 9000), 1)
     }
 
-    func testS9AWheelAtTheEndOfTimeDoesNotTrap() {
+    /// "Wheel during the fade restores visibility".
+    func testAWheelAtTheEndOfTimeDoesNotTrap() {
         var visibility = ScrollIndicator.Visibility()
         visibility.wheeled(atMs: .max)
         XCTAssertEqual(visibility.alpha(atMs: .max), 1)
@@ -151,7 +163,8 @@ final class ScrollIndicatorTests: XCTestCase {
         }
     }
 
-    func test2610_0004S1ThePointerOverTheThumbHoldsIt() {
+    /// "Pointer over the thumb holds it visible".
+    func testThePointerOverTheThumbHoldsIt() {
         var visibility = wheeled(atMs: 5000)
         visibility.pointer(over: true, atMs: 5500)
         assertAlpha(visibility, [(5500, 1), (6000, 1), (10000, 1)])
@@ -160,7 +173,8 @@ final class ScrollIndicatorTests: XCTestCase {
         assertAlpha(visibility, [(10000, 1), (11000, 1), (11100, 0.5), (11200, 0)])
     }
 
-    func test2610_0004S2APressHoldsIt() {
+    /// "Press on the thumb holds it visible".
+    func testAPressHoldsIt() {
         var visibility = wheeled(atMs: 1000)
         visibility.pressed(atMs: 1500)
         assertAlpha(visibility, [(9000, 1)])
@@ -169,7 +183,8 @@ final class ScrollIndicatorTests: XCTestCase {
         assertAlpha(visibility, [(10000, 1), (10100, 0.5), (10200, 0)])
     }
 
-    func test2610_0004S3APointerThatArrivesInTheFadeRestoresIt() {
+    /// "Pointer over a fading thumb restores it".
+    func testAPointerThatArrivesInTheFadeRestoresIt() {
         var visibility = wheeled(atMs: 1000)
         assertAlpha(visibility, [(2100, 0.5)])
 
@@ -177,7 +192,8 @@ final class ScrollIndicatorTests: XCTestCase {
         assertAlpha(visibility, [(2100, 1), (60000, 1)])
     }
 
-    func test2610_0004S4AThumbThatShowsAtAllCanBeGrabbed() {
+    /// "Grabbable while alpha is above zero".
+    func testAThumbThatShowsAtAllCanBeGrabbed() {
         XCTAssertFalse(ScrollIndicator.Visibility().grabbable(atMs: 0))
 
         var visibility = wheeled(atMs: 1000)
@@ -190,7 +206,8 @@ final class ScrollIndicatorTests: XCTestCase {
         XCTAssertTrue(visibility.grabbable(atMs: 99999))
     }
 
-    func test2610_0004S5TheFadeStartsWhenTheHoldEndsAndNotWhileHeld() {
+    /// "Fade start time follows pointer and press".
+    func testTheFadeStartsWhenTheHoldEndsAndNotWhileHeld() {
         XCTAssertNil(ScrollIndicator.Visibility().fadeStartsAtMs(atMs: 0))
 
         let shown = wheeled(atMs: 5000)
@@ -216,7 +233,8 @@ final class ScrollIndicatorTests: XCTestCase {
         XCTAssertEqual(wheeled(atMs: .max).fadeStartsAtMs(atMs: .max), .max)
     }
 
-    func test2610_0004S20HoverAloneShowsNothing() {
+    /// "Hover alone shows nothing".
+    func testHoverAloneShowsNothing() {
         var fresh = ScrollIndicator.Visibility()
         fresh.pointer(over: true, atMs: 100)
         assertAlpha(fresh, [(100, 0), (5000, 0)])
@@ -228,7 +246,8 @@ final class ScrollIndicatorTests: XCTestCase {
         assertAlpha(faded, [(2200, 0), (3000, 0)])
     }
 
-    func test2610_0004S21TheLastOfThePointerAndThePressLetsGo() {
+    /// "Last of pointer and press releases the hold".
+    func testTheLastOfThePointerAndThePressLetsGo() {
         var pointerFirst = wheeled(atMs: 1000)
         pointerFirst.pointer(over: true, atMs: 1200)
         pointerFirst.pressed(atMs: 1300)
@@ -246,7 +265,8 @@ final class ScrollIndicatorTests: XCTestCase {
         assertAlpha(pressFirst, [(10000, 1), (10100, 0.5)])
     }
 
-    func test2610_0004S22ToldTheSameAgainNothingMoves() {
+    /// "Repeated same event changes nothing".
+    func testToldTheSameAgainNothingMoves() {
         var notOver = wheeled(atMs: 1000)
         notOver.pointer(over: false, atMs: 1900)
         assertAlpha(notOver, [(2100, 0.5)])
@@ -264,7 +284,8 @@ final class ScrollIndicatorTests: XCTestCase {
         assertAlpha(over, [(7000, 1), (7100, 0.5)])
     }
 
-    func test2610_0004S23AResetDropsThePointerAndThePress() {
+    /// "Reset drops pointer and press holds".
+    func testAResetDropsThePointerAndThePress() {
         var visibility = wheeled(atMs: 1000)
         visibility.pointer(over: true, atMs: 1200)
         visibility.pressed(atMs: 1300)
@@ -282,7 +303,8 @@ final class ScrollIndicatorTests: XCTestCase {
         assertAlpha(visibility, [(1500, 0)])
     }
 
-    func test2610_0004S35APressIsTakenWhateverTheAlpha() {
+    /// "Press is taken at any alpha".
+    func testAPressIsTakenWhateverTheAlpha() {
         var visibility = ScrollIndicator.Visibility()
         visibility.pressed(atMs: 100)
         assertAlpha(visibility, [(100, 1), (9000, 1)])

@@ -36,7 +36,7 @@ final class ConnectionStatusTests: XCTestCase {
         XCTAssertEqual(ConnectionStatus(connected: false, reason: nil).label, "detached")
     }
 
-    /// Spec 2606.0003 S10: the path and the channel, as the CLI's "no tarmac
+    /// Spec 2606.0003 "Channel label names release and dev correctly": the path and the channel, as the CLI's "no tarmac
     /// daemon running" names them, so a dev app that finds no daemon says why.
     func testAMissingDaemonIsNamedByItsSocketAndChannel() {
         XCTAssertEqual(

@@ -2,7 +2,7 @@ import XCTest
 
 @testable import TarmacKit
 
-/// The app's table of data-file registrations (spec 2611.0002 S47–S50).
+/// The app's table of data-file registrations (spec 2611.0002).
 final class CardDataRegistrationsTests: XCTestCase {
     private typealias Card = CardDataRegistrations.Card
 
@@ -10,7 +10,7 @@ final class CardDataRegistrationsTests: XCTestCase {
     private let dash1 = Card(boardID: "board-1", path: "/a/dash.html")
     private let other0 = Card(boardID: "board-0", path: "/a/other.html")
 
-    /// S47's registrations.
+    /// The registrations of "File event is routed to registered cards".
     private func table() -> CardDataRegistrations {
         var table = CardDataRegistrations()
         table.set("/a/stats.json", for: dash0)
@@ -19,7 +19,8 @@ final class CardDataRegistrationsTests: XCTestCase {
         return table
     }
 
-    func test2611_0002S47AChangeGoesToEveryCardThatRegisteredThePathOnEveryBoard() {
+    /// "File event is routed to registered cards".
+    func testAChangeGoesToEveryCardThatRegisteredThePathOnEveryBoard() {
         let table = table()
         XCTAssertEqual(Set(table.cards(reading: "/a/stats.json")), [dash0, dash1])
         XCTAssertEqual(table.cards(reading: "/a/stats.json").count, 2)
@@ -28,7 +29,8 @@ final class CardDataRegistrationsTests: XCTestCase {
         XCTAssertEqual(table.cards(reading: "/a/dash.html"), [], "a doc path is no data path")
     }
 
-    func test2611_0002S48AReconnectSendsOneDataFileForEachCardThatReadsAFile() {
+    /// "Reconnect resends every registration".
+    func testAReconnectSendsOneDataFileForEachCardThatReadsAFile() {
         var table = table()
         let expected: [Message] = [
             .dataFile(boardID: "board-0", path: "/a/dash.html", file: "/a/stats.json"),
@@ -43,7 +45,8 @@ final class CardDataRegistrationsTests: XCTestCase {
         XCTAssertEqual(table.cards(reading: "/a/x.json"), [])
     }
 
-    func test2611_0002S49AClosedCardAndARemovedBoardAreForgotten() {
+    /// "Closed card leaves the registrations".
+    func testAClosedCardAndARemovedBoardAreForgotten() {
         var table = table()
         table.set(nil, for: dash0)
         XCTAssertEqual(table.cards(reading: "/a/stats.json"), [dash1])
@@ -56,7 +59,8 @@ final class CardDataRegistrationsTests: XCTestCase {
         XCTAssertEqual(table.resent, [.dataFile(boardID: "board-0", path: "/a/other.html", file: "/a/x.json")])
     }
 
-    func test2611_0002S50ACardThatRegistersAnotherFileLeavesTheFirst() {
+    /// "New registration replaces the old file".
+    func testACardThatRegistersAnotherFileLeavesTheFirst() {
         var table = CardDataRegistrations()
         table.set("/a/stats.json", for: dash0)
         table.set("/a/y.json", for: dash0)

@@ -14,16 +14,18 @@ final class CardHitTests: XCTestCase {
         CardHit.at(CGPoint(x: x, y: y), thumb: thumb, grabbable: grabbable, handle: handle)
     }
 
-    func test2610_0004S6TheThumbComesAheadOfTheResizeStripWhileItCanBeGrabbed() {
+    /// "Thumb hit wins over the resize strip".
+    func testTheThumbComesAheadOfTheResizeStripWhileItCanBeGrabbed() {
         XCTAssertEqual(hit(386, 40, thumb: thumb), .thumb)
         XCTAssertEqual(hit(386, 40, thumb: thumb, grabbable: false), .handle(.right))
         XCTAssertEqual(hit(386, 40, thumb: thumb, grabbable: false, handle: nil), .content)
         XCTAssertEqual(hit(380, 40, thumb: thumb, handle: nil), .thumb)
     }
 
+    /// "Thumb hit test at its edges".
     /// The minimum edges are inside and the maximum ones outside, as a
     /// handle's zone is.
-    func test2610_0004S24TheThumbEndsAtItsEdges() {
+    func testTheThumbEndsAtItsEdges() {
         XCTAssertEqual(hit(378, 32, thumb: thumb), .thumb)
         XCTAssertEqual(hit(387.9, 98.9, thumb: thumb), .thumb)
         for (x, y) in [(377.9, 40), (388, 40), (380, 31.9), (380, 99)] as [(CGFloat, CGFloat)] {
@@ -31,7 +33,8 @@ final class CardHitTests: XCTestCase {
         }
     }
 
-    func test2610_0004S24WithNoThumbLaidOutThePointIsTheHandlesOrTheContents() {
+    /// "Thumb hit test at its edges".
+    func testWithNoThumbLaidOutThePointIsTheHandlesOrTheContents() {
         XCTAssertEqual(hit(386, 40, thumb: nil), .handle(.right))
         XCTAssertEqual(hit(386, 40, thumb: nil, handle: nil), .content)
     }

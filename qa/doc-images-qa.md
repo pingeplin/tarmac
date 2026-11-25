@@ -1,6 +1,6 @@
 # Local images in markdown doc cards — manual QA (spec 2609.0014, #164)
 
-S21–S26 of `.blueprint/specs/2609.0014_local_images_in_markdown_doc_cards.md`.
+The six [Q] scenarios of `.blueprint/specs/2609.0014_local_images_in_markdown_doc_cards.md`.
 These are [Q] scenarios because each is a property of the running app: whether
 WKWebView loads an `<img>` from `tarmac-card://img/` in the app's own document,
 and the size it draws at inside the K× prose. The unit suites cover everything
@@ -9,7 +9,7 @@ that can be observed without a window: `localImagePath` / `docImageSrc`
 (`desktop/src-tauri/src/image_protocol.rs`), and the scheme dispatch
 (`desktop/src-tauri/src/lib.rs`). None of them draws an image.
 
-Run against `make run` (S21–S24, S26) and a `make bundle` build (S25).
+Run against `make run` (every scenario but "Bundle build loads images at same widths") and a `make bundle` build ("Bundle build loads images at same widths").
 
 **CAUTION: do NOT `pkill tarmacd`.** It kills the installed Tarmac and every
 terminal its daemon owns. `make run` pins `TARMAC_SOCKET` and `TARMAC_STATE` to
@@ -43,7 +43,7 @@ No scenario needed a click or a keystroke.
   viewport centre, `w`/`h`/`x`/`y` on each doc's entry in `boards[].tiles[]`), re-read
   the file, relaunch. **Waiting for the daemon to exit matters.** The first attempt
   edited right after `make kill-daemon` returned and came back at
-  `{zoom 1, cx 0, cy 0}`; with the wait, every later edit held (S23's zoom 2
+  `{zoom 1, cx 0, cy 0}`; with the wait, every later edit held (the zoom 2 of "Image widths double at 200 percent zoom"
   included). The daemon rewriting the file on its way down is the likely cause,
   inferred rather than proven.
 - **Measuring widths.** The README's logo and screenshot are dark images on a dark
@@ -56,17 +56,17 @@ No scenario needed a click or a keystroke.
   (`255,0,255` and `255,128,0`), and widths are bounding boxes of those colours.
 
 **Deviations from the spec's recipe:**
-- **S21, S22, S24, S26:** the viewport was left at `{1, 0, 0}` and the cards were
+- **"README images load at expected widths", "Every image form and format loads", "Narrow card re-caps wide image", "Missing local image shows broken placeholder":** the viewport was left at `{1, 0, 0}` and the cards were
   placed near the world origin, instead of centring the viewport on each card.
   Each measured card was fully inside its capture.
-- **S23:** zoom was confirmed by re-reading the saved state and by the doubled
+- **"Image widths double at 200 percent zoom":** zoom was confirmed by re-reading the saved state and by the doubled
   widths, not by measuring the card's border box.
 
 Captures and fixtures were kept outside the repo and are not committed.
 
 ---
 
-## S21 — README at 100%
+## README images load at expected widths — README at 100%
 
 Given `tarmac open README.md` at 100% zoom, tile `w` 392 (content width 348),
 tile `h` 600 and the viewport on the card: the logo is 160 ± 1 px wide, and
@@ -80,12 +80,12 @@ tile `h` 600 and the viewport on the card: the logo is 160 ± 1 px wide, and
       - Twin `board.png`: bbox x 613–960, y 418–604, so **348 × 187**. The card's
         border box spans x 590–982 and its prose content x 612–960, so the image
         ends exactly at the content edge and is not clipped.
-      - Logo top to `board.png` top: 418 − 116 = **302 px**, the S23 reference.
+      - Logo top to `board.png` top: 418 − 116 = **302 px**, the reference for "Image widths double at 200 percent zoom".
       - The real README card in the same capture shows the actual logo and board
         screenshot, not broken placeholders, at the same positions as the twin's
         colour blocks.
 
-## S22 — every `src` form and every rendering format
+## Every image form and format loads
 
 Given a fixture outside the repo at 100% zoom, tile `w` 392, with the viewport on
 the card: every image loads, a 100 × 50 PNG with no attributes is 100 × 50 ± 1,
@@ -127,24 +127,24 @@ decode measurement: an animated APNG, a single-frame HEIC sequence, and an SVG.
       - `END-OF-FIXTURE-LINE` is fully visible inside the 640-px card once the
         images load, so the card's height followed the images without a scroll.
 
-## S23 — 200% zoom, no reflow
+## Image widths double at 200 percent zoom — no reflow
 
-Given the S21 card at 200% zoom: the logo is 320 ± 2 px, `board.png` is
-696 ± 2 px, and the logo-top to `board.png`-top distance is twice S21's ± 2 px.
+Given the card of "README images load at expected widths" at 200% zoom: the logo is 320 ± 2 px, `board.png` is
+696 ± 2 px, and the logo-top to `board.png`-top distance is twice its value in "README images load at expected widths" ± 2 px.
 
 - [x] **PASS.**
 
       **Observation (2026-09-15).** Saved viewport `{zoom 2, cx 236, cy −80}`,
-      re-read after launch. Tiles as in S21.
+      re-read after launch. Tiles as in "README images load at expected widths".
       - Twin logo: bbox x 392–711, y 39–358, so **320 × 320**.
       - Twin `board.png`: bbox x 204–899, so **696 wide**. Only its top 30 rows are
         inside the window, and the width was measured there.
       - Logo top to `board.png` top: 643 − 39 = **604 = 2 × 302** exactly, in one
         capture, so no Δ correction was needed.
 
-## S24 — narrower card re-caps
+## Narrow card re-caps wide image
 
-Given the S21 card at tile `w` 300 (content width 256) and `h` 600: `board.png`
+Given the card of "README images load at expected widths" at tile `w` 300 (content width 256) and `h` 600: `board.png`
 is 256 ± 1 px and the logo stays 160 ± 1 px.
 
 - [x] **PASS.**
@@ -154,10 +154,10 @@ is 256 ± 1 px and the logo stays 160 ± 1 px.
       - `board.png` bbox x 33–288, so **256 × 138**.
       - Logo **160 × 160**.
 
-## S25 — bundled build
+## Bundle build loads images at same widths
 
-Given a `make bundle` build (origin `tauri://localhost`), repeat S21: both images
-load at the S21 widths.
+Given a `make bundle` build (origin `tauri://localhost`), repeat "README images load at expected widths": both images
+load at the widths of that scenario.
 
 - [x] **PASS.**
 
@@ -173,7 +173,7 @@ load at the S21 widths.
         release build. It was captured as the layer-0 window of the bundled
         app's pid. The `tauri://localhost` origin follows from it being a
         release bundle with no dev URL; the origin was not probed at runtime.
-      - The S21 layout was restored from `state.json`: viewport `{1, 0, 0}`, README
+      - The layout of "README images load at expected widths" was restored from `state.json`: viewport `{1, 0, 0}`, README
         and twin at 392 × 600.
       - Twin logo: bbox x 707–866, y 116–275, so **160 × 160**.
       - Twin `board.png`: bbox x 613–960, y 418–604, so **348 × 187**. Both are
@@ -181,7 +181,7 @@ load at the S21 widths.
       - The real README card shows the actual logo and board screenshot, loaded
         and not placeholders.
 
-## S26 — missing image, then a live edit
+## Missing local image shows broken placeholder — then a live edit
 
 Given a doc whose `src` names a missing local file: that image shows a broken
 placeholder and the rest renders. After a line is appended, the line appears and

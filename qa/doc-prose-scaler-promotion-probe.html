@@ -29,7 +29,7 @@
   until a human or driver calls report() for that case, and this page must
   not be read as though it measured itself.
 
-  Fixed false safe (S11 reading, this session): the `will-change` case's
+  Fixed false safe ("Raw HTML will-change promotion is detected" reading, this session): the `will-change` case's
   hostile node was a bare `<span>`. `will-change`/`transform` do not apply to
   non-replaced inline boxes, so WebKit never promoted it and the case read
   "not composited" — a false safe on half of R1's surface. The node is now a

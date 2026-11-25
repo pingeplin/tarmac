@@ -1,18 +1,18 @@
 # Doc-card raster cost manual QA checklist (spec 2608.0002)
 
-Companion to [`doc-prose-zoom-probe.html`](doc-prose-zoom-probe.html) (S6–S10)
+Companion to [`doc-prose-zoom-probe.html`](doc-prose-zoom-probe.html) (from "Prose wrap is identical across arms" to "De-promoted cards cut footprint and drop scaler")
 and [`doc-prose-scaler-promotion-probe.html`](doc-prose-scaler-promotion-probe.html)
-(S11, the R1 detector). These are the scenarios `make test` **cannot** decide —
+("Raw HTML will-change promotion is detected", the R1 detector). These are the scenarios `make test` **cannot** decide —
 Vitest has no layout, paint, or compositing engine (see the spec's "The
-instruments, and what each tier can decide"). One slot per scenario S6–S13
+instruments, and what each tier can decide"). One slot per scenario from "Prose wrap is identical across arms" to "Pinch zoom gesture feels no worse"
 below; fill in configuration and readings as you run each — **do not invent a
 number you have not read**.
 
 ## Setup
 
-- Tier 2 (S6–S10): the probe pages on a real engine — Playwright WebKit or
+- Tier 2 (from "Prose wrap is identical across arms" to "De-promoted cards cut footprint and drop scaler"): the probe pages on a real engine — Playwright WebKit or
   system WKWebView. No `make run` / Tauri app required for these.
-- Tier 3 (S11–S13): `make run`, fresh dev daemon. **Kill any installed
+- Tier 3 (from "Raw HTML will-change promotion is detected" to "Pinch zoom gesture feels no worse"): `make run`, fresh dev daemon. **Kill any installed
   `tarmacd` first** (`pkill tarmacd`) — a persistent installed daemon hijacks
   the dev app.
 - Read `docs/designs/2608.0002_doc_card_raster_cost.md` before running
@@ -70,8 +70,8 @@ it need not match this exactly, but must be pinned and stated.
 - Corpus/corpora (SHORT / LONG / both): **both, but not on the same
   instrument** — and this is a limitation of the committed probe worth
   stating plainly:
-  - `doc-prose-zoom-probe.html` (the committed instrument, used for S6–S9 and
-    for S10(a)) is **single-corpus**. It has `?w=`/`?h=`/`?pre=` and no corpus
+  - `doc-prose-zoom-probe.html` (the committed instrument, used for the scenarios from "Prose wrap is identical across arms" to "Sizer height and scroll fraction hold" and
+    for part (a) of "De-promoted cards cut footprint and drop scaler") is **single-corpus**. It has `?w=`/`?h=`/`?pre=` and no corpus
     length parameter, so it cannot produce a SHORT and a LONG row. Its one
     corpus is the 3-arm prose column at K=3, card 392×310, with three `<pre>`
     blocks: `pre0` (34-char non-overflowing null control), `pre1` (a genuinely
@@ -86,7 +86,7 @@ it need not match this exactly, but must be pinned and stated.
   (replica, Engine A), `wk-qa-s10b-dpr2.txt` (Engine B footprint),
   `r-qa-s11-noinject.json` + `r-qa-s11-replica.json` (R1).
 
-## 2608.0002 S6 — prose blocks byte-identical between `base` and `wrap`, every sweep step
+## 2608.0002 Prose wrap is identical across arms — prose blocks byte-identical between `base` and `wrap`, every sweep step
 
 *Instrument:* `doc-prose-zoom-probe.html`, `armSignature()`.
 
@@ -136,10 +136,10 @@ Reading — **PASS**:
 - Cross-engine confirmation at z = 1 (Engine B, system WKWebView, dpr 2
   verified at the window): SHORT and LONG both diff to `["pre"]` only.
 
-## 2608.0002 S7 — the `<pre>` signature changes exactly once, then holds
+## 2608.0002 Pre signature changes once then stays stable — the `<pre>` signature changes exactly once, then holds
 
 *Instrument:* `armSignature()` + per-block `scrollWidth`/`offsetHeight`, same
-sweep as S6.
+sweep as "Prose wrap is identical across arms".
 
 - [x] Across the same `base`→`wrap` comparison, the `pre` block's signature
       changes exactly once (base → chosen) and is then identical at every
@@ -185,10 +185,10 @@ Reading — **PASS**:
     and starts from `scrollWidth` 16288 instead of 6257. The spec says
     character offsets are corpus-bound and the invariant is the pass
     criterion; that is what happened. It does mean **the committed probe
-    cannot be used to check the design doc's S7 numbers** — only the
+    cannot be used to check the design doc's numbers for "Pre signature changes once then stays stable"** — only the
     invariant.
 
-## 2608.0002 S8 — 200-char unbreakable token is reachable under `wrap`, not under `wrapx`
+## 2608.0002 Unbreakable token stays reachable under wrap — 200-char unbreakable token is reachable under `wrap`, not under `wrapx`
 
 *Instrument:* probe per-block `scrollWidth`/`clientWidth` (the `pre-token` /
 `pre2` block).
@@ -228,7 +228,7 @@ Reading — **PASS**:
   removing it leaves a 4.5× horizontal overflow that the four nested clips
   make unreachable.
 
-## 2608.0002 S9 — sizer/scroller geometry invariants (shipped mechanism, arm C)
+## 2608.0002 Sizer height and scroll fraction hold — sizer/scroller geometry invariants (shipped mechanism, arm C)
 
 *Instrument:* probe geometry readout (`natH`, `sizerH` read back from
 `offsetHeight`, `scrollHeightFixed`, scroll-fraction round-trip via
@@ -254,7 +254,7 @@ Reading — **PASS** (committed probe, arm C, Engine A, dpr 2, K = 3, card
 - natH invariant across sweep: **yes, 15/15 rows.** `base` natH = 3664 at
   every step; `wrapx` = 4949; `wrap` = 5234. Unchanged by z, return leg
   included. (The re-wrap raises natH by +1570 K-px on this corpus — that is
-  S7's one-time reflow, not zoom drift.)
+  the one-time reflow of "Pre signature changes once then stays stable", not zoom drift.)
 - sizerH == ceil(natH·z/K) at every step: **yes, 15/15 rows** (45/45 across
   the three spellings), read back from `n.sizer.offsetHeight`, not from the
   assigned value. `wrap`: z 0.5 → 873, z 1 → 1745, z 2 → 3490, z 3 → 5234,
@@ -284,7 +284,7 @@ Reading — **PASS** (committed probe, arm C, Engine A, dpr 2, K = 3, card
     `wrap`-vs-`clip` drift comparison needs the replica instrument, and was
     not run this session.
 
-## 2608.0002 S10 — `scalerN == 0` at every step (a), process footprint (b)
+## 2608.0002 De-promoted cards cut footprint and drop scaler — `scalerN == 0` at every step (a), process footprint (b)
 
 *Instrument:* WebKit Inspector `LayerTree` for (a); `footprint -p` on
 `com.apple.WebKit.WebContent` for (b) — **both are required**, per the
@@ -396,7 +396,7 @@ batch (`wk-qa-s10b-dpr2.txt`):
   SHORT** (80 vs 75) and **0 MB on LONG** (73 vs 73) — the design's +6 MB /
   0 MB, within footprint noise. `wrapx` and `wrap` are indistinguishable on
   memory (80/80 SHORT, 73/73 LONG), as the design says: they differ only on
-  the unbreakable token (S8).
+  the unbreakable token ("Unbreakable token stays reachable under wrap").
 
 **Disagreements with the design doc's canonical table — recorded, not
 massaged.** The *deltas* reproduce; two of the four *levels* do not:
@@ -419,11 +419,11 @@ massaged.** The *deltas* reproduce; two of the four *levels* do not:
 - The 48/96-cycle scroll-drift rows (93 → 97 → 99) were **not** re-run this
   session; the prior session's ratchet batch stands unrepeated.
 
-## 2608.0002 S11 (R1) — hostile markdown re-promotes `.doc-prose-scaler` (Tier 3)
+## 2608.0002 Raw HTML will-change promotion is detected (R1) — hostile markdown re-promotes `.doc-prose-scaler` (Tier 3)
 
 *Instrument:* [`doc-prose-scaler-promotion-probe.html`](doc-prose-scaler-promotion-probe.html)
 (the standing R1 detector) + `footprint -p`. **Not** Vitest — it can pin the
-rule text (S1/S2) but can never observe promotion. This is the invariant with
+rule text ("Pre rule declares visible overflow and wrap" and "Pre rule has no auto overflow") but can never observe promotion. This is the invariant with
 no code guard: raw HTML in markdown carrying `will-change` or a 3D transform
 silently re-promotes the subtree, degrading to the pre-2608.0002 cost, never
 worse.
@@ -542,12 +542,12 @@ COMPOSITED with reason `overlap`; only the box size moves, not the verdict.
 
 - Real-app footprint check (if run): **TODO — not run.** This sub-item needs
   `make run` with a fresh dev daemon and a markdown doc card, i.e. human hands
-  on the GUI app; it was deliberately left for the human, like S12/S13. The
+  on the GUI app; it was deliberately left for the human, like "Glyphs stay crisp on 1x panel" and "Pinch zoom gesture feels no worse". The
   design doc's 59.69 → 238.55 MB (~4×) reference is therefore unconfirmed in
   the real app; the ~2× ratio measured above (corroboration table) is Engine A
   on six replica cards and is not the same measurement.
 
-## 2608.0002 S12 (R2) — 1× crispness (Tier 3, UNKNOWN going in)
+## 2608.0002 Glyphs stay crisp on 1x panel (R2) — 1× crispness (Tier 3, UNKNOWN going in)
 
 *Instrument:* by eye under `make run`, same procedure as
 [`one-x-display-crispness.md`](one-x-display-crispness.md).
@@ -574,7 +574,7 @@ Reading — recorded by the repo owner.
   criterion above, not a quantitative proof. Per-zoom-level breakdown and a
   formal panel identity re-check were not itemized separately.
 
-## 2608.0002 S13 (R3) — gesture feel (Tier 3, UNKNOWN going in)
+## 2608.0002 Pinch zoom gesture feels no worse (R3) — gesture feel (Tier 3, UNKNOWN going in)
 
 *Instrument:* by hand under `make run`.
 

@@ -4,7 +4,7 @@ import XCTest
 
 /// The bounded hand-off between the driver's socket thread and the app (spec
 /// 2609.0015, #166; parity rows Q6–Q7) — `DevDriver::dispatch` in
-/// `desktop/src-tauri/src/dev_driver.rs` (S70, S72) and the one-at-a-time queue
+/// `desktop/src-tauri/src/dev_driver.rs` ("Silent frontend gives bounded error reply", "Concurrent requests get distinct ids") and the one-at-a-time queue
 /// in `desktop/src/devDriver.ts`.
 final class DevRelayTests: XCTestCase {
     /// What the app was asked, in order, and a gate a verb can be held at.
@@ -43,9 +43,10 @@ final class DevRelayTests: XCTestCase {
 
     // MARK: - the bound
 
+    /// "Silent frontend gives bounded error reply".
     /// The three deadlines nest — the verb's own budget, the app at `+2000`,
     /// the CLI at `+3000` — so the innermost one always fires.
-    func testS70TheWaitIsTheRequestsBudgetPlusTwoSeconds() {
+    func testTheWaitIsTheRequestsBudgetPlusTwoSeconds() {
         XCTAssertEqual(DevRelay.waitMs(for: .snapshot(until: nil, timeoutMs: 10_000)), 12_000)
         XCTAssertEqual(DevRelay.waitMs(for: .press(combo: "cmd+q", holdMs: 9_000, ageMs: nil, busyMs: 1_000)), 3_000)
         XCTAssertEqual(DevRelay.waitMs(for: .snapshot(until: nil, timeoutMs: nil)), 2_000)
@@ -53,9 +54,10 @@ final class DevRelayTests: XCTestCase {
         XCTAssertEqual(DevRelay.waitMs(for: .zoom(z: 1), slackMs: 40), 40)
     }
 
+    /// "Silent frontend gives bounded error reply".
     /// The wait is the bound: no shorter, and neither a multiple of it nor the
     /// default slack in place of this relay's own.
-    func testS70ASilentAppIsGivenUpOnAtTheBound() {
+    func testASilentAppIsGivenUpOnAtTheBound() {
         let app = App()
         defer { app.openGate() }
         let relay = DevRelay(slackMs: 200)
@@ -76,7 +78,8 @@ final class DevRelayTests: XCTestCase {
 
     // MARK: - not ready, not known
 
-    func testS70ARequestBeforeTheAppAttachesIsAnsweredAtOnce() {
+    /// "Silent frontend gives bounded error reply".
+    func testARequestBeforeTheAppAttachesIsAnsweredAtOnce() {
         let answered = timed { DevRelay().answer(.zoom(z: 1)) }
         XCTAssertEqual(code(answered.reply), "app_not_ready")
         XCTAssertLessThan(answered.ms, 1_000)
@@ -111,7 +114,7 @@ final class DevRelayTests: XCTestCase {
         XCTAssertEqual(relay.answer(.zoom(z: 0.5)), DevReply(ok: true, body: #"{"zoom":0.5}"#))
     }
 
-    /// S72 and Q6 — a verb the relay gave up on is still running. Its answer
+    /// "Concurrent requests get distinct ids" and Q6 — a verb the relay gave up on is still running. Its answer
     /// reaches no later request, and the next verb does not start until it has
     /// finished: two verbs interleaved at their suspension points would each
     /// report a state the other was halfway through changing.

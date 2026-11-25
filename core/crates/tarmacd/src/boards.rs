@@ -687,8 +687,9 @@ mod tests {
         assert_eq!(r.tiles, vec![term_tile()]);
     }
 
+    /// 2611.0024 "Daemon set tiles keeps sidebar keys".
     #[test]
-    fn s2611_0024_s15_set_tiles_keeps_a_doc_tiles_sidebar_keys() {
+    fn set_tiles_keeps_a_doc_tiles_sidebar_keys() {
         let mut r = Registry::empty();
         r.docs.insert(PathBuf::from("/d/a.md"), doc_info());
         let doc = Tile {

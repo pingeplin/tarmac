@@ -30,7 +30,8 @@ final class OffscreenHintsTests: XCTestCase {
         XCTAssertEqual(Layout.flyTarget([hint("lo", .zero, .bell, 1), hint("hi", .zero, .bell, 9)]), "hi")
     }
 
-    func testS24TheRankWinsWhateverTheZ() {
+    /// "Pill signal and fly target rank".
+    func testTheRankWinsWhateverTheZ() {
         XCTAssertEqual(Layout.flyTarget([hint("live", .zero, .live, 5000), hint("bell", .zero, .bell, 0)]), "bell")
         XCTAssertEqual(Layout.flyTarget([hint("done", .zero, .done, 9), hint("exit", .zero, .exit, 1)]), "exit")
         XCTAssertEqual(
@@ -169,15 +170,17 @@ final class OffscreenHintsTests: XCTestCase {
         XCTAssertEqual(pill("ignored", .live, name: "agent").plain, "agent")
     }
 
-    func testS25AReportPillQuotesTheStartOfItsTextOnOneLine() {
+    /// "Pill labels cut long text".
+    func testAReportPillQuotesTheStartOfItsTextOnOneLine() {
         XCTAssertEqual(pill("abcdefghij\n  klmnopqrstuvwxyz0123").plain, "claude · “abcdefghij klmnopqrstuv…”")
         let exactly24 = "abcdefghijklmnopqrstuvwx"
         XCTAssertEqual(pill(exactly24, .done).plain, "claude · “\(exactly24)”")
     }
 
+    /// "Pill labels cut long text".
     /// Cut by Unicode scalars, not by characters: 13 decomposed `é` are 26
     /// scalars, so the pill keeps 23 of them.
-    func testS25TheQuoteIsCutByUnicodeScalars() {
+    func testTheQuoteIsCutByUnicodeScalars() {
         let text = String(repeating: "e\u{301}", count: 13)
         let kept = String(repeating: "e\u{301}", count: 11) + "e"
         XCTAssertEqual(
@@ -185,7 +188,8 @@ final class OffscreenHintsTests: XCTestCase {
         )
     }
 
-    func testS25ADoneWithNoTextAnExitABellAndLiveReadTheirWords() {
+    /// "Pill labels cut long text".
+    func testADoneWithNoTextAnExitABellAndLiveReadTheirWords() {
         XCTAssertEqual(pill(nil, .done).plain, "claude · report")
         XCTAssertEqual(pill(nil, .exit).plain, "claude · exited")
         XCTAssertEqual(pill("x", .bell).plain, "claude · 14:32")
@@ -194,35 +198,41 @@ final class OffscreenHintsTests: XCTestCase {
 
     // MARK: - pillLabel, inline markdown (spec 2611.0017)
 
-    func testS7ThePillCountsRenderedScalars() {
+    /// "Pill counts rendered scalars".
+    func testThePillCountsRenderedScalars() {
         XCTAssertEqual(
             pill("Need OK to run [cargo test](u) now please").runs,
             [p("claude · “Need OK to run "), l("cargo te"), p("…”")]
         )
     }
 
-    func testS10APillQuoteWithNoMarkdownReadsAsBefore() {
+    /// "Text without markdown is unchanged".
+    func testAPillQuoteWithNoMarkdownReadsAsBefore() {
         for text in S10.texts {
             XCTAssertEqual(pill(text, .done), .literal("claude · “\(ChromeText.oneLine(text))”"), text)
         }
     }
 
-    func testS8ThePillsNameIsLiteral() {
+    /// "Pill name stays literal".
+    func testThePillsNameIsLiteral() {
         XCTAssertEqual(pill("ok", name: "*scratch*"), .literal("*scratch* · “ok”"))
     }
 
-    func testS19APillCutInACodeRunClosesTheRunBeforeTheEllipsis() {
+    /// "Pill cut inside a code run".
+    func testAPillCutInACodeRunClosesTheRunBeforeTheEllipsis() {
         XCTAssertEqual(
             pill("`abcdefghijklmnopqrstuvwxyz`").runs, [p("claude · “"), c("abcdefghijklmnopqrstuvw"), p("…”")]
         )
     }
 
-    func testS21ExactlyTwentyFourRenderedScalarsAreNotCut() {
+    /// "Exactly 24 rendered scalars are not cut".
+    func testExactlyTwentyFourRenderedScalarsAreNotCut() {
         XCTAssertEqual(
             pill("**abcdefghijklmnopqrstuvwx**").runs, [p("claude · “"), b("abcdefghijklmnopqrstuvwx"), p("”")])
     }
 
-    func testS23OtherPillKindsAreOnePlainRunOfTodaysString() {
+    /// "Other pill kinds are unchanged".
+    func testOtherPillKindsAreOnePlainRunOfTodaysString() {
         XCTAssertEqual(pill(nil, .bell, name: "notes.md"), .literal("notes.md · 14:32"))
         XCTAssertEqual(pill("**x**", .live, name: "agent"), .literal("agent"))
         XCTAssertEqual(pill(nil, .exit), .literal("claude · exited"))

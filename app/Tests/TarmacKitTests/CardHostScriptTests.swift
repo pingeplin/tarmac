@@ -88,8 +88,8 @@ final class CardHostScriptTests: XCTestCase {
         XCTAssertEqual(carried("{ tarmac: 'ready', meta: null }").first.flatMap(CardConsole.parse), .ready(meta: nil))
     }
 
-    /// 2610.0003 S38: a scroll report is small, and crosses as it came.
-    func test2610S38AScrollReportIsCarriedAsItCame() throws {
+    /// 2610.0003 "Host page forwards a scrolled message": a scroll report is small, and crosses as it came.
+    func testAScrollReportIsCarriedAsItCame() throws {
         let bodies = carried("{ tarmac: 'scrolled', offset: 120, visible: 840, total: 4800 }")
         XCTAssertEqual(bodies.count, 1)
         XCTAssertEqual(
@@ -377,7 +377,7 @@ final class CardHostScriptTests: XCTestCase {
         XCTAssertEqual(carried("{ tarmac: 'ready', meta: 'x'.repeat(973) }").count, 0)
     }
 
-    // MARK: - the first ready of a load is stamped (2611.0002 S10–S14)
+    // MARK: - the first ready of a load is stamped (2611.0002)
 
     private let sourceA = "tarmac-card://doc/a.html?v=1"
     private let sourceB = "tarmac-card://doc/a.html?v=2"
@@ -393,7 +393,8 @@ final class CardHostScriptTests: XCTestCase {
 
     private let unstamped: NSDictionary = ["tarmac": "ready", "meta": NSNull(), "data": "stats.json"]
 
-    func test2611_0002S10TheFirstReadyOfALoadCarriesItsNumber() throws {
+    /// "First ready carries the load number".
+    func testTheFirstReadyOfALoadCarriesItsNumber() throws {
         load(sourceA, number: 3)
         hear("{ tarmac: 'started', source: '\(sourceA)' }")
         let bodies = ready("source: '\(sourceA)'")
@@ -403,7 +404,8 @@ final class CardHostScriptTests: XCTestCase {
         )
     }
 
-    func test2611_0002S11ALaterReadyOfTheLoadCarriesNone() {
+    /// "Second ready carries no load number".
+    func testALaterReadyOfTheLoadCarriesNone() {
         load(sourceA, number: 3)
         hear("{ tarmac: 'started', source: '\(sourceA)' }")
         XCTAssertEqual(ready("source: '\(sourceA)'"), [stamped(3)])
@@ -415,17 +417,19 @@ final class CardHostScriptTests: XCTestCase {
         XCTAssertEqual(ready("source: '\(sourceA)'"), [unstamped])
     }
 
-    func test2611_0002S12ACardCannotNameALoad() {
+    /// "Frame supplied load number is never trusted".
+    func testACardCannotNameALoad() {
         load(sourceA, number: 3)
         hear("{ tarmac: 'started', source: '\(sourceA)' }")
         XCTAssertEqual(ready("source: '\(sourceA)', load: 99"), [stamped(3)])
         XCTAssertEqual(ready("source: '\(sourceA)', load: 99"), [unstamped])
     }
 
+    /// "Long source is dropped and big ready refused".
     /// The source is the page's alone and is not measured: a long path must
     /// not cost a card its `ready`. A `ready` the page drops for its size does
     /// not use up the stamp.
-    func test2611_0002S12aTheSourceIsNotMeasuredAndADroppedReadyLeavesTheStamp() throws {
+    func testTheSourceIsNotMeasuredAndADroppedReadyLeavesTheStamp() throws {
         let sized = """
             (() => {
               const ready = { tarmac: 'ready', meta: '', data: null };
@@ -449,9 +453,10 @@ final class CardHostScriptTests: XCTestCase {
         XCTAssertEqual(ready("source: '\(sourceB)'"), [stamped(2)])
     }
 
+    /// "Ready from the old document has no load".
     /// The document of the load before is still in the frame until the new
     /// one starts, and its `ready` names no file.
-    func test2611_0002S13AReadyBeforeTheNewDocumentStartsIsNotStamped() {
+    func testAReadyBeforeTheNewDocumentStartsIsNotStamped() {
         load(sourceA, number: 3)
         hear("{ tarmac: 'started', source: '\(sourceA)' }")
         load(sourceB, number: 4)
@@ -460,9 +465,10 @@ final class CardHostScriptTests: XCTestCase {
         XCTAssertEqual(ready("source: '\(sourceB)'"), [stamped(4)])
     }
 
+    /// "Ready with old source has no load".
     /// The frame's `load` event names no document: the one it replaced can
     /// still speak after it.
-    func test2611_0002S13bTheReplacedDocumentsReadyCannotTakeTheStamp() {
+    func testTheReplacedDocumentsReadyCannotTakeTheStamp() {
         load(sourceA, number: 3)
         hear("{ tarmac: 'started', source: '\(sourceA)' }")
         load(sourceB, number: 4)
@@ -471,7 +477,8 @@ final class CardHostScriptTests: XCTestCase {
         XCTAssertEqual(ready("source: '\(sourceB)'"), [stamped(4)])
     }
 
-    func test2611_0002S13aNoReadyIsStampedBeforeALoadIsAsked() {
+    /// "Ready before any load has no load".
+    func testNoReadyIsStampedBeforeALoadIsAsked() {
         frameLoaded()
         hear("{ tarmac: 'started', source: '\(sourceA)' }")
         XCTAssertEqual(ready("source: '\(sourceA)'"), [unstamped])
@@ -480,7 +487,8 @@ final class CardHostScriptTests: XCTestCase {
         XCTAssertEqual(ready("source: '\(sourceA)'"), [stamped(1)])
     }
 
-    func test2611_0002S14TheDataTextIsPostedIntoTheFrame() {
+    /// "Data call posts text to the frame".
+    func testTheDataTextIsPostedIntoTheFrame() {
         let text = #"{"s":"\"</script>${x}\u2028"}"#
         context.setObject(text, forKeyedSubscript: "text" as NSString)
         context.evaluateScript("window.tarmacCard.data(text)")
@@ -490,8 +498,8 @@ final class CardHostScriptTests: XCTestCase {
         )
     }
 
-    /// 2611.0003 S34: the texts of one flush go into the frame as one message.
-    func test2611_0003S34TheEventTextsArePostedIntoTheFrameAsOneMessage() {
+    /// 2611.0003 "Events call posts one batch message": the texts of one flush go into the frame as one message.
+    func testTheEventTextsArePostedIntoTheFrameAsOneMessage() {
         let texts = ["1", "2", #"{"s":"\"</script>"}"#]
         context.setObject(texts, forKeyedSubscript: "texts" as NSString)
         context.evaluateScript("window.tarmacCard.events(texts)")

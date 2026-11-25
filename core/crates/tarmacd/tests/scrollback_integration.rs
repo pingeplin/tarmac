@@ -25,7 +25,7 @@ fn request_scrollback(app: &mut Conn, term_id: &str) -> Vec<u8> {
     bytes
 }
 
-// S1: a live term's ring comes back in one frame that contains what it printed,
+// "Scrollback request returns history once": a live term's ring comes back in one frame that contains what it printed,
 // and exactly one frame — a second reply would duplicate history in the xterm.
 #[test]
 fn scrollback_request_replies_once_with_the_ring() {
@@ -43,7 +43,7 @@ fn scrollback_request_replies_once_with_the_ring() {
     );
 }
 
-// S5: an unknown term and a live-but-silent term both answer with empty bytes.
+// "Unknown or silent term gets empty scrollback": an unknown term and a live-but-silent term both answer with empty bytes.
 // Silence would leave the app awaiting forever, blanking a card.
 #[test]
 fn scrollback_request_answers_unknown_and_silent_terms_with_empty_bytes() {
@@ -62,7 +62,7 @@ fn scrollback_request_answers_unknown_and_silent_terms_with_empty_bytes() {
     assert!(contains(&request_scrollback(&mut app, "tloud"), b"STILL-ALIVE"));
 }
 
-// S6: the request neither consumes nor sets AppConn.replayed — a board visited
+// "Scrollback request keeps first-visit replay": the request neither consumes nor sets AppConn.replayed — a board visited
 // for the first time after a request still gets its one-time Output replay, and
 // a switch away and back still gets none.
 #[test]

@@ -1,18 +1,18 @@
 # Doc card refresh manual QA checklist (spec 2609.0001, issue #89)
 
-The [Q]-tagged scenarios S13–S20 the unit suites cannot cover: the React/Tauri
+The [Q]-tagged scenarios from "Refresh control shows without hover" to "First refresh of fresh magnify card reloads once" the unit suites cannot cover: the React/Tauri
 shell has no unit tests by design (only pure `kit/` logic and Rust are tested).
 Run against `make run` with a fresh dev daemon (`make kill-daemon` first).
 
 **CAUTION:** Kill any installed `tarmacd` before testing (`pkill tarmacd`), since
 a persistent installed daemon hijacks the dev app. This matters more here than for
 any earlier QA sheet: every item below observes daemon-side behavior that does not
-exist in an installed build, so a hijacked session fails S15–S20 for the wrong
+exist in an installed build, so a hijacked session fails the scenarios from "Markdown refresh renders new content in place" to "First refresh of fresh magnify card reloads once" for the wrong
 reason and looks like a broken feature.
 
 ## Status: VERIFIED — 8/8 PASS (2026-09-05, commit `eb47e28`)
 
-**S13–S20 all ran and all passed**, against the debug build of `eb47e28` — the
+**The eight [Q]-tagged scenarios all ran and all passed**, against the debug build of `eb47e28` — the
 PR's feature commit, before it was squashed into `15812af` — driven through the
 real UI in `../tarmac-worktrees/89-doc-card-refresh` (since removed; that is the
 worktree every `<worktree>` path below names). Every checked box was observed on
@@ -64,30 +64,30 @@ instructions and a later reader needs to know:
 generation). The wrapper was rebuilt at ~08:25 and the app
 restarted at 08:26 (`app connected (generation 3)` in the daemon log; the
 generation numbers climbing from 08:35 on are the `board_create`/`board_switch`
-reconnects described above, not further launches). S13/S14/S16/S18/S20 ran on the
-first launch (08:09–08:14), S15/S17/S19 on the third (08:36–08:44). The relaunch
-remounted every card, which is why S17's stale baseline reads console badge 5 —
-one load's worth of lines — where S16 and S20 had left the same card at 10, and
+reconnects described above, not further launches). "Refresh control shows without hover", "Dragging from refresh control does not move card", "Unchanged magnify card refresh does not reload", "Refresh of unchanged old doc shows no change" and "First refresh of fresh magnify card reloads once" ran on the
+first launch (08:09–08:14), "Markdown refresh renders new content in place", "Stale magnify card refresh reloads document" and "Recency label shows edit age not click time" on the third (08:36–08:44). The relaunch
+remounted every card, which is why the stale baseline of "Stale magnify card refresh reloads document" reads console badge 5 —
+one load's worth of lines — where "Unchanged magnify card refresh does not reload" and "First refresh of fresh magnify card reloads once" had left the same card at 10, and
 why its `aliveSec` reads 620: 620 ticks before the 08:36:35 capture puts the load
 at ≈08:26, the relaunch, not the card's original open.
 
 **Daemon state was read live, not snapshotted.** The `last_changed_ms` values
-quoted in S15/S18/S19/S20 were read from `<worktree>/.dev/state.json` at the
+quoted in "Markdown refresh renders new content in place", "Refresh of unchanged old doc shows no change", "Recency label shows edit age not click time" and "First refresh of fresh magnify card reloads once" were read from `<worktree>/.dev/state.json` at the
 moment of each observation; that file went away with the worktree and is not part
 of the evidence set. What still corroborates the mechanism is the source files
 themselves: `qa89-scratch/docs/probe.md`'s mtime is `1788569051444` to the
-millisecond — exactly the value S19 quotes. S15's, S18's and S20's values sat on
+millisecond — exactly the value "Recency label shows edit age not click time" quotes. The values of "Markdown refresh renders new content in place", "Refresh of unchanged old doc shows no change" and "First refresh of fresh magnify card reloads once" sat on
 files that later edits in the same run overwrote, so they can no longer be
 re-derived.
 
 Automated coverage that also exists, for context:
-`core/crates/tarmacd/tests/doc_refresh_integration.rs` (S3–S10, S21, S22 — the whole
+`core/crates/tarmacd/tests/doc_refresh_integration.rs` (from "Refresh pushes file event with real mtime" to "Refresh of deleted file pushes nothing" — the whole
 daemon contract, including the watcher-missed-it case) and the `cardSrcUrl` purity
-guard S11 in `desktop/src/kit/docKind.test.ts`. What this sheet adds is the UI
+guard "Card URL depends only on path and mtime" in `desktop/src/kit/docKind.test.ts`. What this sheet adds is the UI
 shell: the control's presence, its drag behavior, and the on-screen result of a
 refresh.
 
-## The stale-card recipe (used by S15, S17, S19)
+## The stale-card recipe (used by "Markdown refresh renders new content in place", "Stale magnify card refresh reloads document" and "Recency label shows edit age not click time")
 
 On macOS + FSEvents there is no user-reachable way to make the *active* board's
 watcher miss an edit, so stage it the way the daemon actually produces it:
@@ -103,7 +103,7 @@ board — so the card still shows the old content, the old recency label and the
 `?v=`. **Confirm that stale baseline before clicking refresh**; a scenario that
 refreshes an already-current card proves nothing.
 
-## S13 — the control is present on both card kinds — PASS
+## Refresh control shows without hover — the control is present on both card kinds — PASS
 
 - [x] A markdown doc card shows `↻` in its header without hovering.
 - [x] A live HTML card shows it too.
@@ -118,7 +118,7 @@ refreshes an already-current card proves nothing.
   shows the same slot occupied by the real recency label
   (`¶ probe.md … ✎ 19s ↻ ✕`), so the full order is evidenced across the two.
 
-## S14 — the control does not drag the card — PASS
+## Dragging from refresh control does not move card — PASS
 
 - [x] Press on `↻` and drag: the card does **not** move.
 - Observation: `s14.png` — pressed on `probe.md`'s `↻` and dragged ~85×60 screen
@@ -134,7 +134,7 @@ refreshes an already-current card proves nothing.
   its `state.json` read was not preserved, so it is an operator note rather than
   evidence, and the "not vacuous" claim rests on it. Card dragged back afterwards.
 
-## S15 — markdown refresh, scroll preserved (the #89 user story) — PASS
+## Markdown refresh renders new content in place — markdown refresh, scroll preserved (the #89 user story) — PASS
 
 - [x] With a markdown card made stale by the recipe above and scrolled partway
       down, click `↻`: the **new** content renders (verifiably the edited bytes,
@@ -149,10 +149,10 @@ refreshes an already-current card proves nothing.
   (untouched) still reads `BASELINE-01`, the same line is still the top visible
   line — no jump to the top — and the registry moved to 1788568868835.
 
-## S16 — unchanged HTML card is not reloaded — PASS
+## Unchanged magnify card refresh does not reload — PASS
 
 Precondition: the card's `lastChangedMs` is already populated (it has taken at
-least one `file_event` — a prior edit or a prior refresh). S20 covers the
+least one `file_event` — a prior edit or a prior refresh). "First refresh of fresh magnify card reloads once" covers the
 un-populated card, which behaves differently on purpose.
 
 - [x] With a magnify HTML card at board zoom ≠ 1 whose file has **not** changed,
@@ -161,15 +161,15 @@ un-populated card, which behaves differently on purpose.
 - [x] The card's rendered size does not change.
 - Observation: `s20_second_card.png` (before) → `s16.png` (after). Board zoom
   145%; the probe copy carries a per-load random `loadId` and a `setInterval`
-  seconds-since-load counter. Before — the same reading S20's second click ends
+  seconds-since-load counter. Before — the same reading the second click of "First refresh of fresh magnify card reloads once" ends
   on, which is why that one capture serves both: `loadId=9948`, `aliveSec=53`,
-  console badge 10 (its `lastChangedMs` had been populated by the S20 first
+  console badge 10 (its `lastChangedMs` had been populated by the "First refresh of fresh magnify card reloads once" first
   click). After the click: `loadId=9948` unchanged, `aliveSec=85` (kept counting
   straight through), badge still 10, and the probe's measured box occupies exactly
   the same rectangle as before — (2406,892)–(3404,1352), 998×460 device px. No
   reload, no resize.
 
-## S17 — changed HTML card reloads and comes back at board zoom — PASS
+## Stale magnify card refresh reloads document — changed HTML card reloads and comes back at board zoom — PASS
 
 Use `desktop/qa/magnify-probe.html` — it declares `tarmac-zoom`, so `HtmlCard`
 logs a host-side `zoom-mode declared=…` console line per load. Copy it outside the
@@ -200,7 +200,7 @@ repo before editing so the QA run does not dirty the worktree.
   (460→362 px) because the new banner is one text line shorter. 1/K would have
   been ≈333 px wide, so this is board zoom, not the #99 shape.
 
-## S18 — an unchanged, stale-dated refresh is invisible — PASS
+## Refresh of unchanged old doc shows no change — PASS
 
 - [x] Click `↻` on an unchanged doc older than the 30 s recency window (a markdown
       card, or an HTML card whose `lastChangedMs` is already populated): nothing
@@ -216,7 +216,7 @@ repo before editing so the QA run does not dirty the worktree.
   `state.json` at that moment; it simply matched what the app already had, so
   nothing rendered.
 
-## S19 — the recency label shows the edit's age, not the click's — PASS
+## Recency label shows edit age not click time — PASS
 
 - [x] With a markdown card made stale by the recipe above and the edit inside the
       30 s window, click `↻`: the header shows `✎ Ns` stamped from the file's real
@@ -234,7 +234,7 @@ repo before editing so the QA run does not dirty the worktree.
   **Uncaptured:** the pre-click header (carrying no recency label for that edit)
   and the first post-click reading (`✎ 9s`) were watched live, not screenshotted.
 
-## S20 — first refresh of a never-changed HTML card reloads once — PASS
+## First refresh of fresh magnify card reloads once — PASS
 
 This is the accepted one-time-reload trade-off (spec Open Question 1) made
 observable. A freshly opened card has no `lastChangedMs`, so its iframe sits at
@@ -243,7 +243,7 @@ observable. A freshly opened card has no `lastChangedMs`, so its iframe sits at
 - [x] With a magnify HTML card freshly opened and never changed since, at board
       zoom ≠ 1, click `↻` **once**: the document reloads even though the file did
       not change (page-local state resets, console badge count goes up — +5 here,
-      see the S17 note on this probe's per-load line count).
+      see the note of "Stale magnify card refresh reloads document" on this probe's per-load line count).
 - [x] It comes back at the current board zoom, **not** at 1/K. If it lands at 1/K
       that is the #99 shape and a blocker, not an accepted trade-off.
 - [x] Click `↻` a **second** time with still no edit: nothing reloads (page-local
@@ -265,7 +265,7 @@ observable. A freshly opened card has no `lastChangedMs`, so its iframe sits at
 - **A board switch resets a markdown card's scroll position.** Seen twice while
   staging the recipe: park a scrolled `probe.md` on board-0, switch to board-1 and
   back, and the card is at the top again. It happens on the switch, before any
-  refresh — the S15 scroll check above was made against a card re-scrolled *after*
+  refresh — the scroll check of "Markdown refresh renders new content in place" above was made against a card re-scrolled *after*
   the switch, so it is unaffected. Pre-existing behaviour, unrelated to `↻`.
 - **Nothing about the refresh control itself misbehaved.** The only friction in
   the run was the harness: some synthetic clicks on `↻` did not register and had

@@ -27,13 +27,13 @@ function lint(dir, env = process.env, only = "rust") {
 /** The reporter block: the lines from the `✗` line on. */
 const report = (run) => run.err.slice(run.err.findIndex((line) => line.startsWith("✗ ")));
 
-test("S1: a workspace with no finding passes and says nothing", () => {
+test("Clean workspace exits 0 silently: a workspace with no finding passes and says nothing", () => {
   const run = lint(repo({ "core/src/main.rs": "fn main() {}\n" }));
 
   assert.deepEqual({ code: run.code, err: run.err, out: run.out }, { ...CLEAN, out: "" });
 });
 
-test("S2: a finding is shown as clippy wrote it, then named with the next command", () => {
+test("Todo finding exits 1 with report: a finding is shown as clippy wrote it, then named with the next command", () => {
   const run = lint(repo({ "core/src/main.rs": "fn main() {\n    todo!()\n}\n" }));
 
   assert.equal(run.code, 1);
@@ -47,7 +47,7 @@ test("S2: a finding is shown as clippy wrote it, then named with the next comman
   ]);
 });
 
-test("S3: a place that two targets compile is listed once, and places are in byte order", () => {
+test("Two findings listed once each in byte order: a place that two targets compile is listed once, and places are in byte order", () => {
   const shared = "pub fn late() {\n    todo!()\n}\n";
   const dir = repo({
     "core/src/lib.rs": "pub mod shared;\npub fn first() {\n    todo!()\n}\n",
@@ -86,7 +86,7 @@ test("a finding inside a macro is placed where the macro is called", () => {
   assert.ok(report(run).slice(1, -3).every((line) => /^ {2}(at| {2}) {3}core\/src\/main\.rs:2:/.test(line)), report(run).join("\n"));
 });
 
-test("S4: a workspace that does not compile is a check that cannot run, with each error named", () => {
+test("Workspace that does not compile exits 2: a workspace that does not compile is a check that cannot run, with each error named", () => {
   const source = "fn main() {\n    let _n: u8 = missing;\n    let _m: u8 = absent;\n    todo!()\n}\n";
 
   const run = lint(repo({ "core/src/main.rs": source }));
@@ -103,7 +103,7 @@ test("S4: a workspace that does not compile is a check that cannot run, with eac
   ]);
 });
 
-test("S5: with no cargo on the PATH the check cannot run, and says so", () => {
+test("Missing cargo exits 2: with no cargo on the PATH the check cannot run, and says so", () => {
   const bin = scratch();
   symlinkSync(execFileSync("which", ["git"], { encoding: "utf8" }).trim(), join(bin, "git"));
 
@@ -119,7 +119,7 @@ test("S5: with no cargo on the PATH the check cannot run, and says so", () => {
   ]);
 });
 
-test("S20: a cargo with no clippy cannot run the check, and the fix installs clippy", () => {
+test("Missing clippy exits 2 with install hint: a cargo with no clippy cannot run the check, and the fix installs clippy", () => {
   const bin = scratch();
   symlinkSync(execFileSync("which", ["git"], { encoding: "utf8" }).trim(), join(bin, "git"));
   writeFileSync(join(bin, "cargo"), "#!/bin/sh\necho 'error: no such command: `clippy`' >&2\necho 'help: a line that is not an error' >&2\nexit 101\n", { mode: 0o755 });
@@ -136,14 +136,14 @@ test("S20: a cargo with no clippy cannot run the check, and the fix installs cli
   ]);
 });
 
-test("S9: a compiler warning that is not in the lint table is a finding too", () => {
+test("Rustc warning counts as a finding: a compiler warning that is not in the lint table is a finding too", () => {
   const run = lint(repo({ "core/src/main.rs": "fn main() {\n    let unused = 1;\n}\n" }));
 
   assert.equal(run.code, 1);
   assert.equal(report(run)[1], "  at   core/src/main.rs:2:9 unused_variables");
 });
 
-test("S10: an expectation that no finding fulfils is itself a finding", () => {
+test("Unfulfilled expect is a finding: an expectation that no finding fulfils is itself a finding", () => {
   const source = '#[expect(clippy::todo, reason = "a stub that is gone")]\nfn main() {}\n';
 
   const run = lint(repo({ "core/src/main.rs": source }));
@@ -152,14 +152,14 @@ test("S10: an expectation that no finding fulfils is itself a finding", () => {
   assert.equal(report(run)[1], "  at   core/src/main.rs:1:10 unfulfilled_lint_expectations");
 });
 
-test("S18: a lint at deny is a finding, not a check that cannot run", () => {
+test("Crate-level deny is a finding not a failure: a lint at deny is a finding, not a check that cannot run", () => {
   const run = lint(repo({ "core/src/main.rs": "#![deny(clippy::todo)]\nfn main() {\n    todo!()\n}\n" }));
 
   assert.equal(run.code, 1);
   assert.equal(report(run)[1], "  at   core/src/main.rs:3:5 clippy::todo");
 });
 
-test("S19: a manifest that cargo cannot read is a check that cannot run", () => {
+test("Unparseable manifest exits 2: a manifest that cargo cannot read is a check that cannot run", () => {
   const run = lint(repo({ "core/Cargo.toml": "[package\n", "core/src/main.rs": "fn main() {}\n" }));
 
   assert.equal(run.code, 2);
@@ -168,7 +168,7 @@ test("S19: a manifest that cargo cannot read is a check that cannot run", () => 
   assert.equal(report(run).at(-3), "  fix  correct the error above");
 });
 
-test("S21: outside a git repository the check cannot run", () => {
+test("Outside a git repository exits 2: outside a git repository the check cannot run", () => {
   const run = lint(scratch());
 
   assert.equal(run.code, 2);
@@ -198,13 +198,13 @@ function swiftRepo(files) {
 
 const lintSwift = (dir, env) => lint(dir, env, "swift");
 
-test("Swift S1: tracked files with no finding pass and say nothing", () => {
+test("Swift Clean Swift files exit 0 silently: tracked files with no finding pass and say nothing", () => {
   const run = lintSwift(swiftRepo({ "app/A.swift": "let x = 1\n" }));
 
   assert.deepEqual({ code: run.code, err: run.err, out: run.out }, { ...CLEAN, out: "" });
 });
 
-test("Swift S2: a finding is shown as the tool wrote it, then named with the next command", () => {
+test("Swift Force unwrap finding exits 1 with report: a finding is shown as the tool wrote it, then named with the next command", () => {
   const run = lintSwift(swiftRepo({ "app/A.swift": UNWRAP }));
 
   assert.equal(run.code, 1);
@@ -212,7 +212,7 @@ test("Swift S2: a finding is shown as the tool wrote it, then named with the nex
   assert.deepEqual(report(run), ["✗ lint: 1 finding from swift-format", "  at   app/A.swift:2:13 NeverForceUnwrap", FIX, "  then make lint", ""]);
 });
 
-test("Swift S3: a directive with a reason on the line before it keeps the finding", () => {
+test("Swift Ignore directive with reason passes: a directive with a reason on the line before it keeps the finding", () => {
   const kept = "func f(_ x: Int?) -> Int {\n    // The caller checked it.\n    // swift-format-ignore: NeverForceUnwrap\n    let y = x!\n    return y\n}\n";
 
   assert.deepEqual(lintSwift(swiftRepo({ "app/A.swift": kept })).code, 0);
@@ -228,7 +228,7 @@ for (const [name, source, at] of [
   ["ignore-without-reason", directive("    // swift-format-ignore: NeverForceUnwrap"), "2:5"],
   ["ignore-without-reason", directive("    //\n    // swift-format-ignore: NeverForceUnwrap"), "3:5"],
 ]) {
-  test(`Swift S4: ${name} at ${at} is the one finding`, () => {
+  test(`Swift Bad ignore directives are findings: ${name} at ${at} is the one finding`, () => {
     const run = lintSwift(swiftRepo({ "app/A.swift": source }));
 
     assert.equal(run.code, 1);
@@ -236,7 +236,7 @@ for (const [name, source, at] of [
   });
 }
 
-test("Swift S4: a directive whose previous line is another directive has no reason", () => {
+test("Swift Bad ignore directives are findings: a directive whose previous line is another directive has no reason", () => {
   const two = "func f(_ x: Int?) -> Int {\n    // Why.\n    // swift-format-ignore: NeverForceUnwrap\n    // swift-format-ignore: NeverForceUnwrap\n    let y = x!\n    return y\n}\n";
 
   const run = lintSwift(swiftRepo({ "app/A.swift": two }));
@@ -244,14 +244,14 @@ test("Swift S4: a directive whose previous line is another directive has no reas
   assert.deepEqual(report(run).slice(0, 2), ["✗ lint: 1 finding from swift-format", "  at   app/A.swift:4:5 ignore-without-reason"]);
 });
 
-test("Swift S5: an untracked file and a #! script are not linted", () => {
+test("Swift Untracked and shebang files are skipped: an untracked file and a #! script are not linted", () => {
   const dir = swiftRepo({ "tools/run.swift": `#!/usr/bin/env swift\n// swift-format-ignore\n${UNWRAP}` });
   writeFileSync(join(dir, "Stray.swift"), `// swift-format-ignore\n${UNWRAP}`);
 
   assert.equal(lintSwift(dir).code, 0);
 });
 
-test("Swift S6: with no language named, each language writes its own block, clippy's first", () => {
+test("Swift Both languages report with clippy first: with no language named, each language writes its own block, clippy's first", () => {
   const dir = swiftRepo({ "core/Cargo.toml": MANIFEST, "core/src/main.rs": "fn main() {\n    todo!()\n}\n", "app/A.swift": UNWRAP });
 
   const run = lint(dir, process.env, null);
@@ -260,7 +260,7 @@ test("Swift S6: with no language named, each language writes its own block, clip
   assert.deepEqual(run.err.filter((line) => line.startsWith("✗ ")), ["✗ lint: 1 finding from clippy", "✗ lint: 1 finding from swift-format"]);
 });
 
-test("Swift S7: a layout finding is a finding, named as the tool names it", () => {
+test("Swift Layout finding names the rule and make fmt: a layout finding is a finding, named as the tool names it", () => {
   const run = lintSwift(swiftRepo({ "app/A.swift": "let  x = 1\n" }));
 
   assert.equal(run.code, 1);
@@ -276,14 +276,14 @@ function swiftReporting(answer) {
   return { ...process.env, PATH: bin };
 }
 
-test("Swift S8: another minor version of swift-format cannot run the check", () => {
+test("Swift Wrong swift version or missing swift exits 2: another minor version of swift-format cannot run the check", () => {
   const run = lintSwift(swiftRepo({ "app/A.swift": UNWRAP }), swiftReporting("echo 5.9.2"));
 
   assert.equal(run.code, 2);
   assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swift-format", "  why  swift-format 5.9.2 is on the PATH; this tree is formatted with 6.3 or 6.4"]);
 });
 
-test("Swift S8: with no swift on the PATH the check cannot run", () => {
+test("Swift Wrong swift version or missing swift exits 2: with no swift on the PATH the check cannot run", () => {
   const bin = scratch();
   symlinkSync(execFileSync("which", ["git"], { encoding: "utf8" }).trim(), join(bin, "git"));
 
@@ -293,7 +293,7 @@ test("Swift S8: with no swift on the PATH the check cannot run", () => {
   assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swift-format", "  why  swift is not on the PATH"]);
 });
 
-test("Swift S9: a rule the running swift-format does not have cannot be silently off", () => {
+test("Swift Unknown rule or language exits 2: a rule the running swift-format does not have cannot be silently off", () => {
   const config = '{"version": 1, "rules": {"NeverForceUnwrap": true, "ARuleOfTheFuture": true}}\n';
 
   const run = lintSwift(swiftRepo({ ".swift-format": config, "app/A.swift": "let x = 1\n" }));
@@ -303,21 +303,21 @@ test("Swift S9: a rule the running swift-format does not have cannot be silently
   assert.match(report(run)[1], /^ {2}why {2}ARuleOfTheFuture is not a rule of swift-format \d+\.\d+/);
 });
 
-test("S9: a name that is not a language is refused with the names that are", () => {
+test("Unknown rule or language exits 2: a name that is not a language is refused with the names that are", () => {
   const run = lint(swiftRepo({ "app/A.swift": "let x = 1\n" }), process.env, "cobol");
 
   assert.equal(run.code, 2);
   assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cobol is not a language this check knows", "  why  it knows: rust, swift, swiftc"]);
 });
 
-test("Swift S17: a file that does not parse cannot be linted, and is named", () => {
+test("Swift Unparseable Swift file exits 2: a file that does not parse cannot be linted, and is named", () => {
   const run = lintSwift(swiftRepo({ "app/A.swift": "let x = (\n" }));
 
   assert.equal(run.code, 2);
   assert.deepEqual(report(run).slice(0, 2), ["✗ lint: cannot run swift-format", "  why  app/A.swift:1:10 error: expected value and ')' to end tuple"]);
 });
 
-test("Swift S18: a Rust finding and a swift-format that cannot run: both blocks, and the exit code says cannot run", () => {
+test("Swift Rust finding with no swift reports both blocks: a Rust finding and a swift-format that cannot run: both blocks, and the exit code says cannot run", () => {
   const dir = swiftRepo({ "core/Cargo.toml": MANIFEST, "core/src/main.rs": "fn main() {\n    todo!()\n}\n", "app/A.swift": UNWRAP });
   const old = swiftReporting("echo 5.9.2");
 
@@ -327,14 +327,14 @@ test("Swift S18: a Rust finding and a swift-format that cannot run: both blocks,
   assert.deepEqual(run.err.filter((line) => line.startsWith("✗ ")), ["✗ lint: 1 finding from clippy", "✗ lint: cannot run swift-format"]);
 });
 
-test("Swift S19: naming one language runs only that one", () => {
+test("Swift Language argument limits the run: naming one language runs only that one", () => {
   const dir = swiftRepo({ "core/Cargo.toml": MANIFEST, "core/src/main.rs": "fn main() {\n    todo!()\n}\n", "app/A.swift": UNWRAP });
 
   assert.deepEqual(lintSwift(dir).err.filter((line) => line.startsWith("✗ ")), ["✗ lint: 1 finding from swift-format"]);
   assert.deepEqual(lint(dir).err.filter((line) => line.startsWith("✗ ")), ["✗ lint: 1 finding from clippy"]);
 });
 
-test("Swift S20: a directive as a trailing comment has no effect, and is named so", () => {
+test("Swift Trailing ignore directive has no effect: a directive as a trailing comment has no effect, and is named so", () => {
   const trailing = "func f(_ x: Int?) -> Int {\n    let y = x!  // swift-format-ignore: NeverForceUnwrap\n    return y\n}\n";
 
   const run = lintSwift(swiftRepo({ "app/A.swift": trailing }));
@@ -420,7 +420,7 @@ test("Swift: when the tool fails without a finding, the check has not run", () =
 const W = (file, line, message) => ({ at: `${file}:${line}:9`, file, message });
 const K = (file, message) => ({ file, message, issue: "#1", reason: "r" });
 
-test("swiftc S3/S4: a known warning matches on file and message, whatever its line", () => {
+test("swiftc Listed warning is accepted / Listed warning survives a moved line: a known warning matches on file and message, whatever its line", () => {
   const known = [K("app/Sources/P/a.swift", "variable 'x' was never used")];
 
   assert.deepEqual(unmatched([W("app/Sources/P/a.swift", 2, "variable 'x' was never used")], known), { fresh: [], gone: [] });
@@ -436,7 +436,7 @@ test("swiftc: a warning with another message, or in another file, is new, and th
   assert.deepEqual(unmatched([elsewhere], known), { fresh: [elsewhere], gone: [1] });
 });
 
-test("swiftc S5/S17: an entry that no warning matched is named by its position in the list", () => {
+test("swiftc Listed warning that is gone is a finding / Stale entry beside live one is one finding: an entry that no warning matched is named by its position in the list", () => {
   const known = [K("app/Sources/P/a.swift", "m"), K("app/Sources/P/gone.swift", "m")];
 
   assert.deepEqual(unmatched([W("app/Sources/P/a.swift", 2, "m")], known), { fresh: [], gone: [2] });
@@ -458,7 +458,7 @@ const packageRepo = (source, known = "[]\n") => repo({ "core/Cargo.toml": null, 
 
 const lintSwiftc = (dir, env) => lint(dir, env, "swiftc");
 
-test("swiftc S1/S18: a package with no warning passes, says nothing, and leaves no build directory", () => {
+test("swiftc Warning-free package exits 0 silently / Runs leave no temp or repository residue: a package with no warning passes, says nothing, and leaves no build directory", () => {
   const tmp = scratch();
   const dir = packageRepo("func f() {}\n");
   const before = execFileSync("git", ["status", "--porcelain", "--ignored"], { cwd: dir, encoding: "utf8" });
@@ -470,7 +470,7 @@ test("swiftc S1/S18: a package with no warning passes, says nothing, and leaves 
   assert.equal(execFileSync("git", ["status", "--porcelain", "--ignored"], { cwd: dir, encoding: "utf8" }), before);
 });
 
-test("swiftc S2/S6: a warning is a finding, on the first run and on the next one", () => {
+test("swiftc Compiler warning exits 1 with report / Second run reports the same warning: a warning is a finding, on the first run and on the next one", () => {
   const dir = packageRepo(UNUSED);
 
   const runs = [lintSwiftc(dir), lintSwiftc(dir)];
@@ -488,7 +488,7 @@ test("swiftc S2/S6: a warning is a finding, on the first run and on the next one
   }
 });
 
-test("swiftc S3/S4: the warning this compiler prints, entered in the list, passes, also after it moves down a line", () => {
+test("swiftc Listed warning is accepted / Listed warning survives a moved line: the warning this compiler prints, entered in the list, passes, also after it moves down a line", () => {
   const printed = lintSwiftc(packageRepo(UNUSED)).err.find((line) => line.includes(": warning: "));
   const message = printed.slice(printed.indexOf(": warning: ") + ": warning: ".length);
   const known = JSON.stringify([{ file: "app/Sources/P/a.swift", message, issue: "#1", reason: "a fixture" }]);
@@ -498,7 +498,7 @@ test("swiftc S3/S4: the warning this compiler prints, entered in the list, passe
   assert.deepEqual(runs.map((run) => [run.code, run.err]), [[0, [""]], [0, [""]]]);
 });
 
-test("swiftc S5: a list entry with no warning is a finding at its place in the list", () => {
+test("swiftc Listed warning that is gone is a finding: a list entry with no warning is a finding at its place in the list", () => {
   const known = JSON.stringify([{ file: "app/Sources/P/a.swift", message: "m", issue: "#1", reason: "a fixture" }]);
 
   const run = lintSwiftc(packageRepo("func f() {}\n", known));
@@ -507,7 +507,7 @@ test("swiftc S5: a list entry with no warning is a finding at its place in the l
   assert.deepEqual(report(run).slice(0, 2), ["✗ lint: 1 finding from swiftc", `  at   ${LIST}:1 known-warning-is-gone`]);
 });
 
-test("swiftc S7: a package that does not compile cannot be linted", () => {
+test("swiftc Non-compiling package or bad list exits 2: a package that does not compile cannot be linted", () => {
   const tmp = scratch();
 
   const run = lintSwiftc(packageRepo("func f() {\n    let n: Int = missing\n    _ = n\n}\n"), { ...process.env, TMPDIR: tmp });
@@ -532,7 +532,7 @@ for (const [name, text] of [
   ["an entry with no issue", '[{"file": "a", "message": "m", "reason": "r"}]'],
   ["an entry with an empty reason", '[{"file": "a", "message": "m", "issue": "#1", "reason": ""}]'],
 ]) {
-  test(`swiftc S16: a list that is ${name} cannot run the check`, () => {
+  test(`swiftc Malformed list entries exit 2: a list that is ${name} cannot run the check`, () => {
     const run = lintSwiftc(packageRepo("func f() {}\n", text));
 
     assert.equal(run.code, 2);
@@ -541,13 +541,13 @@ for (const [name, text] of [
   });
 }
 
-test("swiftc S16: a missing list cannot run the check", () => {
+test("swiftc Malformed list entries exit 2: a missing list cannot run the check", () => {
   const dir = repo({ "core/Cargo.toml": null, "app/Package.swift": PACKAGE, "app/Sources/P/a.swift": "func f() {}\n" });
 
   assert.deepEqual(report(lintSwiftc(dir)).slice(0, 2), ["✗ lint: cannot run swiftc", `  why  ${LIST} is missing`]);
 });
 
-test("swiftc S15: with no swift on the PATH the check cannot run", () => {
+test("swiftc Missing swift exits 2: with no swift on the PATH the check cannot run", () => {
   const bin = scratch();
   symlinkSync(execFileSync("which", ["git"], { encoding: "utf8" }).trim(), join(bin, "git"));
 

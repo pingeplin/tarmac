@@ -8,7 +8,7 @@
   on: that `zoom: z` on the root of a W-real-px iframe yields a layout
   viewport of W / z CSS px, not W left alone and simply overflowing.
 
-  Procedure (S5): borrow the card (double-click), then at each board zoom
+  Procedure ("Root zoom doubling keeps probe layout stable"): borrow the card (double-click), then at each board zoom
   level click the "root zoom" button matching it — board 1x -> root zoom 1,
   board 2x -> root zoom 2 — and read the REPORT panel. See the spec's
   Milestone 0 section for the pass/fail table; in short: line count and the
@@ -24,11 +24,11 @@
   zoom moved, root zoom control has not yet) is expected noise, not a gate
   failure; ignore it and read again after clicking the matching button.
 
-  S8 (negative case): comment out the <meta name="tarmac-zoom"> line below,
+  "Meta-less document logs no capability line" (negative case): comment out the <meta name="tarmac-zoom"> line below,
   reload, and zoom. The "received zoom messages" panel must stay empty —
   no {tarmac:"zoom"} ever arrives when a card hasn't opted in.
 
-  "No content overflows the card frame" (S5) is judged on boxes A/B/C, the
+  "No content overflows the card frame" ("Root zoom doubling keeps probe layout stable") is judged on boxes A/B/C, the
   geometry under test — the report and zoom-message panels scroll their own
   overflow internally on purpose, since they are QA chrome, not the probe.
 
@@ -232,15 +232,17 @@
     zoomLogEl.textContent = zoomLog.length ? zoomLog.join("\n") : "(none received)";
   }
 
-  // S8's negative case is proved by this listener staying silent: with the
+  // The negative case of "Meta-less document logs no capability line" is proved by this listener staying silent: with the
   // tarmac-zoom meta tag absent, no host ever posts {tarmac:"zoom"}, so
   // nothing is ever appended here.
   //
   // The real shim's own listener (card_shim.js) registers before this
   // document's bytes even parse and applies documentElement.style.zoom
   // synchronously, so by the time this handler runs for the same event the
-  // zoom is already in effect — re-measuring here is what keeps S9/S10's
-  // "reported line count and ICB probe width match" comparison honest.
+  // zoom is already in effect — re-measuring here is what keeps the
+  // "reported line count and ICB probe width match" comparison of
+  // "Early settle zoom applies at ready time" and
+  // "Reloaded magnify card returns already magnified" honest.
   window.addEventListener("message", function (e) {
     if (!e || !e.data || e.data.tarmac !== "zoom") return;
     var entry = new Date().toISOString() + " — {tarmac:\"zoom\", z:" + e.data.z + "} from " +

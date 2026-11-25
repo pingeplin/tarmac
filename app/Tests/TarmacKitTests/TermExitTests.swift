@@ -4,11 +4,11 @@ import XCTest
 
 /// 2606.0001: the exit→action decision.
 final class TermExitTests: XCTestCase {
-    /// S10: the full decision grid. `code ∈ {0, 1, 130, nil}` × `otherLive ∈
+    /// "Decide table covers every exit cell": the full decision grid. `code ∈ {0, 1, 130, nil}` × `otherLive ∈
     /// {0, 2}`. `130` (128 + SIGINT) guards "any non-zero → holdOpen" against a
     /// mutation that special-cases high/negative codes. The `(_, 0)` failure
     /// cells must be `.holdOpen`, NOT `.removeAndReplace` — failure wins over the
-    /// last-terminal guarantee (S8b).
+    /// last-terminal guarantee ("Failed last terminal is held without respawn").
     func testDecideGrid() {
         let cases: [(code: Int?, otherLive: Int, expected: TermExit.Action)] = [
             (0, 2, .remove),
@@ -29,7 +29,7 @@ final class TermExitTests: XCTestCase {
         }
     }
 
-    /// S3-vs-S1 boundary, pinned on its own so the mutation is unmissable: a clean
+    /// The boundary between "Last terminal clean exit spawns replacement" and "Clean exit removes card with undo toast", pinned on its own so the mutation is unmissable: a clean
     /// exit flips `.remove` → `.removeAndReplace` exactly when it was the last
     /// live terminal.
     func testCleanExitLastTerminalReplacesOnlyAtZero() {

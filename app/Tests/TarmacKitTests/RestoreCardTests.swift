@@ -2,7 +2,7 @@ import CoreGraphics
 import TarmacKit
 import XCTest
 
-/// #358 and 2611.0011 S11: the restore card of a first-visit restore with cold
+/// #358 and 2611.0011 "Restore summary counts terminals and sessions": the restore card of a first-visit restore with cold
 /// spawns, and its lines.
 final class RestoreCardTests: XCTestCase {
     private typealias Line = RestoreCard.Line
@@ -18,7 +18,8 @@ final class RestoreCardTests: XCTestCase {
     private func folders(_ n: Int) -> Line { Line(glyph: "✓", text: "\(n) terminals back in their folders", ok: true) }
     private func resumes(_ n: Int) -> Line { Line(glyph: nil, text: "\(n) with an agent session to resume", ok: false) }
 
-    func testS11FoldersAndResumesAreCountedAcrossColdSpawnsOnly() {
+    /// "Restore summary counts terminals and sessions".
+    func testFoldersAndResumesAreCountedAcrossColdSpawnsOnly() {
         let card = RestoreCard.make(
             plan: plan([
                 term("a", spawn: SpawnRequest(cwd: "/a", succeeds: "A")),
@@ -29,7 +30,8 @@ final class RestoreCardTests: XCTestCase {
         XCTAssertEqual(card?.lines, [folders(2), resumes(1)])
     }
 
-    func testS11OneFolderReadsInTheSingular() {
+    /// "Restore summary counts terminals and sessions".
+    func testOneFolderReadsInTheSingular() {
         XCTAssertEqual(
             RestoreCard.make(plan: plan([term("a", spawn: SpawnRequest(cwd: "/a", succeeds: "A"))]))?.lines,
             [Line(glyph: "✓", text: "1 terminal back in its folder", ok: true)]
@@ -47,9 +49,10 @@ final class RestoreCardTests: XCTestCase {
         XCTAssertEqual(folders(2).string, "✓ 2 terminals back in their folders")
     }
 
+    /// "Restore summary counts terminals and sessions".
     /// Only a cold spawn is counted: a rebound term carries no resume from a
     /// plan, and one that did would still not be offered.
-    func testS11APlanOfReboundTerminalsShowsNoCard() {
+    func testAPlanOfReboundTerminalsShowsNoCard() {
         XCTAssertNil(RestoreCard.make(plan: plan([term("d", spawn: nil, resume: "echo HI")])))
         XCTAssertNil(RestoreCard.make(plan: plan([term("d", spawn: nil)])))
     }
@@ -64,31 +67,35 @@ final class RestoreCardTests: XCTestCase {
         XCTAssertNil(RestoreCard.make(plan: plan([term("a", spawn: SpawnRequest(succeeds: "A"))])))
     }
 
-    // MARK: 2611.0015 S5: the three choices, and no refresh glyph
+    // MARK: 2611.0015 "Restore card model lists choices and lines": the three choices, and no refresh glyph
 
     private let resumable = [
         BoardRestore.Term(
             termID: "a", frame: .zero, z: 0, spawn: SpawnRequest(cwd: "/a", succeeds: "A"), resume: "echo HI")
     ]
 
-    func testS5APlanWithAResumeGivesTheThreeChoicesInOrder() throws {
+    /// "Restore card model lists choices and lines".
+    func testAPlanWithAResumeGivesTheThreeChoicesInOrder() throws {
         let card = try XCTUnwrap(RestoreCard.make(plan: plan(resumable)))
         XCTAssertEqual(card.choices.map(\.text), ["⏎ resume all", "decide per card", "esc skip all"])
         XCTAssertEqual(card.choices.map(\.action), [.resumeAll, .perCard, .skipAll])
     }
 
-    func testS5APlanWithOnlyFolderLinesHasNoChoicesAndKeepsTheFooter() throws {
+    /// "Restore card model lists choices and lines".
+    func testAPlanWithOnlyFolderLinesHasNoChoicesAndKeepsTheFooter() throws {
         let card = try XCTUnwrap(
             RestoreCard.make(plan: plan([term("a", spawn: SpawnRequest(cwd: "/a", succeeds: "A"))])))
         XCTAssertEqual(card.choices, [])
         XCTAssertEqual(RestoreCard.footer, "any key to continue")
     }
 
-    func testS5TheResumeLineHasNoGlyphAndReadsAsItsTextAlone() {
+    /// "Restore card model lists choices and lines".
+    func testTheResumeLineHasNoGlyphAndReadsAsItsTextAlone() {
         XCTAssertEqual(resumes(1).string, "1 with an agent session to resume")
     }
 
-    func testS5NoLineOrChoiceHasTheRefreshGlyph() throws {
+    /// "Restore card model lists choices and lines".
+    func testNoLineOrChoiceHasTheRefreshGlyph() throws {
         let card = try XCTUnwrap(RestoreCard.make(plan: plan(resumable + [term("b", spawn: SpawnRequest(cwd: "/b"))])))
         let texts = card.lines.map(\.string) + card.choices.map(\.text) + [RestoreCard.footer]
         XCTAssertFalse(texts.contains { $0.contains("↻") }, "\(texts)")

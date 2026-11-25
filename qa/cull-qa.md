@@ -1,6 +1,6 @@
 # Culled HTML card scheduler gate — manual QA checklist (spec 2609.0002, issue #72)
 
-The [Q]-tagged scenarios S29–S39 the unit suites cannot cover: the React/Tauri shell
+The [Q]-tagged scenarios the unit suites cannot cover: the React/Tauri shell
 has no unit tests by design (only pure `kit/` logic and Rust are tested), and CPU is
 not measurable from Vitest at all. Run against `make run` with a fresh dev daemon
 (`make kill-daemon` first), or against a release bundle launched with the worktree's
@@ -12,19 +12,19 @@ the CPU cells identify the WebContent and GPU XPC services by set-difference aga
 what was running *before* launch, so a second Tarmac (an installed build, or another
 agent's QA app) both hijacks the daemon and makes the process attribution wrong.
 
-## Status: VERIFIED — 11/11 PASS, S31 with a recorded deviation (2026-09-05, commits `c82f899` + `e6782da`)
+## Status: VERIFIED — 11/11 PASS, "Resume reaches pre-cull rate within one second" with a recorded deviation (2026-09-05, commits `c82f899` + `e6782da`)
 
-**S29–S36 and S38–S39 ran and passed against `c82f899`. S37 failed there** — the
+**Every scenario but "Cull probe is committed and instrumented" ran and passed against `c82f899`. "Cull probe is committed and instrumented" failed there** — the
 probe shipped with that commit was broken two independent ways (kept below as
 history), so every behavioural cell in that pass ran a fixed scratch copy.
-`e6782da` fixed both defects, and **S37 and S29 N=1 were re-run against the
-shipped file**: S37 now PASSES and S29 N=1 reproduces with the committed probe
+`e6782da` fixed both defects, and **"Cull probe is committed and instrumented" and "Culled cards deliver no callbacks" N=1 were re-run against the
+shipped file**: "Cull probe is committed and instrumented" now PASSES and "Culled cards deliver no callbacks" N=1 reproduces with the committed probe
 unmodified. The re-runs are the second Observation paragraph under each.
 
 An independent review of this record then reproduced every cited number from the
 screenshots and found seven claims that overstated or misdescribed what backs
-them. **No result changed**; what changed is what the record asserts — S31 is now
-PASS-with-deviation, S36's discriminating evidence is restated (its `zoom-mode`
+them. **No result changed**; what changed is what the record asserts — "Resume reaches pre-cull rate within one second" is now
+PASS-with-deviation, "Self reload while culled stays paused"'s discriminating evidence is restated (its `zoom-mode`
 clause was vacuous and is withdrawn), the CPU sampling caveats and the screenshot
 guarantee are stated accurately, and two previously undisclosed deviations are
 listed below. Everything below was observed on screen against a **debug**
@@ -40,12 +40,12 @@ instructions and a later reader needs to know:
   one-character-fixed copy.** `cull-probe.html:102` carries a literal `</script>`
   inside a `//` comment, which ends the script element there; the copy splits it
   as `<\/script>` and changes nothing else. Byte-for-byte that is the only edit —
-  see S37. Cells that need `loops=none` (the S30/S32 baseline) additionally
+  see "Cull probe is committed and instrumented". Cells that need `loops=none` (the "Culled cards cost under one CPU point" and "Visible cards are unchanged by the gate" baseline) additionally
   hard-code `String("?n=6&loops=none")` in place of `location.search`, because the
-  URL switches are unreachable through `tarmac open` (also S37). The scheduler
+  URL switches are unreachable through `tarmac open` (also "Cull probe is committed and instrumented"). The scheduler
   loops the CPU cells measure are identical either way, and the reporter runs in
   both arms of every marginal, so no CPU figure depends on the fix. **`e6782da`
-  fixed the probe**; S37 and S29 N=1 were then re-run against the shipped file
+  fixed the probe**; "Cull probe is committed and instrumented" and "Culled cards deliver no callbacks" N=1 were then re-run against the shipped file
   (see their second Observation paragraphs), so at least one gap cell on this
   sheet is taken with the committed artifact unmodified.
 - **Daemon isolation was by socket, not by `pkill`.** The installed `tarmacd`
@@ -74,18 +74,18 @@ instructions and a later reader needs to know:
 - **Cull and un-cull were driven by a synthetic two-finger pan, not by ⏎/ESC.**
   50 wheel ticks ≈ 2000 world px at zoom 1, comfortably past the one-viewport
   margin; ⏎ (fly to the offscreen terminal) was used only where a single
-  keystroke had to be timed exactly — the S30 gate and S34's pan-to-the-card. ESC
+  keystroke had to be timed exactly — the "Culled cards cost under one CPU point" gate and "Card born culled stays quiet after one bucket"'s pan-to-the-card. ESC
   never flew the viewport back in this environment, so it was not relied on.
 - **⌘-chords only reach the app by key code.** `keystroke "k" using command down`
   and `keystroke "t" using command down` were both swallowed (the operator runs
   Karabiner-Elements); `key code 40 using command down` opened the switcher
-  normally. S39's board switches used key codes plus arrow/Return — no socket
+  normally. "Hidden board pauses cards except centre one"'s board switches used key codes plus arrow/Return — no socket
   driving was needed.
 - **Board and card layouts were composed by writing `.dev/state.json`, not built
   through the UI.** `qa72-scratch/mk.py` writes each cell's tile geometry, doc list
   and saved viewport from a prototype the app itself produced, and the app is then
   relaunched onto it — the only way to place six cards on a 3×2 grid, put a card
-  strictly over a hidden board's saved centre (S39), or park the prime terminal
+  strictly over a hidden board's saved centre ("Hidden board pauses cards except centre one"), or park the prime terminal
   30 000 units away, repeatably. Everything *observed* was observed through the
   real UI afterwards: the cards are ordinary `tarmac-card://` doc cards, and the
   cull flips came from real pans and real board switches.
@@ -98,7 +98,7 @@ instructions and a later reader needs to know:
   rep and every gap cell relaunches the app onto a fresh state.
 - **CPU cells are three reps each, medians reported**, two consecutive 10 s
   windows with window 1 opening at the ⏎ that culls the six cards, plus a 10 s
-  visible window in the same run for S32. One-minute load average across the 36
+  visible window in the same run for "Visible cards are unchanged by the gate". One-minute load average across the 36
   rows: **2.21–3.50** (`load0`/`load1` in `cpu.jsonl`). **The frontmost-pid guard
   fired on no row** — but note that `cpu.sh` *records* a frontmost mismatch into
   the row's `warn` field and does not abort on one, so that is a clean result, not
@@ -116,7 +116,7 @@ instructions and a later reader needs to know:
 **Companion artifact:** [`cull-probe.html`](cull-probe.html) — open it with
 `tarmac open desktop/qa/cull-probe.html`. Its switches (`n`, `loops`, `across`,
 `ms`) are **space-separated tokens in its `<meta name="cull-probe" content="…">`
-tag** — not URL query parameters, which cannot reach a card (S37). Configure a cell
+tag** — not URL query parameters, which cannot reach a card ("Cull probe is committed and instrumented"). Configure a cell
 by editing that one line in a scratch copy; a six-card cell needs six copies anyway,
 one per path:
 
@@ -167,7 +167,7 @@ outstanding-rAF count, and a boot id.
 
 ---
 
-## S29 — Culled cards deliver nothing (criterion 1)
+## Culled cards deliver no callbacks (criterion 1)
 
 - [x] Open one probe card (meta `n=1 loops=all`). Note its steady visible gaps
       (tens of ms).
@@ -221,7 +221,7 @@ three gaps within **844 ms** of `dt`. `across` read `pending` on every pre-cull
 line and `ACROSS-FIRED` reports `elapsed=24374` against `deadline=12000`. The
 shipped file now produces the gap cell on its own.
 
-## S30 — Marginal CPU ≤ 1 point at every phase (criterion 3)
+## Culled cards cost under one CPU point — Marginal CPU ≤ 1 point at every phase (criterion 3)
 
 Sample **two consecutive 10 s windows, the first opening AT the pause** — not after
 a settle. Baseline is the **same board with the probes' loops disabled**
@@ -272,12 +272,12 @@ the table above. The shim was reverted with
 then restored with `git checkout HEAD -- …`; `git status` and `git diff --stat`
 were both empty afterwards.
 
-## S31 — Resume is prompt (criterion 4)
+## Resume reaches pre-cull rate within one second (criterion 4)
 
 - [x] With a culled, paused card, pan back. **The first full one-second bucket that
       begins after the un-cull** already reads within the card's pre-cull band.
 
-Observation: **PASS with a recorded deviation.** Same run as S29 N=1
+Observation: **PASS with a recorded deviation.** Same run as "Culled cards deliver no callbacks" N=1
 (`s29_s31_n1.png`). Pre-cull band,
 `t=3`–`t=6`: raf 30/s, int 33–34/s, to 33–34/s. `t=7` is the straddling bucket
 (`dt=16710`) and is not read here. **`t=8` is the first full one-second bucket
@@ -296,7 +296,7 @@ come back to rate.
 gap twice, once as the still-open interval on `t=7` and once as the closed
 interval on `t=8`, because `lastAt` is only advanced by a real delivery.)
 
-## S32 — Nothing inside the margin changes (criterion 5)
+## Visible cards are unchanged by the gate (criterion 5)
 
 Tolerance decided at the spec gate: **overlapping rate bands plus ≤ 1 point of
 marginal WebContent CPU**. Take both halves in one session, on one machine.
@@ -311,12 +311,12 @@ Observation: **PASS on both halves, taken in one session on one machine.**
 (`s30_ungated_leak_proof.png`) raf 29–31/s `gapRaf` 35–47, int 33–34/s `gapInt`
 31, to 33–34/s `gapTo` 31–32. The bands overlap on all three counters.
 *CPU:* marginal WebContent for the visible six-card board (`all` − `none`,
-medians of 3 reps, same cells as S30's visible window) is **+8.88 gated against
+medians of 3 reps, same cells as "Culled cards cost under one CPU point"'s visible window) is **+8.88 gated against
 +8.48 un-gated — a 0.40 point difference**, inside criterion 3's 1-point bar.
 GPU and main marginals are identical to two decimals (+0.30 and +4.59 in both
 builds).
 
-## S33 — The round trip is invisible to the document (criterion 6)
+## Cull round trip is invisible to document (criterion 6)
 
 **Use a card carrying an explicit `<meta name="tarmac-zoom" content="magnify">`** —
 `magnify-probe.html`, or `cull-probe.html`, which carries one. Without the meta the
@@ -332,11 +332,11 @@ console line is never emitted at all (the host logs it only when `meta !== null`
       bullet, and the #99 failure path).
 - [x] The console strip still shows **exactly one**
       `zoom-mode declared=… effective=…` line — no second `ready` was honored.
-      Cross-check `magnify-card-qa.md` S6 and S17.
+      Cross-check `magnify-card-qa.md` "Zoom sweep never changes wrap points" and "Forged second ready changes nothing".
 
 Observation: **PASS.** Run on `s33probe.html`, a scratch fixture carrying
 `<meta name="tarmac-zoom" content="magnify">` and reporting all five readings at
-once (the committed probe carries the meta but reports nothing — S37).
+once (the committed probe carries the meta but reports nothing — "Cull probe is committed and instrumented").
 Before (`s33_before.png`) and after a 14 s cull round trip (`s33_after.png`):
 
 | reading | before | after |
@@ -356,11 +356,11 @@ entries, one of which is the single
 honored. `scrollY` was set by wheel-scrolling the selected card, not by script,
 so a reload could not have reproduced it.
 
-## S34 — P1: a card born culled never starts (criterion 7)
+## Card born culled stays quiet after one bucket — P1: a card born culled never starts (criterion 7)
 
 Worded as steady state on purpose: the card's script runs from load until the
 `ready` → cull round trip completes, and the pause cancels what it issued. "Zero
-callbacks ever" would fail a correct build — spec S34 asks for *at most its first
+callbacks ever" would fail a correct build — spec "Card born culled stays quiet after one bucket" asks for *at most its first
 one-second bucket* to be non-zero.
 
 - [x] Open a probe card onto a region of the board that is already culled. It emits
@@ -391,7 +391,7 @@ covers the entire cull**: no second line covered it, and no gap sat near 1000 ms
 The counts are non-zero by design (the load burst before the `ready` → cull round
 trip landed) and `int=0` — zero interval deliveries across 14.8 s.
 
-## S35 — P2: a `?v=` reload while culled comes back paused (criterion 7)
+## Version reload while culled stays paused — P2: a `?v=` reload while culled comes back paused (criterion 7)
 
 - [x] With a paused, culled probe card, rewrite its file so `lastChangedMs` changes
       and the iframe reloads via `?v=`. A new `[cull] boot=…` line appears (new boot
@@ -411,7 +411,7 @@ gaps equal `dt` to the millisecond — and its `ACROSS-FIRED` reports
 `elapsed=15382` against `deadline=12000`. The reloaded document came back paused
 without any pan.
 
-## S36 — P3: the #99-shaped self-reload comes back paused (criterion 7)
+## Self reload while culled stays paused — P3: the #99-shaped self-reload comes back paused (criterion 7)
 
 **Never run before.** The design infers this from the guard analysis; this is its
 first verification, and it is the scenario that requires the cull post to sit
@@ -445,7 +445,7 @@ version of this observation claimed the absence of a second `zoom-mode` line as
 positive proof; that was vacuous and is withdrawn. `s36probe.html` carries no
 `<meta name="tarmac-zoom">`, so `readMeta()` returns `null` and
 `HtmlCard.tsx:150` logs nothing for *either* generation — the absence is
-guaranteed by the fixture, which is exactly the trap S33's own preamble warns
+guaranteed by the fixture, which is exactly the trap "Cull round trip is invisible to document"'s own preamble warns
 about. The discriminating evidence is the gap data. Under the "cull post placed
 *after* the `readyHandledRef` guard" mutant the host returns early and never posts
 to the reloaded document, so gen 2's fresh shim boots **un-gated inside a
@@ -463,28 +463,28 @@ sender is a post that precedes the guard.
 history and stays as written — but it must not be carried into the squash message
 when this PR lands.)
 
-### Re-run required for #99 (spec 2609.0003 S15) — **RE-RUN 2026-09-05: PASS**
+### Re-run required for #99 (spec 2609.0003 "Culled self-reload comes back paused") — **RE-RUN 2026-09-05: PASS**
 
 #99 changed the `ready` handler this scenario probes: the `readyHandledRef`
 boolean became a single per-load `loadModeRef`, and the zoom post now answers
 every genuine `ready`. **The cull post is unchanged — still first, still
-unconditional, still idempotent — and S36's steps and pass criterion are
+unconditional, still idempotent — and "Self reload while culled stays paused"'s steps and pass criterion are
 unchanged.** Re-run it as-is; the gap data is still what discriminates.
 
 **What the mutant is now.** With no early return left in the handler, merely
 *reordering* the cull post after the zoom verdict is a benign no-op that this
-scenario could not catch and that breaks nothing. What S36 still catches — and
+scenario could not catch and that breaks nothing. What "Self reload while culled stays paused" still catches — and
 what must never happen — is the post becoming **conditional** on the verdict
 (e.g. issued only when a mode is adopted, i.e. only on a first `ready`).
 Generation 2 of a self-reloading culled card would then receive no cull post and
 come back running.
 
-- [x] Re-run S36's steps above unchanged against the fix. The self-reloaded
+- [x] Re-run "Self reload while culled stays paused"'s steps above unchanged against the fix. The self-reloaded
       document still comes back **paused**, decided by the same gap evidence as
       the original run (all three gaps within ~2 report periods of `dt` under the
-      new boot id) — **not** by console silence, which S36's own observation
+      new boot id) — **not** by console silence, which "Self reload while culled stays paused"'s own observation
       already withdrew as vacuous.
-- [x] **ADDED assertion (2609.0003 S15):** once un-culled, the card renders at
+- [x] **ADDED assertion (2609.0003 "Culled self-reload comes back paused"):** once un-culled, the card renders at
       board zoom rather than 1/K.
 - [x] Record the re-run result in this section. If either box above is not
       executed, leave this section marked NOT YET RE-RUN rather than writing a
@@ -497,7 +497,7 @@ margin (`cull-probe.html:106–110`) and which has **no fixed-px box** — a
 its device-px width is identical either way and proves nothing. Add a
 `width: 320px` box to the rebuilt fixture (the `magnify-probe.html` box B shape)
 and compare its device-px width before the self-reload and after; failing that,
-measure a fixed-length monospace run. Decide it the way `doc-refresh-qa.md` S17
+measure a fixed-length monospace run. Decide it the way `doc-refresh-qa.md` "Stale magnify card refresh reloads document"
 decided the same question — against the pre-reload capture and against the ≈1/3
 figure a missing root zoom gives — not by eye. Note the fixture carries no `<meta name="tarmac-zoom">`, so it runs
 as a default-magnify, meta-less document, which is exactly the shape #99's fix
@@ -533,7 +533,7 @@ self-reloading culled card therefore came back **paused**: the cull post still
 reaches every generation, so it is still unconditional (the M8 mutant — a post
 gated on the verdict — would have left generation 2 ticking through the cull).
 
-**ADDED assertion (2609.0003 S15).** `box B rect width` reads **960.0** — 320 CSS
+**ADDED assertion (2609.0003 "Culled self-reload comes back paused").** `box B rect width` reads **960.0** — 320 CSS
 px under a landed root zoom of `K` = 3 — before the cull (`s15_pre_cull.png`),
 after un-culling (`s15_post_cull.png`), and already on generation 2's very first
 reporter line quoted above. On screen the box measured ≈457 device px against
@@ -541,7 +541,7 @@ the 461 px that 320 × 1.44 predicts, not the ≈154 px (320 × 1.44 ⁄ 3) a ca
 still laid out in a `K×` viewport would render. The self-reloaded, previously
 culled card renders at board zoom, not at 1/K.
 
-## S37 — The probe is committed and instrumented (criterion 9)
+## Cull probe is committed and instrumented (criterion 9)
 
 - [x] `desktop/qa/cull-probe.html` is in the repo, installs its rAF/cAF
       outstanding-count wrapper as the **first statement of its own script**, and
@@ -666,7 +666,7 @@ in `architecture.md`.
 > page's outstanding-rAF count (#105), and no cell here claims to have moved
 > "Tarmac is consistent with the isolated regime" to "established".
 
-## S38 — Cross-family flush order (pinned semantic 2)
+## Held timeouts run before held frames — Cross-family flush order (pinned semantic 2)
 
 The unit suite deliberately does not promise this: it is an engine property (a 0 ms
 timeout runs before the next animation frame). Record it as observed.
@@ -685,7 +685,7 @@ is the engine property the unit suite deliberately does not promise. (Entry
 `2. RAF-FLUSH gap=1694` is a launch artefact, not part of the flush: the window
 was still occluded for its first ~1.7 s.)
 
-## S39 — Non-active boards, and the documented gap
+## Hidden board pauses cards except centre one — Non-active boards, and the documented gap
 
 - [x] Put probe cards on a second board and switch away from it (App keeps every
       board mounted and hides the inactive ones with `display:none`).
@@ -731,17 +731,17 @@ work, and recorded here as asked.
 #104 targets the gap this section recorded: `isCardVisible` now early-returns
 `false` when the measured viewport has zero area (`../src/kit/cull.ts`), which
 is expected to cull the straddling card with the rest. **The observation above
-stands as the "before" reading**; S39's steps and probe setup are unchanged, so
+stands as the "before" reading**; "Hidden board pauses cards except centre one"'s steps and probe setup are unchanged, so
 they were re-run as-is.
 
-Observation: the maintainer ran S6–S8 on the dev app with the S39 fixture
+Observation: the maintainer ran 2609.0006 "Reactivated board renders every on-screen card", "Terminal stays warm across board switch" and "Straddling card stays paused while board hidden" on the dev app with the "Hidden board pauses cards except centre one" fixture
 (`all2`/`all3` via `.dev/state.json`) and reported everything looked normal —
 the board revealed cleanly and the straddling card behaved as expected by eye.
 **No `[cull]` gap readings were transcribed**, so this section carries no
-discriminating evidence: it is a visual pass, not the gap-based verdict S39's
+discriminating evidence: it is a visual pass, not the gap-based verdict "Hidden board pauses cards except centre one"'s
 criterion asks for.
 
-- [x] Re-run S39's steps above unchanged against the fix, with the same two-card
+- [x] Re-run "Hidden board pauses cards except centre one"'s steps above unchanged against the fix, with the same two-card
       layout (one card strictly containing board-1's saved centre, one off-centre)
       and a hidden window of ~15 s.
 - [ ] **Pass criterion (gaps, not counts):** on the straddling card's first line

@@ -278,8 +278,9 @@ back from a rendered bitmap.
   resource.
 - **Tests.** XCTest: one `final class <Module>Tests: XCTestCase` per module, test
   names as camelCase sentences —
-  `testAddEvictsTheOldestBeyondMaxToastsKeepingTheRestInOrder`; scenario-driven
-  tests lead with the spec id — `testS32AChordOutsideTheGrammarIsRefused`. Build
+  `testAddEvictsTheOldestBeyondMaxToastsKeepingTheRestInOrder`; a scenario-driven
+  test names its scenario by the spec's title, in the name or in the comment
+  above it — `/// "Bad chords are unsupported or malformed".` — never by a number. Build
   state with a small private factory inside the class; `setUp`/`tearDown` are for
   a test that owns a real resource — a socket, a temp directory, a child process
   — as `app/Tests/TarmacKitTests/DevSocketTests.swift` does. A `TarmacTerm` test

@@ -4,7 +4,7 @@ import XCTest
 
 /// The QA driver's socket (spec 2609.0015, #166; parity rows Q3–Q5): how the
 /// app claims it, and the one request each connection carries. The claim rules
-/// are `desktop/src-tauri/src/dev_driver.rs`'s S66–S69, against a real socket.
+/// are `desktop/src-tauri/src/dev_driver.rs`'s socket scenarios, against a real socket.
 final class DevSocketTests: XCTestCase {
     private var directory = ""
 
@@ -34,7 +34,8 @@ final class DevSocketTests: XCTestCase {
 
     // MARK: - claiming
 
-    func testS66ClaimingCreatesAPrivateSocketAndItsParent() throws {
+    /// "Dev socket is created with mode 0600".
+    func testClaimingCreatesAPrivateSocketAndItsParent() throws {
         let path = directory + "/nested/tarmac-dev.sock"
         let socket = try claimed(path)
         defer { socket.close() }
@@ -43,7 +44,8 @@ final class DevSocketTests: XCTestCase {
         XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
     }
 
-    func testS67AStaleSocketFileIsReplaced() throws {
+    /// "Stale socket is replaced and live one kept".
+    func testAStaleSocketFileIsReplaced() throws {
         let path = directory + "/tarmac-dev.sock"
         try Data("not a socket".utf8).write(to: URL(fileURLWithPath: path))
         let socket = try claimed(path)
@@ -51,9 +53,10 @@ final class DevSocketTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: path)[.type] as? FileAttributeType, .typeSocket)
     }
 
+    /// "Stale socket is replaced and live one kept".
     /// The daemon's rule here is to exit 1; the app must not, because losing a
     /// window over a dev-only endpoint is worse than not having the endpoint.
-    func testS67ALiveSiblingsSocketIsLeftAlone() throws {
+    func testALiveSiblingsSocketIsLeftAlone() throws {
         let path = directory + "/tarmac-dev.sock"
         let sibling = try claimed(path)
         defer { sibling.close() }
@@ -63,7 +66,8 @@ final class DevSocketTests: XCTestCase {
         Darwin.close(probe)
     }
 
-    func testS68TheSocketIsRemovedOnClose() throws {
+    /// "Clean shutdown removes the socket file".
+    func testTheSocketIsRemovedOnClose() throws {
         let path = directory + "/tarmac-dev.sock"
         let socket = try claimed(path)
         XCTAssertTrue(FileManager.default.fileExists(atPath: path))
@@ -193,10 +197,11 @@ final class DevSocketTests: XCTestCase {
         XCTAssertTrue(result.closed)
     }
 
+    /// "Oversize frame closes the connection".
     /// A peer that connects and closes without a frame is the liveness probe a
     /// sibling's claim makes; answering or logging it would make every probe
     /// noisy.
-    func testS69AnEmptyConnectionIsDroppedSilently() throws {
+    func testAnEmptyConnectionIsDroppedSilently() throws {
         var asked = false
         let result = try exchange(
             { shutdown($0, SHUT_WR) },
@@ -208,7 +213,8 @@ final class DevSocketTests: XCTestCase {
         XCTAssertNil(result.reply)
     }
 
-    func testS69AnOversizedFrameClosesTheConnection() throws {
+    /// "Oversize frame closes the connection".
+    func testAnOversizedFrameClosesTheConnection() throws {
         var asked = false
         let result = try exchange(
             { client in

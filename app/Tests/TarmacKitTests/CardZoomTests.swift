@@ -4,9 +4,9 @@ import XCTest
 @testable import TarmacKit
 
 /// HTML-card zoom geometry and the wheel's travel in a document's units:
-/// specs 2607.0004 S10 (the settled real-px box), 2607.0006 (the frozen
+/// specs 2607.0004 "Iframe size rounds frame times zoom" (the settled real-px box), 2607.0006 (the frozen
 /// magnification), 2609.0013 (whole-unit steps with a carry) and 2610.0002
-/// (the wheel scale). Scenario ids are per spec and collide.
+/// (the wheel scale). Scenario titles are per spec.
 final class CardZoomTests: XCTestCase {
     // MARK: - magnifyK never upsamples (2607.0006)
 
@@ -47,7 +47,7 @@ final class CardZoomTests: XCTestCase {
         XCTAssertFalse(CardZoom.alignsOnPlacement(zoom: 1, settledZoom: 0.5))
     }
 
-    // MARK: - iframePx (2607.0004 S10)
+    // MARK: - iframePx (2607.0004 "Iframe size rounds frame times zoom")
 
     func testIframePxIsTheFrameTimesZoomRounded() {
         XCTAssertEqual(
@@ -66,8 +66,9 @@ final class CardZoomTests: XCTestCase {
 
     // MARK: - wheelScale (2610.0002)
 
+    /// "Wheel scale follows board zoom when magnified".
     /// One unit of a magnified document is `zoom / magnifyK` of a screen point.
-    func test2610S1AMagnifiedDocumentTakesMagnifyKOverZoomUnitsAPoint() {
+    func testAMagnifiedDocumentTakesMagnifyKOverZoomUnitsAPoint() {
         XCTAssertEqual(CardZoom.wheelScale(zoom: 0.5, magnify: true), 6)
         XCTAssertEqual(CardZoom.wheelScale(zoom: 1, magnify: true), 3)
         XCTAssertEqual(CardZoom.wheelScale(zoom: 2, magnify: true), 1.5)
@@ -75,12 +76,14 @@ final class CardZoomTests: XCTestCase {
         XCTAssertEqual(CardZoom.wheelScale(zoom: 1.728, magnify: true), 3 / 1.728, accuracy: 1e-9)
     }
 
-    func test2610S1ARevealDocumentTakesOneUnitAPoint() {
+    /// "Wheel scale follows board zoom when magnified".
+    func testARevealDocumentTakesOneUnitAPoint() {
         XCTAssertEqual(CardZoom.wheelScale(zoom: 0.5, magnify: false), 1)
         XCTAssertEqual(CardZoom.wheelScale(zoom: 2, magnify: false), 1)
     }
 
-    func test2610S14AZoomThatIsNoZoomScalesNothing() {
+    /// "Invalid zoom gives scale of one".
+    func testAZoomThatIsNoZoomScalesNothing() {
         for zoom in [0, -1, CGFloat.nan, .infinity] {
             XCTAssertEqual(CardZoom.wheelScale(zoom: zoom, magnify: true), 1, "\(zoom)")
         }
@@ -88,7 +91,8 @@ final class CardZoomTests: XCTestCase {
 
     // MARK: - quantizeScrollDelta (2609.0013)
 
-    func testS1PassesAWholeDeltaThroughUntouched() {
+    /// "Whole delta passes through with no carry".
+    func testPassesAWholeDeltaThroughUntouched() {
         XCTAssertEqual(CardZoom.quantizeScrollDelta(35, carry: 0), CardZoom.Quantized(step: 35, carry: 0))
         XCTAssertEqual(CardZoom.quantizeScrollDelta(0, carry: 0), CardZoom.Quantized(step: 0, carry: 0))
     }
@@ -100,14 +104,16 @@ final class CardZoomTests: XCTestCase {
         XCTAssertEqual(CardZoom.quantizeScrollDelta(-2.5, carry: 0).step, -2)
     }
 
-    func testS2EmitsAnIntegerStepWheneverTheTotalIsFractional() {
+    /// "Fractional total rounds to nearest integer".
+    func testEmitsAnIntegerStepWheneverTheTotalIsFractional() {
         XCTAssertEqual(CardZoom.quantizeScrollDelta(34.72, carry: 0).step, 35)
         XCTAssertEqual(CardZoom.quantizeScrollDelta(35, carry: 0.72).step, 36)
     }
 
+    /// "Repeated fractional deltas never drift".
     /// The no-drift claim: a carry-less implementation is off by ~0.28 px per
     /// event here and breaches 1 px by the fourth.
-    func testS3KeepsEveryPrefixSumWithinOnePxOfExactTravel() {
+    func testKeepsEveryPrefixSumWithinOnePxOfExactTravel() {
         let d = 34.72
         var carry = 0.0
         var travelled = 0
@@ -120,7 +126,8 @@ final class CardZoomTests: XCTestCase {
         XCTAssertEqual(Double(travelled) + carry, 100 * d, accuracy: 1e-9)
     }
 
-    func testS4AdvancesWithinBudgetOnSubPixelDeltas() {
+    /// "Slow sub-half-pixel scroll still advances".
+    func testAdvancesWithinBudgetOnSubPixelDeltas() {
         let d = 0.4
         let budget = Int((1 / d).rounded(.up)) + 1
         var carry = 0.0
@@ -142,22 +149,25 @@ final class CardZoomTests: XCTestCase {
         XCTAssertGreaterThan(travelled, before)
     }
 
+    /// "Carry from downward delta tips small upward delta".
     /// The carry must be consumed, not merely stored: the small reverse delta
     /// only crosses a pixel because of the inherited residue.
-    func testS5ConsumesTheCarryOnADirectionReversal() {
+    func testConsumesTheCarryOnADirectionReversal() {
         let down = CardZoom.quantizeScrollDelta(34.72, carry: 0)
         XCTAssertEqual(CardZoom.quantizeScrollDelta(-0.3, carry: down.carry).step, -1)
         let back = CardZoom.quantizeScrollDelta(-34.72, carry: down.carry)
         XCTAssertEqual(down.step + back.step, 0)
     }
 
-    func testS6PreservesDirectionForDeltasOfAtLeastOnePx() {
+    /// "Large negative delta keeps its direction".
+    func testPreservesDirectionForDeltasOfAtLeastOnePx() {
         for d in [-1.2, -34.72, -1000.5] {
             XCTAssertLessThan(CardZoom.quantizeScrollDelta(d, carry: 0).step, 0, "\(d)")
         }
     }
 
-    func testS7CreatesAndDestroysNoTravel() {
+    /// "Quantize conserves total travel".
+    func testCreatesAndDestroysNoTravel() {
         for d in [0, 12, 34.72, -34.72, 1234.567] {
             for c in [0, 0.42, -0.42] {
                 let q = CardZoom.quantizeScrollDelta(d, carry: c)
@@ -166,8 +176,9 @@ final class CardZoomTests: XCTestCase {
         }
     }
 
-    /// Rules out satisfying S7 by parking whole pixels in the carry.
-    func testS9NeverCarriesAWholePixel() {
+    /// "Carry stays under one pixel".
+    /// Rules out satisfying "Quantize conserves total travel" by parking whole pixels in the carry.
+    func testNeverCarriesAWholePixel() {
         for d in [0, 12, 34.72, -34.72, 0.4, -0.4, 1234.567] {
             for c in [0, 0.99, -0.99] {
                 XCTAssertLessThan(abs(CardZoom.quantizeScrollDelta(d, carry: c).carry), 1)

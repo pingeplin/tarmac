@@ -55,7 +55,7 @@ final class TerminalEngineTests: XCTestCase {
         XCTAssertEqual(String(decoding: replies.joined(), as: UTF8.self), "\u{1b}[1;3R")
     }
 
-    /// The answer follows the theme the host applies (2610.0007 S23); with
+    /// The answer follows the theme the host applies (2610.0007 "Terminal answers color queries from the theme"); with
     /// none applied it is what it always was.
     func testAnEngineNobodyThemedAnswersTheColourSchemeQueryAsDark() throws {
         let engine = try engine()
@@ -154,10 +154,11 @@ final class TerminalEngineTests: XCTestCase {
 
     // MARK: scrollback
 
+    /// 2610.0004 "Engine scrolls to an absolute row".
     /// The row a dragged scroll thumb asks for. At the last row the viewport
     /// can start at, or past it, the viewport is the live one again and
     /// follows what is printed next.
-    func test2610_0004S12AnAbsoluteRowIsWhereTheViewportStarts() throws {
+    func testAnAbsoluteRowIsWhereTheViewportStarts() throws {
         let engine = try engine(cols: 10, rows: 3)
         feed(engine, (1...10).map { "line\($0)" }.joined(separator: "\r\n"))
         XCTAssertEqual(engine.scrollbar, TerminalScrollbar(total: 10, offset: 7, visible: 3))
@@ -204,9 +205,9 @@ final class TerminalEngineTests: XCTestCase {
         XCTAssertTrue(engine.isViewportAtBottom)
     }
 
-    /// 2610.0003 S27, a pin: a full-screen program has nothing to scroll, which
+    /// 2610.0003 "Alternate screen scrollbar has no history", a pin: a full-screen program has nothing to scroll, which
     /// is what keeps a scroll thumb off it. It guards a `GHOSTTY_COMMIT` bump.
-    func test2610S27TheAlternateScreenReportsNoHistory() throws {
+    func testTheAlternateScreenReportsNoHistory() throws {
         let engine = try engine(cols: 10, rows: 3)
         feed(engine, (1...10).map { "line\($0)" }.joined(separator: "\r\n"))
         XCTAssertEqual(engine.scrollbar, TerminalScrollbar(total: 10, offset: 7, visible: 3))

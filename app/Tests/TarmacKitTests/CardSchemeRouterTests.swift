@@ -16,7 +16,7 @@ final class CardSchemeRouterTests: XCTestCase {
         String(decoding: response.body, as: UTF8.self)
     }
 
-    /// S18
+    /// "Card scheme routes img and doc hosts"
     func testTheImgHostRoutesToTheImageHandler() {
         let path = "/tmp/s18.png"
         let bytes = Data([0x89, 0x50, 0x4E, 0x47, 0xFF])
@@ -31,7 +31,7 @@ final class CardSchemeRouterTests: XCTestCase {
         )
     }
 
-    /// S18
+    /// "Card scheme routes img and doc hosts"
     func testTheDocHostRoutesToTheCardHandler() {
         let path = "/tmp/s18.html"
         let resp = respond(SchemeFixtures.docURI(path), disk: .init([path: Data("<html>s18</html>".utf8)]))
@@ -43,7 +43,7 @@ final class CardSchemeRouterTests: XCTestCase {
         XCTAssertEqual(CardSchemeRouter.route(url: SchemeFixtures.docURI(path)), .doc(.read(path: path)))
     }
 
-    /// S15
+    /// "Router serves shim after the doctype"
     func testTheDocHostPlacesTheShimAfterALeadingDoctype() {
         let path = "/tmp/s15.html"
         let disk = SchemeFixtures.Disk([path: Data("<!doctype html><p>hi</p>".utf8)])
@@ -53,7 +53,7 @@ final class CardSchemeRouterTests: XCTestCase {
         XCTAssertEqual(text(resp), "<!doctype html><script>SHIM</script>\n<p>hi</p>")
     }
 
-    /// S18
+    /// "Card scheme routes img and doc hosts"
     func testAnUnknownHostIsAnsweredWith400ByTheCardHandler() {
         let resp = respond("tarmac-card://other/x")
 

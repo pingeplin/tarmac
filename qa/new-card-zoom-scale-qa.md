@@ -1,10 +1,10 @@
 # New terminal card mounts at the board's settled raster scale — manual QA (spec 2609.0005, #87)
 
-S1–S4 of `.blueprint/specs/2609.0005_new_terminal_card_zoom_scale.md`. These are
+The first four scenarios of `.blueprint/specs/2609.0005_new_terminal_card_zoom_scale.md`. These are
 [Q] scenarios by necessity, not by preference: the contract is *what `FitAddon`
 computes for a real xterm inside a real `rs ×` host*, and `desktop/` has no jsdom
 or xterm harness (see the repo testing convention). There was one automated
-scenario, **S5** — a drift tripwire on the padding constant, which **passed on a
+scenario, **"Host padding on disk equals padding helper"** — a drift tripwire on the padding constant, which **passed on a
 completely unfixed build and was not evidence of anything below**. #117 (spec
 `.blueprint/specs/2609.0007_term_host_padding.md`) removed the duplicated constant
 it pinned, and with it the tripwire: the padding contract is now QA-only. This
@@ -47,7 +47,7 @@ passes falsely. The order is always:
 3. Wait at least half a second (`RASTER_SCALE_SETTLE_MS` is 150 ms,
    `desktop/src/kit/rasterScale.ts`) so the settle has reached the reference card.
 4. Re-read `stty size` in the **reference** card — it may have moved by one column
-   across the settle (see S4's scrollbar note). That post-settle reading, not the
+   across the settle (see "Bucket-crossing zoom keeps glyphs and gutter"'s scrollbar note). That post-settle reading, not the
    100 % one, is what the new card is compared against.
 5. ⌘T again → this is the **card under test**. Make **no** pan or zoom gesture
    after this point unless the scenario explicitly says to.
@@ -104,7 +104,7 @@ start from fresh dev state: `make kill-daemon`, delete the worktree's
 Record the readout you actually used in **Run conditions** at the end of this
 sheet, and every `cols` you read in the observation table.
 
-## S1 — spawn onto a board already settled at `rasterScale = 2`
+## New card at 2x scale matches reference — spawn onto a board already settled at `rasterScale = 2`
 
 **The scenario the fix exists for.** It is the only one that exercises the new
 code path at all: at `rs = 1` the change is an exact no-op by construction.
@@ -133,7 +133,7 @@ delivered to the app on this machine (see *Blocker* in Run conditions). No card
 under test ever existed, so none of the three tells was read. Every box above is
 unticked because nothing above was attempted, not because anything failed.
 
-## S2 — spawn at rest (`rasterScale = 1`) — no-regression pin
+## New card at rest matches reference card — spawn at rest (`rasterScale = 1`) — no-regression pin
 
 Be honest about what this buys: at `rs = 1` the fix is an exact no-op
 (`termFontSize * 1`, and `termHostPadding(1)` *is* the CSS literal), so this can
@@ -150,11 +150,11 @@ works.
 - [ ] Pass iff all three hold. Anything red here is a botched implementation, not
       a scale bug.
 
-**Not run as a measured scenario — see *Run 2* and *Owner sign-off* at the end of this sheet.** (2026-09-06.) Same blocker: both cards S2 compares are ⌘T spawns, and
+**Not run as a measured scenario — see *Run 2* and *Owner sign-off* at the end of this sheet.** (2026-09-06.) Same blocker: both cards "New card at rest matches reference card" compares are ⌘T spawns, and
 ⌘T could not be delivered. The board's 100 % readout *was* confirmed on screen,
 but no card was spawned.
 
-## S3 — correct without ever needing a settle (bucket 1.5, within-bucket move)
+## Same-bucket zoom keeps new card correct — correct without ever needing a settle (bucket 1.5, within-bucket move)
 
 Stated at bucket **1.5** on purpose: 120 % and 144 % are two consecutive presses
 of the `+` control and both derive `rs = 1.5`, so this is runnable with the
@@ -171,7 +171,7 @@ so a wrong card simply stays wrong. What this pins is that the card is correct
 - [ ] Press `+` once (readout **120 %**). Wait half a second. Re-read and record
       the reference card's `stty size`.
 - [ ] ⌘T → the card under test. No gesture yet.
-- [ ] **Half 1 — S1's three tells at this scale**: same `stty size` as the
+- [ ] **Half 1 — "New card at 2x scale matches reference"'s three tells at this scale**: same `stty size` as the
       reference, same glyph size, same gutter width. Record all three.
 - [ ] Press `+` once more (readout **144 %** — same bucket, `rs` stays 1.5). Wait
       half a second.
@@ -189,9 +189,9 @@ so a wrong card simply stays wrong. What this pins is that the card is correct
 with the `+` control and confirmed on screen, but with no ⌘T there was no card
 under test to compare.
 
-## S4 — an existing settle still lands on a card the mount already seeded
+## Bucket-crossing zoom keeps glyphs and gutter — an existing settle still lands on a card the mount already seeded
 
-- [ ] Reach an S1-passing state at `rs = 2` (reference card, three presses,
+- [ ] Reach a state that passes "New card at 2x scale matches reference" at `rs = 2` (reference card, three presses,
       readout 173 %, card under test spawned after the settle). Record both cards'
       `stty size`.
 - [ ] Press `+` three more times (readout **299 %**, `rs = 3`). Wait half a second.
@@ -204,7 +204,7 @@ under test to compare.
 - [ ] Pass iff all four hold. A compounding double-application of the scale would
       show as a *gross* jump in the grid, never as one column.
 
-**Not run as a measured scenario — see *Run 2* and *Owner sign-off* at the end of this sheet.** (2026-09-06.) S4 begins from "reach an S1-passing state", and S1 was
+**Not run as a measured scenario — see *Run 2* and *Owner sign-off* at the end of this sheet.** (2026-09-06.) "Bucket-crossing zoom keeps glyphs and gutter" begins from a state that passes "New card at 2x scale matches reference", and "New card at 2x scale matches reference" was
 never run (same blocker).
 
 > **Superseded by spec 2609.0011 (issue #130).** The paragraph below described
@@ -233,12 +233,12 @@ have not read.** `rows cols` is `stty size`'s own order.
 
 | scenario | readout | board zoom | rs | reference `rows cols` | new card `rows cols` | glyphs match? | gutters match? |
 |---|---|---|---|---|---|---|---|
-| S1 |  |  | 2.0 |  |  |  |  |
-| S2 |  |  | 1.0 |  |  |  |  |
-| S3 (before) |  |  | 1.5 |  |  |  |  |
-| S3 (after) |  |  | 1.5 |  |  |  |  |
-| S4 (before) |  |  | 2.0 |  |  |  |  |
-| S4 (after) |  |  | 3.0 |  |  |  |  |
+| New card at 2x scale matches reference |  |  | 2.0 |  |  |  |  |
+| New card at rest matches reference card |  |  | 1.0 |  |  |  |  |
+| Same-bucket zoom keeps new card correct (before) |  |  | 1.5 |  |  |  |  |
+| Same-bucket zoom keeps new card correct (after) |  |  | 1.5 |  |  |  |  |
+| Bucket-crossing zoom keeps glyphs and gutter (before) |  |  | 2.0 |  |  |  |  |
+| Bucket-crossing zoom keeps glyphs and gutter (after) |  |  | 3.0 |  |  |  |  |
 
 **No row has been filled.** Neither run executed a scenario, so there is no
 reference/new-card pair to record. The repo owner's sign-off (below) is a visual
@@ -287,7 +287,7 @@ calls that each *reported* success produced no card at all — the false success
 itself part of the defect. ⌘T is the **only** way to create a terminal card:
 `spawnNewTerminal` has exactly one call site, the ⌘T branch of the keydown
 handler at `desktop/src/App.tsx:1389`, and there is no button, menu item, or
-gesture equivalent. With no second card, none of S1–S4 is decidable.
+gesture equivalent. With no second card, none of the four scenarios is decidable.
 
 For the same reason `stty size` was never typed into a card. (The PTY grid can be
 read from outside with `stty -f /dev/ttysNNN size` on the daemon's child shell,
@@ -350,7 +350,7 @@ rather than left out.
 These decide nothing about #87: this card was spawned at rest and repaired (if it
 needed repairing) by the ordinary settle path, which is not the path the fix
 touches. They are recorded only because they were actually read. Note in passing
-that `rows` moved by one across the settle, where §S4 of this sheet expects rows
+that `rows` moved by one across the settle, where §"Bucket-crossing zoom keeps glyphs and gutter" of this sheet expects rows
 to be exactly invariant; that was not investigated and is not a #87 finding.
 
 ---
@@ -403,14 +403,14 @@ Recorded as exactly what it is, and no more:
   "unverified".
 - It is **not** a per-tell measurement. The procedure followed, the zoom readouts
   used, and the values of the three tells were not reported, so none of the
-  checkboxes under S1–S4 is ticked and no row of the observation table is filled.
+  checkboxes under the four scenarios is ticked and no row of the observation table is filled.
   Ticking them from a general "looks right" would assert readings nobody recorded.
 - In particular, **tell 3 (gutter width) has no recorded observation**. It is the
   only tell that can detect the padding half of the fix — `stty size` is provably
   blind to it and glyph size is set by `fontSize` alone — so the padding half of
   the change remains the least-evidenced part of this work.
 
-**Standing gap.** The spec's Definition of Done asks that S1–S4 "have been run
+**Standing gap.** The spec's Definition of Done asks that the four scenarios "have been run
 against `make run` and their outcome recorded in that file", and that the sheet
 "records the observed `cols` at each `rs` exercised". On the evidence above, the
 first is partially met (the app was exercised and accepted, but not scenario by
@@ -418,15 +418,15 @@ scenario) and the second is not met. Closing it needs one guided pass: with the
 dev app running, ⌘T a reference card at 100 %, `+` three times to 173 %, re-read
 the reference, ⌘T the card under test, then read both cards with
 `stty -f /dev/ttysNNN size` and compare the two gutters side by side. That is the
-whole of S1, and S1 is the only scenario that exercises the new code path.
+whole of "New card at 2x scale matches reference", and "New card at 2x scale matches reference" is the only scenario that exercises the new code path.
 
 ---
 
 ## Run 3 — 2026-09-07 (#117 zoom ladder, spec 2609.0007)
 
-**Scope note.** This run exercised the **S1–S5 ladder of
+**Scope note.** This run exercised the **ladder of the five [Q] scenarios of
 `.blueprint/specs/2609.0007_term_host_padding.md`** (the `--rs` custom-property
-refactor), not the S1–S4 scenarios of this sheet. The two numberings are
+refactor), not the four scenarios of this sheet. The two numberings are
 unrelated; nothing above this line is amended by it, and no checkbox above is
 ticked by it.
 
@@ -435,7 +435,7 @@ ticked by it.
 - **Launch:** the dev app (`make run`) from a **fresh `.dev` state**.
 - **Zoom readouts used:** `100%` / `120%` / `173%` / `299%` / `100%`
   (`rs` 1 / 1.5 / 2 / 3 / 1).
-- **Outcome:** the maintainer ran S1–S5 of spec 2609.0007 and reported them
+- **Outcome:** the maintainer ran the five [Q] scenarios of spec 2609.0007 and reported them
   **checked — a visual pass by eye**.
 
 **Readings not transcribed.** No `stty size` value, no devtools computed-padding
@@ -445,14 +445,14 @@ here must be a number someone read.
 
 | spec 2609.0007 scenario | tell | reading |
 |---|---|---|
-| S1 | computed `.term-host` padding at `rs` 2 and 1, inline `padding` absent | not recorded (visual pass) |
-| S2 | `stty size` across 100/120/173/299/100 % | not recorded (visual pass) |
-| S3 | gutter width vs. the 100 % reference card | not recorded (visual pass) |
-| S4 | `WINCH` count over the 173→100→173 % round-trip | not recorded (visual pass) |
-| S5 | `--rs` present with value `1`; no inline width/height/transform | not recorded (visual pass) |
+| Term host padding comes from CSS only | computed `.term-host` padding at `rs` 2 and 1, inline `padding` absent | not recorded (visual pass) |
+| Grid size holds across zoom ladder | `stty size` across 100/120/173/299/100 % | not recorded (visual pass) |
+| New card gutter matches reference card | gutter width vs. the 100 % reference card | not recorded (visual pass) |
+| Zoom round trip causes no grid blow-up | `WINCH` count over the 173→100→173 % round-trip | not recorded (visual pass) |
+| Raster wrapper has scale variable only | `--rs` present with value `1`; no inline width/height/transform | not recorded (visual pass) |
 
 **What this is worth.** Same standing as the 2026-09-06 owner sign-off above: an
 acceptance by the person who owns the code, on a build containing the change —
 real evidence, and not a per-tell measurement. In particular the gutter tell
-(S3), still the only tell for the padding half, remains without a recorded
+(2609.0007 "New card gutter matches reference card"), still the only tell for the padding half, remains without a recorded
 numeric observation.

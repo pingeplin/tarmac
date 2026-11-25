@@ -296,7 +296,7 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(Message.scrollback(termID: "t1", bytes: bytes).encodedPayload(), payload)
     }
 
-    /// 2611.0002 S33 (issue #311, additive app → daemon): a doc names its data
+    /// 2611.0002 "Doc data vectors survive both codecs" (issue #311, additive app → daemon): a doc names its data
     /// file.
     func testVector14DataFileNamesAFile() throws {
         let payload = hexData(
@@ -321,7 +321,7 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(message.encodedPayload(), payload)
     }
 
-    /// 2611.0002 S33: with no `file` key the doc reads no file.
+    /// 2611.0002 "Doc data vectors survive both codecs": with no `file` key the doc reads no file.
     func testVector15DataFileNamesNone() throws {
         let payload = hexData(
             """
@@ -343,7 +343,7 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(message.encodedPayload(), payload)
     }
 
-    /// 2611.0003 S2 (issue #326, additive cli → daemon): one value for the
+    /// 2611.0003 "Push and doc event vectors survive Swift codec" (issue #326, additive cli → daemon): one value for the
     /// cards of a doc.
     func testVector16Push() throws {
         let payload = hexData(
@@ -365,7 +365,7 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(message.encodedPayload(), payload)
     }
 
-    /// 2611.0003 S2 (daemon → app): the value, for the doc's cards.
+    /// 2611.0003 "Push and doc event vectors survive Swift codec" (daemon → app): the value, for the doc's cards.
     func testVector17DocEvent() throws {
         let payload = hexData(
             """
@@ -386,7 +386,7 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(message.encodedPayload(), payload)
     }
 
-    /// 2611.0007 S5 (daemon → app): a board's record of each terminal.
+    /// 2611.0007 "Term records and succeeds survive both codecs" (daemon → app): a board's record of each terminal.
     func testVector18RestoreTermRecords() throws {
         let payload = hexData(
             """
@@ -412,7 +412,7 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(message.encodedPayload(), payload)
     }
 
-    /// 2611.0007 S5 (app → daemon): the persisted id a cold spawn replaces.
+    /// 2611.0007 "Term records and succeeds survive both codecs" (app → daemon): the persisted id a cold spawn replaces.
     func testVector19SpawnTermSucceeds() throws {
         let payload = hexData(
             """
@@ -453,7 +453,7 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(message.encodedPayload(), payload, file: file, line: line)
     }
 
-    /// 2611.0009 S8 (cli → daemon): a report with a text.
+    /// 2611.0009 "Report wire frames match in both codecs" (cli → daemon): a report with a text.
     func testVector20Report() throws {
         try assertVector(
             """
@@ -466,7 +466,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0009 S8: `clear` has no `text` key.
+    /// 2611.0009 "Report wire frames match in both codecs": `clear` has no `text` key.
     func testVector21ReportClear() throws {
         try assertVector(
             """
@@ -478,7 +478,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0009 S8 (daemon → app): every key; `at_ms` is a uint64.
+    /// 2611.0009 "Report wire frames match in both codecs" (daemon → app): every key; `at_ms` is a uint64.
     func testVector22TermReport() throws {
         try assertVector(
             """
@@ -500,7 +500,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0009 S8: no report.
+    /// 2611.0009 "Report wire frames match in both codecs": no report.
     func testVector23TermReportNone() throws {
         try assertVector(
             "82 a1 74 ab 74 65 72 6d 5f 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31",
@@ -509,7 +509,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0009 S8 (app → daemon): the user's own input.
+    /// 2611.0009 "Report wire frames match in both codecs" (app → daemon): the user's own input.
     func testVector24TypedInput() throws {
         try assertVector(
             """
@@ -523,7 +523,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0011 S12 (cli → daemon): set a resume command.
+    /// 2611.0011 "Resume wire frames match in both codecs" (cli → daemon): set a resume command.
     func testVector25Resume() throws {
         try assertVector(
             """
@@ -535,7 +535,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0011 S12: a clear has no `cmd` key.
+    /// 2611.0011 "Resume wire frames match in both codecs": a clear has no `cmd` key.
     func testVector26ResumeClear() throws {
         try assertVector(
             "82 a1 74 a6 72 65 73 75 6d 65 a7 74 65 72 6d 5f 69 64 a2 74 31",
@@ -544,7 +544,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0011 S12 (daemon → app): a record with a resume command.
+    /// 2611.0011 "Resume wire frames match in both codecs" (daemon → app): a record with a resume command.
     func testVector27RestoreResumeRecord() throws {
         try assertVector(
             """
@@ -568,7 +568,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0013 S15 (daemon → app): a report with its place.
+    /// 2611.0013 "Inbox wire frames match in both codecs" (daemon → app): a report with its place.
     func testVector28TermReportWithItsPlace() throws {
         try assertVector(
             """
@@ -591,7 +591,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0013 S15: a bell with its board.
+    /// 2611.0013 "Inbox wire frames match in both codecs": a bell with its board.
     func testVector29BellWithItsBoard() throws {
         try assertVector(
             """
@@ -603,7 +603,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0013 S15: an exit with its board.
+    /// 2611.0013 "Inbox wire frames match in both codecs": an exit with its board.
     func testVector30ExitWithItsBoard() throws {
         try assertVector(
             """
@@ -615,7 +615,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0012 S15 (cli → daemon): a subscribe with both keys.
+    /// 2611.0012 "Events wire frames match in both codecs" (cli → daemon): a subscribe with both keys.
     func testVector31Subscribe() throws {
         try assertVector(
             """
@@ -631,7 +631,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0012 S15: a subscribe with no keys.
+    /// 2611.0012 "Events wire frames match in both codecs": a subscribe with no keys.
     func testVector32SubscribeToEverything() throws {
         try assertVector(
             "81 a1 74 a9 73 75 62 73 63 72 69 62 65",
@@ -640,12 +640,12 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0012 S15 (cli → daemon): the live terminals, asked.
+    /// 2611.0012 "Events wire frames match in both codecs" (cli → daemon): the live terminals, asked.
     func testVector33TermsList() throws {
         try assertVector("81 a1 74 aa 74 65 72 6d 73 5f 6c 69 73 74", .map(["t": .string("terms_list")]), .termsList)
     }
 
-    /// 2611.0012 S15 (daemon → cli): a row with every key.
+    /// 2611.0012 "Events wire frames match in both codecs" (daemon → cli): a row with every key.
     func testVector34Terms() throws {
         try assertVector(
             """
@@ -665,7 +665,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0012 S15: a row with no `cwd` and no `proc` has no key for them.
+    /// 2611.0012 "Events wire frames match in both codecs": a row with no `cwd` and no `proc` has no key for them.
     func testVector35TermsWithNoCwdOrProc() throws {
         try assertVector(
             """
@@ -680,7 +680,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0015 S10 (daemon → app): a terminal's recorded command changed.
+    /// 2611.0015 "Resume push wire frames match in both codecs" (daemon → app): a terminal's recorded command changed.
     func testVector36TermResume() throws {
         try assertVector(
             """
@@ -693,7 +693,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0015 S10: no `cmd` is "no command".
+    /// 2611.0015 "Resume push wire frames match in both codecs": no `cmd` is "no command".
     func testVector37TermResumeWithNoCmd() throws {
         try assertVector(
             """
@@ -705,7 +705,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0016 S23 (cli → daemon): the cli leg carries no `req_id` and no `board_id`.
+    /// 2611.0016 "Conformance vectors match in both codecs" (cli → daemon): the cli leg carries no `req_id` and no `board_id`.
     func testVector38TermNewFromTheCLI() throws {
         try assertVector(
             """
@@ -719,7 +719,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0016 S23 (daemon → app): numbered, with the board named.
+    /// 2611.0016 "Conformance vectors match in both codecs" (daemon → app): numbered, with the board named.
     func testVector39TermNewToTheApp() throws {
         try assertVector(
             """
@@ -735,7 +735,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0016 S23 (app → daemon).
+    /// 2611.0016 "Conformance vectors match in both codecs" (app → daemon).
     func testVector40TermNewOKFromTheApp() throws {
         try assertVector(
             """
@@ -747,7 +747,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0016 S23 (daemon → cli): no `req_id`.
+    /// 2611.0016 "Conformance vectors match in both codecs" (daemon → cli): no `req_id`.
     func testVector41TermNewOKToTheCLI() throws {
         try assertVector(
             "82 a1 74 ab 74 65 72 6d 5f 6e 65 77 5f 6f 6b a7 74 65 72 6d 5f 69 64 a2 74 39",
@@ -756,7 +756,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0016 S23 (app → daemon).
+    /// 2611.0016 "Conformance vectors match in both codecs" (app → daemon).
     func testVector42TermNewErr() throws {
         try assertVector(
             "83 a1 74 ac 74 65 72 6d 5f 6e 65 77 5f 65 72 72 a6 72 65 71 5f 69 64 01 a3 6d 73 67 a1 6d",
@@ -765,7 +765,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0016 S23, D11: the input the daemon holds until the shell takes keys.
+    /// 2611.0016 "Conformance vectors match in both codecs", D11: the input the daemon holds until the shell takes keys.
     func testVector43HeldInput() throws {
         try assertVector(
             """
@@ -780,7 +780,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0024 S5: a doc tile keeps its sidebar's width and open state.
+    /// 2611.0024 "Swift decodes vector 44 with sidebar keys": a doc tile keeps its sidebar's width and open state.
     func testVector44DocTileSidebar() throws {
         try assertVector(
             """
@@ -807,12 +807,13 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    func testS10ATermResumeWithANilCmdHasNoCmdKey() throws {
+    /// 2611.0015 "Resume push wire frames match in both codecs".
+    func testATermResumeWithANilCmdHasNoCmdKey() throws {
         let fields = try MsgPack.decode(Message.termResume(termID: "t1", cmd: nil).encodedPayload()).mapValue
         XCTAssertEqual(fields?.keys.sorted(), ["t", "term_id"])
     }
 
-    /// 2611.0011 S12: a nil `resume` and a nil `cmd` put no key on the wire.
+    /// 2611.0011 "Resume wire frames match in both codecs": a nil `resume` and a nil `cmd` put no key on the wire.
     func testANilResumeAndANilCmdHaveNoKey() throws {
         let restore = Message.restore(
             docs: [], tiles: [], board: nil, boardID: nil, liveTerms: [], termRecords: ["t1": TermRecord(lastCwd: "/w")]
@@ -822,7 +823,7 @@ final class ConformanceTests: XCTestCase {
         XCTAssertNil(try MsgPack.decode(Message.resume(termID: "t1", cmd: nil).encodedPayload()).mapValue?["cmd"])
     }
 
-    /// 2611.0009 S8: an untyped input, an unread report and a report with no
+    /// 2611.0009 "Report wire frames match in both codecs": an untyped input, an unread report and a report with no
     /// text put no key for it on the wire; a missing `read` is unread.
     func testAnUntypedInputAnUnreadReportAndATextlessReportHaveNoKeyForIt() throws {
         let input = Message.input(termID: "t1", bytes: Data("a".utf8), typed: false)
@@ -841,7 +842,7 @@ final class ConformanceTests: XCTestCase {
         )
     }
 
-    /// 2611.0007 S5: an empty table, a nil `succeeds` and a nil `last_cwd`
+    /// 2611.0007 "Term records and succeeds survive both codecs": an empty table, a nil `succeeds` and a nil `last_cwd`
     /// put no key on the wire.
     func testAnEmptyRecordTableANilSucceedsAndANilLastCwdHaveNoKey() throws {
         let empty = Message.restore(docs: [], tiles: [], board: nil, boardID: nil, liveTerms: [])

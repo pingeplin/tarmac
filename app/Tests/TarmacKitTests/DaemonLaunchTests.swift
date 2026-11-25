@@ -9,12 +9,12 @@ final class DaemonLaunchTests: XCTestCase {
 
     // MARK: - resolveDaemonPath
 
-    /// S1, S2, S4, S5, S11, S13: the full resolution grid. Columns are the env
+    /// 2606.0002: the full resolution grid. Columns are the env
     /// value for `TARMAC_DAEMON` (`nil` = key absent) and whether a `tarmacd`
     /// sits beside the running executable. The explicit override must win
-    /// VERBATIM and UNCONDITIONALLY — even with no sibling (S1) and even when one
-    /// exists (S5) — while an absent or empty override falls through to the
-    /// sibling (S2/S4) or `nil` (S11). S13 pins that "non-empty" is `!isEmpty`
+    /// VERBATIM and UNCONDITIONALLY — even with no sibling ("Daemon override is kept without bundled binary") and even when one
+    /// exists ("Daemon override wins over bundled binary") — while an absent or empty override falls through to the
+    /// sibling ("Bundled daemon path is used without override", "Empty daemon override falls back to bundled") or `nil` ("No override and no bundle resolves to nil"). "Whitespace daemon override counts as set" pins that "non-empty" is `!isEmpty`
     /// with no trimming: a whitespace-only override is honored verbatim.
     func testResolveDaemonPathGrid() {
         let cases: [(override: String?, exists: Bool, expected: String?)] = [
@@ -61,19 +61,20 @@ final class DaemonLaunchTests: XCTestCase {
 
     // MARK: - injectCLIPath
 
-    /// S3, S6, S7, S8, S9, S12: the injection grid over `(base, cliDir)`.
+    /// 2606.0002: the injection grid over `(base, cliDir)`.
     /// `nil` base is covered separately in `testInjectNilBase` (the table can't
     /// hold `nil` cleanly alongside `""`).
     func testInjectCLIPathGrid() {
         let cases: [(base: String, cliDir: String, expected: String)] = [
-            ("/usr/bin:/bin", "/opt/homebrew/bin", "/opt/homebrew/bin:/usr/bin:/bin"),  // S3: prepend
-            // S6: already present → unchanged
+            // "CLI directory is prepended to PATH"
+            ("/usr/bin:/bin", "/opt/homebrew/bin", "/opt/homebrew/bin:/usr/bin:/bin"),
+            // "Present CLI directory leaves PATH unchanged"
             ("/usr/bin:/opt/homebrew/bin", "/opt/homebrew/bin", "/usr/bin:/opt/homebrew/bin"),
-            ("", "/opt/homebrew/bin", "/opt/homebrew/bin"),  // S7: empty base
-            ("/usr/bin:", "/x", "/x:/usr/bin:"),  // S8: trailing empty segment preserved
-            // S9: substring is not a segment
+            ("", "/opt/homebrew/bin", "/opt/homebrew/bin"),  // "Nil or empty PATH becomes CLI directory": empty base
+            ("/usr/bin:", "/x", "/x:/usr/bin:"),  // "Trailing colon in PATH is preserved"
+            // "Substring of CLI directory is not a match"
             ("/opt/homebrew/binfoo", "/opt/homebrew/bin", "/opt/homebrew/bin:/opt/homebrew/binfoo"),
-            ("/usr/bin:/bin", "", "/usr/bin:/bin"),  // S12: empty cliDir → unchanged
+            ("/usr/bin:/bin", "", "/usr/bin:/bin"),  // "Empty CLI directory leaves PATH unchanged"
         ]
         for c in cases {
             XCTAssertEqual(
@@ -84,14 +85,14 @@ final class DaemonLaunchTests: XCTestCase {
         }
     }
 
-    /// S7 / S12: a `nil` base yields just `cliDir`, and a `nil` base with an empty
+    /// "Nil or empty PATH becomes CLI directory" and "Empty CLI directory leaves PATH unchanged": a `nil` base yields just `cliDir`, and a `nil` base with an empty
     /// `cliDir` yields `""` — never a stray leading colon.
     func testInjectNilBase() {
         XCTAssertEqual(DaemonLaunch.injectCLIPath(base: nil, cliDir: "/opt/homebrew/bin"), "/opt/homebrew/bin")
         XCTAssertEqual(DaemonLaunch.injectCLIPath(base: nil, cliDir: ""), "")
     }
 
-    /// S6-vs-S9 boundary on its own: presence is decided by whole-segment equality,
+    /// The boundary between "Present CLI directory leaves PATH unchanged" and "Substring of CLI directory is not a match" on its own: presence is decided by whole-segment equality,
     /// not substring containment. `/opt/homebrew/bin` is "present" in
     /// `/usr/bin:/opt/homebrew/bin` (unchanged) but NOT in `/opt/homebrew/binfoo`
     /// (prepended). A `base.contains(cliDir)` mutation collapses the two.
@@ -106,7 +107,7 @@ final class DaemonLaunchTests: XCTestCase {
         )
     }
 
-    /// S10: idempotency across every branch — applying `injectCLIPath` to its own
+    /// "PATH injection is idempotent across branches": applying `injectCLIPath` to its own
     /// output changes nothing. This is the property that the dedup must satisfy;
     /// dropping the segment check makes the prepend branch grow on every call and
     /// breaks the first case here.

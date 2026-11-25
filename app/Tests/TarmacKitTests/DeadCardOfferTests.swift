@@ -1,7 +1,7 @@
 import TarmacKit
 import XCTest
 
-/// 2611.0011 S10, S25: what a dead card offers, and what its reopen spawns.
+/// 2611.0011 "Dead card offer shows folder and command", "Reopen succeeds the dead id": what a dead card offers, and what its reopen spawns.
 final class DeadCardOfferTests: XCTestCase {
     private let home = "/Users/u"
 
@@ -12,32 +12,36 @@ final class DeadCardOfferTests: XCTestCase {
         )
     }
 
-    func testS10AFolderIsOfferedWithHomeShownAsTilde() throws {
+    /// "Dead card offer shows folder and command".
+    func testAFolderIsOfferedWithHomeShownAsTilde() throws {
         let offer = try makeOffer("/Users/u/w")
         XCTAssertEqual(offer.lines, ["reopen here  ⏎", "in ~/w"])
     }
 
-    func testS10HomeIsReplacedOnlyAtAPathBoundary() throws {
+    /// "Dead card offer shows folder and command".
+    func testHomeIsReplacedOnlyAtAPathBoundary() throws {
         let offer = try makeOffer("/Users/u2/w")
         XCTAssertEqual(offer.lines, ["reopen here  ⏎", "in /Users/u2/w"])
         let atHome = try makeOffer("/Users/u")
         XCTAssertEqual(atHome.lines, ["reopen here  ⏎", "in ~"])
     }
 
-    /// 2611.0011 S10 and 2611.0015 S19: plain words, and `↻` only ever means
+    /// 2611.0011 "Dead card offer shows folder and command" and 2611.0015 "Dead card text has no refresh glyph": plain words, and `↻` only ever means
     /// refresh.
-    func testS10S19ASafeResumeAddsAThirdLineInPlainWordsWithNoRefreshGlyph() throws {
+    func testASafeResumeAddsAThirdLineInPlainWordsWithNoRefreshGlyph() throws {
         let offer = try makeOffer("/Users/u/w", resume: "claude --resume 3f2a1b9c-0000-4000-8000-000000000000")
         XCTAssertEqual(offer.lines, ["reopen here  ⏎", "in ~/w", "then offers: claude --resume 3f2a…"])
         XCTAssertFalse(offer.lines.contains { $0.contains("↻") })
     }
 
-    func testS10AResumeAloneIsOfferedWithNoFolderLine() throws {
+    /// "Dead card offer shows folder and command".
+    func testAResumeAloneIsOfferedWithNoFolderLine() throws {
         let offer = try makeOffer(nil, resume: "echo HI")
         XCTAssertEqual(offer.lines, ["reopen here  ⏎", "then offers: echo HI"])
     }
 
-    func testS10NothingToOfferGivesNoOffer() {
+    /// "Dead card offer shows folder and command".
+    func testNothingToOfferGivesNoOffer() {
         XCTAssertNil(DeadCardOffer.make(record: nil, home: home))
         XCTAssertNil(DeadCardOffer.make(record: TermRecord(lastCwd: nil), home: home))
         XCTAssertNil(
@@ -45,22 +49,25 @@ final class DeadCardOfferTests: XCTestCase {
                 record: TermRecord(lastCwd: nil, resume: ResumeRecord(cmd: "echo a\necho b")), home: home))
     }
 
-    func testS10ARefusedResumeIsLeftOutOfAFolderOffer() throws {
+    /// "Dead card offer shows folder and command".
+    func testARefusedResumeIsLeftOutOfAFolderOffer() throws {
         let offer = try makeOffer("/w", resume: "echo a\necho b")
         XCTAssertEqual(offer.lines, ["reopen here  ⏎", "in /w"])
         XCTAssertNil(DeadCardOffer.reopen(offer, deadID: "T").resume)
     }
 
-    // MARK: S25
+    // MARK: "Reopen succeeds the dead id"
 
-    func testS25ReopenSucceedsTheDeadIdInItsFolderAndCarriesTheResume() throws {
+    /// "Reopen succeeds the dead id".
+    func testReopenSucceedsTheDeadIdInItsFolderAndCarriesTheResume() throws {
         let offer = try makeOffer("/w", resume: "echo HI")
         let reopen = DeadCardOffer.reopen(offer, deadID: "T")
         XCTAssertEqual(reopen.spawn, SpawnRequest(cwd: "/w", succeeds: "T"))
         XCTAssertEqual(reopen.resume, "echo HI")
     }
 
-    func testS25ReopenWithNoFolderStillSucceedsTheDeadId() throws {
+    /// "Reopen succeeds the dead id".
+    func testReopenWithNoFolderStillSucceedsTheDeadId() throws {
         let offer = try makeOffer(nil, resume: "echo HI")
         XCTAssertEqual(DeadCardOffer.reopen(offer, deadID: "T").spawn, SpawnRequest(cwd: nil, succeeds: "T"))
     }

@@ -20,9 +20,9 @@ fn resume(cmd: Option<&str>) -> Msg {
     Msg::Resume { term_id: "t9".into(), cmd: cmd.map(str::to_string) }
 }
 
-// S6
+// "Resume verb sends set and clear"
 #[test]
-fn s6_set_sends_the_command_for_the_calling_terminal_and_prints_nothing() {
+fn set_sends_the_command_for_the_calling_terminal_and_prints_nothing() {
     let daemon = OneAnswer::acking();
     let out = daemon.run("resume", &["set", "claude --resume ab-12"]);
 
@@ -30,9 +30,9 @@ fn s6_set_sends_the_command_for_the_calling_terminal_and_prints_nothing() {
     assert_eq!(proto::decode(&daemon.sent()).unwrap(), resume(Some("claude --resume ab-12")));
 }
 
-// S6
+// "Resume verb sends set and clear"
 #[test]
-fn s6_clear_sends_no_cmd_key() {
+fn clear_sends_no_cmd_key() {
     let daemon = OneAnswer::acking();
     let out = daemon.run("resume", &["clear"]);
 
@@ -42,9 +42,9 @@ fn s6_clear_sends_no_cmd_key() {
     assert_eq!(proto::decode(&sent).unwrap(), resume(None));
 }
 
-// S29
+// "CLI usage errors exit 2"
 #[test]
-fn s29_a_usage_error_exits_2_and_does_not_connect() {
+fn a_usage_error_exits_2_and_does_not_connect() {
     for args in [&[][..], &["frob"], &["set"], &["set", "a", "b"], &["clear", "x"]] {
         let out = no_daemon(Some("t9"), args);
 
@@ -53,9 +53,9 @@ fn s29_a_usage_error_exits_2_and_does_not_connect() {
     }
 }
 
-// S29
+// "CLI usage errors exit 2"
 #[test]
-fn s29_a_refused_command_exits_2_with_its_cause_and_does_not_connect() {
+fn a_refused_command_exits_2_with_its_cause_and_does_not_connect() {
     let long = "a".repeat(257);
     for (cmd, cause) in [
         ("a\nb", "a control character"),
@@ -70,16 +70,16 @@ fn s29_a_refused_command_exits_2_with_its_cause_and_does_not_connect() {
     }
 }
 
-// S29
+// "CLI usage errors exit 2"
 #[test]
-fn s29_the_usage_check_comes_before_the_terminal_check() {
+fn the_usage_check_comes_before_the_terminal_check() {
     let out = no_daemon(None, &["frob"]);
     assert_eq!((out.code(), out.stderr.as_str()), (Some(2), USAGE));
 }
 
-// S30
+// "CLI failures exit 1"
 #[test]
-fn s30_no_terminal_exits_1_and_does_not_connect() {
+fn no_terminal_exits_1_and_does_not_connect() {
     for term_id in [None, Some("")] {
         let out = no_daemon(term_id, &["set", "echo HI"]);
 
@@ -96,18 +96,18 @@ fn a_term_id_that_is_not_utf8_is_no_terminal() {
     assert_eq!((out.code(), out.stderr.as_str()), (Some(1), NEEDS_TERM));
 }
 
-// S30
+// "CLI failures exit 1"
 #[test]
-fn s30_the_daemons_refusal_is_printed_and_exits_1() {
+fn the_daemons_refusal_is_printed_and_exits_1() {
     let daemon = OneAnswer::start(Answer::Reply(Msg::Err { msg: "unknown terminal: t9".into() }));
     let out = daemon.run("resume", &["set", "echo HI"]);
 
     assert_eq!((out.code(), out.stderr.as_str()), (Some(1), "tarmac: unknown terminal: t9\n"));
 }
 
-// S30
+// "CLI failures exit 1"
 #[test]
-fn s30_no_daemon_is_the_no_daemon_line() {
+fn no_daemon_is_the_no_daemon_line() {
     let sock = common::scratch().join("absent.sock");
     let out = Report::of(tarmac_at(&sock).env("TARMAC_TERM_ID", "t9").args(["resume", "clear"]));
 
@@ -115,9 +115,9 @@ fn s30_no_daemon_is_the_no_daemon_line() {
     assert_eq!(out.stderr, no_daemon_line(&sock));
 }
 
-// S30
+// "CLI failures exit 1"
 #[test]
-fn s30_a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
+fn a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
     let daemon = OneAnswer::start(Answer::Silence);
     let started = Instant::now();
     let out = daemon.run("resume", &["set", "echo HI"]);

@@ -11,9 +11,10 @@ final class BoardWheelTests: XCTestCase {
         BoardWheel.route(pinch: pinch, over: over, inBody: inBody, onThumb: onThumb, selected: selected)
     }
 
+    /// "Wheel over the thumb routes to the card".
     /// The thumb lies over the body: a wheel on it is the card's (spec
     /// 2610.0004).
-    func test2610_0004S7AWheelOverTheSelectedCardsThumbIsThatCards() {
+    func testAWheelOverTheSelectedCardsThumbIsThatCards() {
         XCTAssertEqual(route(over: "a", inBody: false, onThumb: true, selected: "a"), .card)
         XCTAssertEqual(route(over: "a", inBody: false, onThumb: true, selected: "b"), .pan)
         XCTAssertEqual(route(over: "a", inBody: false, onThumb: true, selected: nil), .pan)

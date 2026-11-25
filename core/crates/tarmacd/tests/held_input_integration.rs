@@ -44,9 +44,9 @@ fn as_read(c: char, n: usize) -> String {
     format!("{}\n", c.to_string().repeat(n))
 }
 
-// S31
+// "Held input waits for non-canonical child"
 #[test]
-fn s31_a_held_input_over_the_canonical_limit_arrives_whole_once_the_shell_takes_keys() {
+fn a_held_input_over_the_canonical_limit_arrives_whole_once_the_shell_takes_keys() {
     let daemon = TestDaemon::start_sh();
     let mut app = daemon.connect_app_drained();
     let out = reader(&mut app, &daemon.dir, Some("0.3"), 4097);
@@ -56,9 +56,9 @@ fn s31_a_held_input_over_the_canonical_limit_arrives_whole_once_the_shell_takes_
     assert_eq!(read_out(&out, 4097, Duration::from_secs(5)), as_read('x', 4096));
 }
 
-// S32
+// "Later input queues behind held input"
 #[test]
-fn s32_input_after_a_held_input_is_written_after_it() {
+fn input_after_a_held_input_is_written_after_it() {
     let daemon = TestDaemon::start_sh();
     let mut app = daemon.connect_app_drained();
     let out = reader(&mut app, &daemon.dir, Some("0.5"), 2001 + 11);
@@ -71,9 +71,9 @@ fn s32_input_after_a_held_input_is_written_after_it() {
     assert_eq!(read_out(&out, want.len(), Duration::from_secs(5)), want);
 }
 
-// S34
+// "Unheld input reaches canonical child at once"
 #[test]
-fn s34_an_input_with_no_hold_is_written_at_once_to_a_canonical_child() {
+fn an_input_with_no_hold_is_written_at_once_to_a_canonical_child() {
     let daemon = TestDaemon::start_sh();
     let mut app = daemon.connect_app_drained();
     let out = reader(&mut app, &daemon.dir, None, 6);

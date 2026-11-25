@@ -4,7 +4,7 @@ import XCTest
 /// 2609.0016: the notice's placement decisions, ported from the Rust
 /// `quit_notice.rs` tests.
 final class QuitNoticeTests: XCTestCase {
-    /// S28 — centred on the screen's usable area.
+    /// "Notice frame is centred in the window" — centred on the screen's usable area.
     func testTheNoticeIsCentredInTheVisibleFrame() {
         XCTAssertEqual(
             QuitNotice.frame(visibleFrame: QuitNotice.Rect(x: 100, y: 50, w: 1000, h: 800)),
@@ -12,7 +12,7 @@ final class QuitNoticeTests: XCTestCase {
         )
     }
 
-    /// S39 — the text is centred on the slab's own centre line, not hung from
+    /// "Notice label is centred but never above" — the text is centred on the slab's own centre line, not hung from
     /// its top edge.
     func testTheLabelIsCentredInTheSlab() {
         XCTAssertEqual(QuitNotice.labelY(noticeHeight: 70, textHeight: 29), 20.5)
@@ -21,7 +21,7 @@ final class QuitNoticeTests: XCTestCase {
         XCTAssertEqual(QuitNotice.labelY(noticeHeight: 70, textHeight: 80), 0)
     }
 
-    /// S29 — the window's own screen while it is on one; the main screen while
+    /// "Screen pick falls back by availability" — the window's own screen while it is on one; the main screen while
     /// it is hidden or minimized, which is where the user is looking.
     func testTheNoticeFollowsTheWindowUntilItLeavesTheScreen() {
         XCTAssertEqual(

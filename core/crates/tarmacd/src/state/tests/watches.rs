@@ -15,7 +15,7 @@ async fn try_close(daemon: &Arc<Daemon>, doc: &Path) -> bool {
     answers(async move { daemon.close_doc(&doc).await }).await
 }
 
-// 2610.0012 S5b (D9): a walk that is out makes its dir out, and a dir that
+// 2610.0012 "Held repo walk in new dir fails open" (D9): a walk that is out makes its dir out, and a dir that
 // is out is not watched.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_new_dir_whose_repo_does_not_answer_fails_the_open() {
@@ -38,7 +38,7 @@ async fn a_new_dir_whose_repo_does_not_answer_fails_the_open() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S9
+// 2610.0012 "Held unwatch does not block close or open"
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_close_whose_unwatch_does_not_return_answers_at_once() {
     let tmp = canon_tmp("unwatch-stuck");
@@ -63,7 +63,7 @@ async fn a_close_whose_unwatch_does_not_return_answers_at_once() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S10: the bounded part of the Riskiest assumption.
+// 2610.0012 "Held watch fails the open and later unwatches": the bounded part of the Riskiest assumption.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_watch_that_does_not_return_fails_only_the_opens_that_need_it() {
     let tmp = canon_tmp("watch-stuck");
@@ -95,7 +95,7 @@ async fn a_watch_that_does_not_return_fails_only_the_opens_that_need_it() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S11: a dir that is out waits for its call, the close side.
+// 2610.0012 "Unwatch waits for held stamps to return": a dir that is out waits for its call, the close side.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_dir_that_is_out_is_unwatched_when_its_call_returns() {
     let tmp = canon_tmp("unwatch-out");
@@ -127,7 +127,7 @@ async fn a_dir_that_is_out_is_unwatched_when_its_call_returns() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S11, the open side: the open's resolve is out, keyed in `gone`.
+// 2610.0012 "Unwatch waits for held stamps to return", the open side: the open's resolve is out, keyed in `gone`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_new_doc_in_a_dir_that_is_out_fails_at_once() {
     let tmp = canon_tmp("watch-out");
@@ -150,7 +150,7 @@ async fn a_new_doc_in_a_dir_that_is_out_fails_at_once() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S12: the thread compares the count with the watch when it
+// 2610.0012 "Re-open during busy unwatch keeps dir watched": the thread compares the count with the watch when it
 // comes to the dir, not when it was asked.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_reopen_behind_a_pending_unwatch_keeps_its_dir_watched() {
@@ -178,7 +178,7 @@ async fn a_reopen_behind_a_pending_unwatch_keeps_its_dir_watched() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S14: the first open released its count, so the second asks
+// 2610.0012 "Failed watch fails each open the same way": the first open released its count, so the second asks
 // for the watch again.
 #[tokio::test]
 async fn an_open_whose_watch_is_refused_fails_each_time_and_wakes_a_look() {
@@ -204,7 +204,7 @@ async fn an_open_whose_watch_is_refused_fails_each_time_and_wakes_a_look() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S16: `watch_loop`'s one permit folds the wakes of the three
+// 2610.0012 "Board delete unwatches dirs with bounded looks": `watch_loop`'s one permit folds the wakes of the three
 // unwatches into one look, or two when one comes during the look.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn deleting_a_board_looks_once_or_twice_for_its_unwatches() {
@@ -239,7 +239,7 @@ async fn deleting_a_board_looks_once_or_twice_for_its_unwatches() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-// 2610.0012 S21: `Daemon::new` sends the startup watches and does not
+// 2610.0012 "Held watch does not block daemon build": `Daemon::new` sends the startup watches and does not
 // wait for them.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_restart_does_not_wait_for_its_watches() {

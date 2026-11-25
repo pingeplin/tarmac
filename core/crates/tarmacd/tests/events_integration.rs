@@ -43,9 +43,9 @@ fn exit_of(msg: &Msg) -> (String, Option<i64>) {
     (term_id, code)
 }
 
-// S1
+// "Subscriber gets the exit of a live terminal"
 #[test]
-fn s1_a_subscriber_gets_the_exit_of_a_live_terminal() {
+fn a_subscriber_gets_the_exit_of_a_live_terminal() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     spawned(&mut app, "T", WAITS, Spawn::default());
@@ -60,9 +60,9 @@ fn s1_a_subscriber_gets_the_exit_of_a_live_terminal() {
     assert_eq!(got, app_got);
 }
 
-// S2
+// "Subscriber gets an exit that already happened"
 #[test]
-fn s2_an_exit_that_already_happened_is_the_snapshot() {
+fn an_exit_that_already_happened_is_the_snapshot() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     exited(&mut app, "T", &["/bin/zsh", "-f", "-c", "exit 3"]);
@@ -75,9 +75,9 @@ fn s2_an_exit_that_already_happened_is_the_snapshot() {
     assert_eq!(u, vec![Msg::Exit { term_id: "U".into(), code: None, board_id: None }]);
 }
 
-// S3
+// "Bell subscriber sees only its terminal"
 #[test]
-fn s3_a_terminal_filter_passes_that_terminals_bell_only() {
+fn a_terminal_filter_passes_that_terminals_bell_only() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     spawned(&mut app, "T", RINGS, Spawn::default());
@@ -93,9 +93,9 @@ fn s3_a_terminal_filter_passes_that_terminals_bell_only() {
     assert!(none_within(&mut sub, Duration::from_secs(1), |_| true));
 }
 
-// S4
+// "Report subscriber gets snapshot then live changes"
 #[test]
-fn s4_a_report_is_the_snapshot_then_its_changes_come_live() {
+fn a_report_is_the_snapshot_then_its_changes_come_live() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     spawned(&mut app, "T", READS, Spawn::default());
@@ -114,9 +114,9 @@ fn s4_a_report_is_the_snapshot_then_its_changes_come_live() {
     assert_eq!(none.iter().map(term_report_kind).collect::<Vec<_>>(), [("U".into(), None, None)]);
 }
 
-// S5
+// "Unfiltered subscriber gets only the doc change"
 #[test]
-fn s5_a_doc_change_comes_and_no_frame_that_is_not_an_event() {
+fn a_doc_change_comes_and_no_frame_that_is_not_an_event() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let doc = write_doc(&temp_dir().join("a.md"), "a");
@@ -140,9 +140,9 @@ fn s5_a_doc_change_comes_and_no_frame_that_is_not_an_event() {
     assert!(none_within(&mut sub, Duration::from_secs(2), not_an_event));
 }
 
-// S6
+// "Background board change comes when shown"
 #[test]
-fn s6_a_background_boards_change_comes_when_it_is_shown() {
+fn a_background_boards_change_comes_when_it_is_shown() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let doc = write_doc(&temp_dir().join("bg.md"), "a");
@@ -159,9 +159,9 @@ fn s6_a_background_boards_change_comes_when_it_is_shown() {
     assert!(is_file_event_for(&next(&mut sub, "the change at the switch"), &doc));
 }
 
-// S7
+// "Facts reach subscribers with no app"
 #[test]
-fn s7_facts_come_with_no_app() {
+fn facts_come_with_no_app() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     spawned(&mut app, "T", &["/bin/zsh", "-f", "-c", "sleep 3; printf '\\a'; sleep 1; exit 3"], Spawn::default());
@@ -173,9 +173,9 @@ fn s7_facts_come_with_no_app() {
     assert_eq!(exit_of(&next(&mut sub, "the exit of T")), ("T".into(), Some(3)));
 }
 
-// S8: ids in the other order than the boards, so a sort by id alone fails.
+// "Terms list shows live terminals in board order": ids in the other order than the boards, so a sort by id alone fails.
 #[test]
-fn s8_terms_lists_the_live_terminals_in_board_order() {
+fn terms_lists_the_live_terminals_in_board_order() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let (a, b) = (temp_dir(), temp_dir());
@@ -205,9 +205,9 @@ fn s8_terms_lists_the_live_terminals_in_board_order() {
     assert!(rows.iter().all(|r| r.proc.is_some()));
 }
 
-// S19
+// "Live terminal wins over the exit ring"
 #[test]
-fn s19_a_live_terminal_wins_over_an_exit_of_the_same_id() {
+fn a_live_terminal_wins_over_an_exit_of_the_same_id() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     exited(&mut app, "T", &["/bin/zsh", "-f", "-c", "exit 3"]);
@@ -220,9 +220,9 @@ fn s19_a_live_terminal_wins_over_an_exit_of_the_same_id() {
     assert_eq!(exit_of(&next(&mut sub, "the new T's exit")), ("T".into(), Some(4)));
 }
 
-// S25
+// "Subscribers leave the app slot untouched"
 #[test]
-fn s25_a_subscriber_is_not_the_app() {
+fn a_subscriber_is_not_the_app() {
     let daemon = TestDaemon::start();
     let mut a = daemon.connect_app_drained();
     let (mut sub, _) = subscriber(&daemon.sock, Some(&["bell", "exit"]), None);
@@ -246,9 +246,9 @@ fn s25_a_subscriber_is_not_the_app() {
     sub.recv_until("U's bell, after T's frames", |m| is_bell_for(m, "U"));
 }
 
-// S26
+// "Term filter drops doc changes"
 #[test]
-fn s26_a_terminal_filter_drops_doc_changes() {
+fn a_terminal_filter_drops_doc_changes() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     let doc = write_doc(&temp_dir().join("a.md"), "a");
@@ -266,9 +266,9 @@ fn s26_a_terminal_filter_drops_doc_changes() {
     assert!(is_bell_for(&first, "T"), "{first:?}");
 }
 
-// S29
+// "Unknown terminal or kind is refused"
 #[test]
-fn s29_an_unknown_terminal_or_no_known_kind_is_refused_and_closed() {
+fn an_unknown_terminal_or_no_known_kind_is_refused_and_closed() {
     let daemon = TestDaemon::start();
 
     for (kinds, term_id, want) in
@@ -282,10 +282,10 @@ fn s29_an_unknown_terminal_or_no_known_kind_is_refused_and_closed() {
     }
 }
 
-// S43: the report replays of a restore, of the shown board and of every
+// "Report replay to the app is not published": the report replays of a restore, of the shown board and of every
 // other board on a connection's first restore, are not published.
 #[test]
-fn s43_the_report_replays_are_not_published() {
+fn the_report_replays_are_not_published() {
     let daemon = TestDaemon::start();
     let mut app = daemon.connect_app_drained();
     spawned(&mut app, "T", READS, Spawn::default());

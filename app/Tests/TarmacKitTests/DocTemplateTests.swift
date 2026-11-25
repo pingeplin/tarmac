@@ -77,7 +77,7 @@ final class DocTemplateTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(CardZoom.magnifyK, BoardZoom.max)
     }
 
-    /// 2610.0006 S10 — the page's own prose size, before the app sets one, is
+    /// 2610.0006 "Doc template takes prose size from the rule" — the page's own prose size, before the app sets one, is
     /// the kit's standard, and the prose reads it from the property.
     func testTheProseSizeIsAPropertyThatStartsAtTheStandard() throws {
         let text = try template()
@@ -92,9 +92,9 @@ final class DocTemplateTests: XCTestCase {
         XCTAssertFalse(prose.contains("14px"))
     }
 
-    /// 2610.0007 S17 — the doc page's colours are the theme's and nothing
+    /// 2610.0007 "Shipped templates hold no hard-coded colors" — the doc page's colours are the theme's and nothing
     /// else: one marker in `:root`, and no colour written into the page.
-    func testS17TheDocPageTakesEveryColourFromTheTheme() throws {
+    func testTheDocPageTakesEveryColourFromTheTheme() throws {
         let text = try template()
         XCTAssertEqual(count(of: ThemeCSS.marker, in: text), 1)
         let root = try firstMatch(#":root \{([^}]*)\}"#, in: text)
@@ -107,10 +107,10 @@ final class DocTemplateTests: XCTestCase {
         XCTAssertTrue(ThemeCSS.page(text, ThemeCatalog.standard(for: .dark).palette).contains("--term-bg: #31363b;"))
     }
 
-    /// 2610.0007 S17 — the HTML card's host page takes its backdrop from the
+    /// 2610.0007 "Shipped templates hold no hard-coded colors" — the HTML card's host page takes its backdrop from the
     /// theme and states no scheme of its own: an author's page was measured
     /// under a host page with none.
-    func testS17TheHostPageTakesItsBackdropFromTheThemeAndStatesNoScheme() throws {
+    func testTheHostPageTakesItsBackdropFromTheThemeAndStatesNoScheme() throws {
         let text = try host()
         XCTAssertEqual(count(of: ThemeCSS.backdropMarker, in: text), 1)
         XCTAssertFalse(text.contains(ThemeCSS.marker))
@@ -125,27 +125,27 @@ final class DocTemplateTests: XCTestCase {
         XCTAssertFalse(page.contains("color-scheme"))
     }
 
-    /// 2611.0021 S1 — the column's measure is written once, where `em` is the
+    /// 2611.0021 "Reading column width is declared once" — the column's measure is written once, where `em` is the
     /// prose's own size.
-    func test2611_0021S1TheColumnIsFortySixEmOnceInTheProseRule() throws {
+    func testTheColumnIsFortySixEmOnceInTheProseRule() throws {
         let text = try template()
         XCTAssertEqual(count(of: "46em", in: text), 1)
         XCTAssertTrue(try firstMatch(#"\n  \.doc-prose \{([^}]*)\}"#, in: text).contains("46em"))
         XCTAssertFalse(text.contains("720px"))
     }
 
-    /// 2611.0021 S2 — a table or a code block of the prose itself breaks out
+    /// 2611.0021 "Wide blocks cap at 1040 pixels" — a table or a code block of the prose itself breaks out
     /// to the cap.
-    func test2611_0021S2WideBlocksAreCappedAt1040() throws {
+    func testWideBlocksAreCappedAt1040() throws {
         for selector in [".doc-prose > .doc-table", ".doc-prose > pre"] {
             let maxWidth = try firstMatch(#"max-width:\s*([^;]+);"#, in: try rule(for: selector))
             XCTAssertTrue(maxWidth.contains("calc(1040px * \(Self.k))"), selector)
         }
     }
 
-    /// 2611.0021 S3 — the table look; the last three checks are regression
+    /// 2611.0021 "Doc table gets its bordered look" — the table look; the last three checks are regression
     /// guards that hold on `main` too.
-    func test2611_0021S3TheTableLook() throws {
+    func testTheTableLook() throws {
         let box = try rule(for: ".doc-table")
         XCTAssertTrue(box.contains("solid var(--line)"))
         XCTAssertTrue(box.contains("border-radius: calc(8px * \(Self.k));"))
@@ -178,21 +178,21 @@ final class DocTemplateTests: XCTestCase {
         }
     }
 
-    /// 2611.0021 S4 — a code line does not wrap; it scrolls in its block.
-    func test2611_0021S4ACodeBlockScrollsSideways() throws {
+    /// 2611.0021 "Code blocks scroll sideways and never wrap" — a code line does not wrap; it scrolls in its block.
+    func testACodeBlockScrollsSideways() throws {
         let pre = try rule(for: ".doc-prose pre")
         XCTAssertTrue(pre.contains("white-space: pre;"))
         XCTAssertTrue(pre.contains("overflow-x: auto;"))
         XCTAssertFalse(try template().contains("pre-wrap"))
     }
 
-    /// 2611.0021 S5
-    func test2611_0021S5ATextColumnKeepsItsMinimum() throws {
+    /// 2611.0021 "Text column keeps a minimum width"
+    func testATextColumnKeepsItsMinimum() throws {
         XCTAssertTrue(try rule(for: ".doc-table .doc-text-col").contains("min-width: calc(220px * \(Self.k));"))
     }
 
-    /// 2611.0021 S25 — marked's `align` beats the left default.
-    func test2611_0021S25ColumnAlignmentWinsOverTheLeftDefault() throws {
+    /// 2611.0021 "Centered and right columns align after left" — marked's `align` beats the left default.
+    func testColumnAlignmentWinsOverTheLeftDefault() throws {
         let all = try rules()
         let left = try XCTUnwrap(all.firstIndex { $0.body.contains("text-align: left;") })
         for (side, selector) in [
@@ -205,9 +205,9 @@ final class DocTemplateTests: XCTestCase {
         }
     }
 
-    /// 2611.0021 S37 — a thematic break is a whole line on screen: the
+    /// 2611.0021 "Thematic break scales with oversample" — a thematic break is a whole line on screen: the
     /// default 1px border, laid out at K, is a third of a pixel and can vanish.
-    func test2611_0021S37AThematicBreakIsOneScreenPixel() throws {
+    func testAThematicBreakIsOneScreenPixel() throws {
         let rule = try rule(for: ".doc-prose hr")
         XCTAssertTrue(rule.contains("border: 0;"))
         XCTAssertTrue(rule.contains("border-top: calc(1px * \(Self.k)) solid var(--line);"))
@@ -230,8 +230,8 @@ final class DocTemplateTests: XCTestCase {
         XCTAssertTrue(try rule(for: #"[data-side="overlay"] .doc-side-grip"#).contains("border-style: none;"))
     }
 
-    /// 2611.0022 S30 — the text is laid out in the width the sidebar leaves.
-    func test2611_0022S30TheTextIsLaidOutAtTheTextWidth() throws {
+    /// 2611.0022 "Prose width uses the text width variable" — the text is laid out in the width the sidebar leaves.
+    func testTheTextIsLaidOutAtTheTextWidth() throws {
         let text = try template()
         XCTAssertTrue(try firstMatch(#":root \{([^}]*)\}"#, in: text).contains("--text-w: var(--card-w);"))
         let prose = try firstMatch(#"\n  \.doc-prose \{([^}]*)\}"#, in: text)
@@ -244,9 +244,9 @@ final class DocTemplateTests: XCTestCase {
         }
     }
 
-    /// 2611.0022 S31 — the sidebar is scaled as the prose is, outside the
+    /// 2611.0022 "Sidebar scaler is outside the scroll area" — the sidebar is scaled as the prose is, outside the
     /// prose's scroller.
-    func test2611_0022S31TheSidebarScalerIsOutsideTheScroller() throws {
+    func testTheSidebarScalerIsOutsideTheScroller() throws {
         let text = try template()
         let body = String(text[try XCTUnwrap(text.range(of: "<body>")).upperBound...])
         let scaler = try XCTUnwrap(body.range(of: #"<div class="doc-side-scaler""#)).lowerBound
@@ -268,9 +268,9 @@ final class DocTemplateTests: XCTestCase {
         XCTAssertTrue(rule.contains("transform-origin: 0 0;"))
     }
 
-    /// 2611.0025 S9 — on the Right each place of the sidebar is mirrored, and
+    /// 2611.0025 "Template has right-side rules and keeps left rules" — on the Right each place of the sidebar is mirrored, and
     /// its content keeps clear of the card's scroll thumb.
-    func test2611_0025S9TheRightSideMirrorsTheSidebar() throws {
+    func testTheRightSideMirrorsTheSidebar() throws {
         let right = #":root[data-sidebar-side="right"]"#
         let expected: [(String, [String])] = [
             ("\(right) .doc-scroll", ["left: 0;", "right: calc(var(--side-offset) * var(--zoom));"]),

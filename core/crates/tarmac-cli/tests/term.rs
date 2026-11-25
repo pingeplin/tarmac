@@ -42,9 +42,9 @@ fn term_new(cmd: &str, cwd: &Path, term_id: Option<&str>) -> Msg {
     }
 }
 
-// S4
+// "CLI sends term new and prints terminal id"
 #[test]
-fn s4_the_request_names_the_callers_folder_and_terminal_and_the_new_id_is_one_json_line() {
+fn the_request_names_the_callers_folder_and_terminal_and_the_new_id_is_one_json_line() {
     let daemon = answering("t9");
     let api = dir("api");
 
@@ -66,9 +66,9 @@ fn outside_a_tarmac_terminal_the_request_names_no_terminal() {
     assert_eq!(sent(&daemon), term_new("claude", &w, None));
 }
 
-// S5
+// "CLI cwd flag resolves relative and absolute paths"
 #[test]
-fn s5_a_relative_cwd_is_taken_from_the_clis_folder_and_is_not_read() {
+fn a_relative_cwd_is_taken_from_the_clis_folder_and_is_not_read() {
     let daemon = answering("t9");
     let w = dir("");
 
@@ -77,9 +77,9 @@ fn s5_a_relative_cwd_is_taken_from_the_clis_folder_and_is_not_read() {
     assert_eq!(sent(&daemon), term_new("x", &w.join("api"), None));
 }
 
-// S5
+// "CLI cwd flag resolves relative and absolute paths"
 #[test]
-fn s5_an_absolute_cwd_is_sent_as_it_is() {
+fn an_absolute_cwd_is_sent_as_it_is() {
     let daemon = answering("t9");
 
     run_in(&daemon.double.sock, &dir(""), &["--cwd", "/abs/dir", "x"]);
@@ -96,9 +96,9 @@ fn the_daemons_refusal_is_printed_and_exits_1() {
     assert_eq!((out.code(), out.stdout.as_str(), out.stderr.as_str()), (Some(1), "", "tarmac: no app connected\n"));
 }
 
-// S19
+// "Invalid command is refused by CLI and daemon"
 #[test]
-fn s19_a_refused_command_exits_2_with_its_cause_and_does_not_connect() {
+fn a_refused_command_exits_2_with_its_cause_and_does_not_connect() {
     let long = "x".repeat(4097);
     for (cmd, cause) in [
         ("", "empty"),
@@ -123,9 +123,9 @@ fn s19_a_refused_command_exits_2_with_its_cause_and_does_not_connect() {
     }
 }
 
-// S19
+// "Invalid command is refused by CLI and daemon"
 #[test]
-fn s19_a_command_of_exactly_4096_chars_is_sent() {
+fn a_command_of_exactly_4096_chars_is_sent() {
     let daemon = answering("t9");
     let cmd = "中".repeat(4096);
 
@@ -134,9 +134,9 @@ fn s19_a_command_of_exactly_4096_chars_is_sent() {
     assert_eq!(out.code(), Some(0), "{}", out.stderr);
 }
 
-// S21
+// "Wrong CLI usage exits with usage line"
 #[test]
-fn s21_a_usage_error_exits_2_and_does_not_connect() {
+fn a_usage_error_exits_2_and_does_not_connect() {
     for args in [
         &["term"][..],
         &["term", "new"],
@@ -155,9 +155,9 @@ fn s21_a_usage_error_exits_2_and_does_not_connect() {
     }
 }
 
-// S22
+// "Silent daemon makes the CLI time out"
 #[test]
-fn s22_a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
+fn a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
     let daemon = OneAnswer::start(Answer::Silence);
     let started = Instant::now();
 
@@ -178,9 +178,9 @@ fn in_a_removed_folder(sock: &Path, args: &str) -> Report {
     )
 }
 
-// S29
+// "Removed current directory stops the CLI"
 #[test]
-fn s29_with_no_readable_folder_and_no_absolute_cwd_the_cli_exits_1_and_does_not_connect() {
+fn with_no_readable_folder_and_no_absolute_cwd_the_cli_exits_1_and_does_not_connect() {
     for args in ["x", "--cwd api x"] {
         let daemon = answering("t9");
 
@@ -195,9 +195,9 @@ fn s29_with_no_readable_folder_and_no_absolute_cwd_the_cli_exits_1_and_does_not_
     }
 }
 
-// S29
+// "Removed current directory stops the CLI"
 #[test]
-fn s29_an_absolute_cwd_needs_no_readable_folder() {
+fn an_absolute_cwd_needs_no_readable_folder() {
     let daemon = answering("t9");
 
     let out = in_a_removed_folder(&daemon.double.sock, "--cwd /abs/dir x");

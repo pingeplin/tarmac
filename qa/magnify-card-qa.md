@@ -1,6 +1,6 @@
 # Magnify zoom mode manual QA checklist (spec 2607.0006)
 
-Companion to `magnify-probe.html` (S5). These are the [QA]-tagged scenarios
+Companion to `magnify-probe.html` ("Root zoom doubling keeps probe layout stable"). These are the [QA]-tagged scenarios
 the unit suites cannot cover (DOM/webview zoom behavior; see repo testing
 convention). Run against `make run` with a fresh dev daemon (`make kill-daemon`
 first).
@@ -14,7 +14,7 @@ content="magnify">` by running `tarmac open <file>`. For Milestone 0, use
 layout viewport widths, box rects). For other scenarios, any magnify document
 works; multi-line prose or a diagram is ideal for observing wrap points.
 
-## S5 — Milestone 0 geometry gate
+## Root zoom doubling keeps probe layout stable — Milestone 0 geometry gate
 
 The design rests on this: root `zoom: z` inside an iframe of W real-px yields
 a layout viewport of W/z CSS px (not W units with overflow). Verify before
@@ -50,12 +50,12 @@ committing any other change.
 > in both modes. These readings are from the spec's standalone WebKit probe,
 > not from a live run. The run above is the quirks-mode run and is not changed.
 
-## S6 — Magnify wraps freeze, glyphs crisp across zooms
+## Zoom sweep never changes wrap points — Magnify wraps freeze, glyphs crisp across zooms
 
 Magnify is now the DEFAULT (`declaredZoomMode`), and its root zoom is frozen at
 `MAGNIFY_K` rather than tracked per settle. There is no settle relayout left to
 wait for, so the old "settle at each level" step is gone and the wrap-point
-check is exact again rather than the ICB-only claim S6 was weakened to.
+check is exact again rather than the ICB-only claim "Zoom sweep never changes wrap points" was weakened to.
 
 - [ ] Open a document with prose paragraphs or a diagram and NO `tarmac-zoom`
       meta — the default is what most cards will exercise.
@@ -78,7 +78,7 @@ check is exact again rather than the ICB-only claim S6 was weakened to.
 > the same. The reading is from the spec's standalone WebKit probe, not from a
 > live run.
 
-## S8 — Reveal-more when the document deliberately opts out
+## Meta-less document logs no capability line — Reveal-more when the document deliberately opts out
 
 Absent meta no longer means reveal — it means magnify. Reveal is now reached
 only by declaring it, which is the point: opting out of a stable layout is a
@@ -99,10 +99,10 @@ D3/Canvas dashboard), not something a document falls into by saying nothing.
 - [ ] Exactly one line beginning `zoom-mode` appears, reading `zoom-mode
       declared=reveal effective=reveal` — the line is keyed on the meta being
       *present*, so declaring reveal logs it. Only a meta-less (default-magnify)
-      document is silent, per S6. That prefix is the stable anchor — do not grep
+      document is silent, per "Zoom sweep never changes wrap points". That prefix is the stable anchor — do not grep
       for prose like "declared magnify".
 
-## S9 — Retained zoom applied at ready — **RETIRED** (spec 2609.0003, #99)
+## Early settle zoom applies at ready time — **RETIRED** (spec 2609.0003, #99)
 
 **Do not run this scenario. It is retired, not skipped.** Its manual repro could
 never reach the branch it was written for, which is why it stood NOT VERIFIED
@@ -115,7 +115,7 @@ has committed and installed its listener but has not yet reached
 hand. The settle-driven recipe this section used to prescribe could not reach it
 at all under frozen-K.
 
-- **Replaced by an automated test, not by another manual run:** `2609.0003 S8` in
+- **Replaced by an automated test, not by another manual run:** `2609.0003` "Zoom sent before DOM ready applies on ready" in
   `desktop/src/card-shim.test.ts` drives exactly that order against the shipped
   shim bytes (`loadShim()` → `send({tarmac:"zoom", z:3})` → `domReady()`), with a
   negative control proving the value was *retained* rather than applied on
@@ -126,12 +126,12 @@ at all under frozen-K.
   is in fact *redundant* with the reply to the same document's own `ready`.
 - **The user-visible question this section used to gesture at** — what a card
   looks like after `location.reload()` — is now its own scenario: **2609.0003
-  S11** below, which is where the #99 bug was actually observable.
+  "Self-reloaded magnify card returns at magnify scale"** below, which is where the #99 bug was actually observable.
 
-See `.blueprint/specs/2607.0006_magnify_zoom_mode_for_html_cards.md` S9's
+See `.blueprint/specs/2607.0006_magnify_zoom_mode_for_html_cards.md` "Early settle zoom applies at ready time"'s
 `**Correction (#99):**` paragraph for the full reasoning.
 
-## S10 — Magnified file reload preserves zoom
+## Reloaded magnify card returns already magnified
 
 - [ ] Open a magnify document and zoom it to 2× or higher, then end the
       gesture. (A magnify card has no settle of its own — `HtmlCard`
@@ -141,7 +141,7 @@ See `.blueprint/specs/2607.0006_magnify_zoom_mode_for_html_cards.md` S9's
 - [ ] Card reloads within 100ms (check iframe src in devtools for a new `?v=<mtime>`).
       The document comes back magnified at the current board zoom (e.g. still
       2×), not reset to 1×.
-- [x] **Added for 2609.0003 S13 (#99):** exactly one line beginning `zoom-mode`
+- [x] **Added for 2609.0003 "Versioned reload logs one mode line" (#99):** exactly one line beginning `zoom-mode`
       for the new load, and exactly one `z = 3` entry in the received-zoom panel.
       The `?v=` path resets the host's per-load state, so this must look exactly
       as it did before #99 — this item is the regression check that the fix did
@@ -171,7 +171,7 @@ the reload latency was never measured — the new load is evidenced instead by t
 panel reset plus that new `zoom-mode` line, which only the `lastChangedMs` reset
 effect can produce, and by the header's freshness chip flipping to `now`.
 
-## S11 — Smooth mid-gesture, wrap frozen through the gesture *and* after it
+## Gesture never re-lays out magnify card — Smooth mid-gesture, wrap frozen through the gesture *and* after it
 
 Frozen K removed the settle relayout this scenario was written around. The
 document lays out once at `ready` and never again; `scale(zoom/K)` carries the
@@ -193,13 +193,12 @@ a relayout that can no longer happen.
       nothing about a magnify card's layout depends on the level — unlike a
       reveal-more card, which resizes once per `RASTER_SCALE_SETTLE_MS` settle.
 
-<!-- S12 ("Fallback on zoom-incapable WebKit") removed in #94: the macOS 26
+<!-- "Incapable engine falls back to reveal" removed in #94: the macOS 26
      floor (packaging/Casks/tarmac.rb, `depends_on macos: :tahoe`) leaves no
      zoom-incapable target, so the capability probe it tested no longer exists.
-     Numbers are not reassigned — they are spec 2607.0006's scenario IDs, which
-     tests and the spec both cite. -->
+     The label is not reused for another scenario. -->
 
-## S15 — Nested/forged zoom messages rejected (event.source guard)
+## Self-posted zoom message is ignored — Nested/forged zoom messages rejected (event.source guard)
 
 - [ ] Open a magnify document. Borrow it (double-click), then open its console
       (press F12 or Inspector) and **select the card's iframe as the
@@ -220,16 +219,16 @@ a relayout that can no longer happen.
 
 **Do not run `window.parent.postMessage(...)` from the card document itself
 — it does not test this.** From inside a card document, `window.parent` IS
-the host: that message travels *up* to `HtmlCard`'s relay (S16's territory),
+the host: that message travels *up* to `HtmlCard`'s relay ("Forged upward zoom payload parses to null"'s territory),
 and the shim's own `message` listener — which lives in the card document and
 only ever receives messages addressed to the card's window — never sees it
 at all. That check would report a false pass even with the
 `event.source === window.parent` guard deleted outright, because nothing was
 ever delivered to the guard to reject.
 
-## S17 — Forged second ready does not flip the mode in force
+## Forged second ready changes nothing — Forged second ready does not flip the mode in force
 
-**The tell changed with #99 (spec 2609.0003 S14). Read this before running.**
+**The tell changed with #99 (spec 2609.0003 "Forged ready logs no second mode line"). Read this before running.**
 The host now posts `{tarmac:"zoom", z: MAGNIFY_K}` in reply to **every** genuine
 `ready`, so that a document which reloads itself comes back magnified instead of
 at 1/K. A forged repeat is indistinguishable from a genuine one at the message
@@ -247,9 +246,9 @@ signals nothing either.
       declared=magnify effective=magnify` — and the probe's "received zoom
       messages" panel shows one entry. Count that prefix, not the strip: a
       `magnify-probe.html` load produces five console entries in total, only one
-      of which is the host's (see S8's note on grepping the prefix, not prose).
+      of which is the host's (see "Meta-less document logs no capability line"'s note on grepping the prefix, not prose).
 - [ ] Borrow the card, open its console, select the card's iframe as the
-      execution context (same caveat as S15 — the top-document context makes
+      execution context (same caveat as "Self-posted zoom message is ignored" — the top-document context makes
       this a silent no-op), and post a forged second `ready`. `ready` travels
       shim→host, so target `window.parent`, same direction as the genuine one.
       **Forge `meta:"magnify"`, not `"reveal"`** — magnify is the branch that
@@ -291,7 +290,7 @@ strip, 32 read off the badge), i.e. exactly three probe entries per forgery
 the board to 144% afterwards left `ICB probe offsetWidth` 1207.0 px, `prose line
 count` 15 and box A's wrap points identical (`s14_after_zoom.png`).
 
-## S19 — Magnify engages on a card whose board was not active at load
+## Magnify card on inactive board engages after switch — Magnify engages on a card whose board was not active at load
 
 **Why:** `App.tsx` renders every board at once and `Board.tsx` sets
 `display:none` on inactive ones, so a card can finish loading with no layout at
@@ -309,7 +308,7 @@ user-visible risk did not — this checks the outcome, not the old path.
 - [ ] Switch to that board.
 - [ ] Console strip's line reads (verbatim): `zoom-mode declared=magnify
       effective=magnify`, and exactly one such line appears for this load.
-- [ ] Magnify engages: zooming the board freezes wrap points as in S6, and the
+- [ ] Magnify engages: zooming the board freezes wrap points as in "Zoom sweep never changes wrap points", and the
       card is not rendered at 1/K size (the visible tell that root zoom never
       landed).
 
@@ -321,9 +320,9 @@ user-visible risk did not — this checks the outcome, not the old path.
 - [ ] Switch to that card's board.
 - [ ] Same checks as (a).
 
-## S18 — Positive wire check: exactly one zoom message per document load, z = K
+## Load posts exactly one zoom message — Positive wire check: exactly one zoom message per document load, z = K
 
-The positive counterpart to S8's negative — without it, a regression that
+The positive counterpart to "Meta-less document logs no capability line"'s negative — without it, a regression that
 silently stops the host from posting zoom messages at all would leave every
 other item in this checklist green.
 
@@ -341,16 +340,16 @@ Frozen K changed the count this asserts. The host posts once, in reply to
 - [x] Rewrite the file on disk so the card reloads. The panel (reset with the
       document) shows one entry again: one per *load*, not one per card
       lifetime.
-- [x] **Added for 2609.0003 S12 (#99):** count the console line by its
-      `zoom-mode` prefix (S8's rule), not by the strip's total — a
+- [x] **Added for 2609.0003 "First open logs one mode line" (#99):** count the console line by its
+      `zoom-mode` prefix ("Meta-less document logs no capability line"'s rule), not by the strip's total — a
       `magnify-probe.html` load logs five entries and only one is the host's.
       **Scope note:** "one per load" is now precisely "one per genuine `ready`",
       which is the same thing for every step in this checklist, since none of
       them forges a `ready` or reloads a document from inside itself. The two
-      cases where the count can legitimately differ are 2609.0003 S14 (a forged
-      repeat draws a reply) and `2609.0003` S11 (a reload crossing a zoom in
-      flight can retain one *and* receive the reply — note that is the NEW S11 in
-      the 2609.0003 section below, not the mid-gesture S11 above).
+      cases where the count can legitimately differ are 2609.0003 "Forged ready logs no second mode line" (a forged
+      repeat draws a reply) and `2609.0003` "Self-reloaded magnify card returns at magnify scale" (a reload crossing a zoom in
+      flight can retain one *and* receive the reply — note that is the NEW "Self-reloaded magnify card returns at magnify scale" in
+      the 2609.0003 section below, not the mid-gesture "Gesture never re-lays out magnify card" above).
 
 Observation (2026-09-05, `7702f59`): **PASS.** On first open of `s11probe.html`
 at board zoom 100% the panel held exactly one entry —
@@ -366,21 +365,20 @@ added **no** panel entry and no console line, and left the report unchanged:
 `s11_pre.png` is the same generation 1 at 144%, still showing the single panel
 entry `12:47:27.768Z … z:3` and `ICB probe offsetWidth` 1207.0 px, `prose line
 count` 15, box B 960.0 px. The 207% step itself was not photographed. The
-file-rewrite step is recorded under **S10** above (panel reset to one entry for
+file-rewrite step is recorded under **"Reloaded magnify card returns already magnified"** above (panel reset to one entry for
 the new load).
 
 ---
 
 # Spec 2609.0003 (#99) — self-reload scenarios
 
-**These are spec `2609.0003`'s scenario ids, not 2607.0006's.** This sheet
-already has an unrelated S11 (mid-gesture) above; every id below is written
-`2609.0003 S<n>` for that reason. Same setup rules as the rest of the sheet
+**These are spec `2609.0003`'s scenarios, not 2607.0006's.** Every label below is
+prefixed `2609.0003`, so that it is not read as a 2607.0006 scenario. Same setup rules as the rest of the sheet
 (`make run`, fresh dev daemon, kill any installed `tarmacd` first).
 
 **Status: RUN 2026-09-05 against `7702f59` (PR #107) — all six PASS.** The fix
-landed with its automated tiers green (`2609.0003` S1–S7 in
-`desktop/src/kit/zoomMode.test.ts`, S8–S10 in `desktop/src/card-shim.test.ts`);
+landed with its automated tiers green (`2609.0003`'s [K] scenarios in
+`desktop/src/kit/zoomMode.test.ts`, its [S] scenarios in `desktop/src/card-shim.test.ts`);
 this is the manual half. **Read `## Run conditions` at the end of this sheet
 before trusting any number below** — the reload was not issued from a devtools
 console (there is none in this build), "above 1×" means 144%, and every
@@ -390,16 +388,16 @@ Where the other ids live, so nothing looks missing:
 
 | id | where it is run |
 |---|---|
-| 2609.0003 S11 | below — new |
-| 2609.0003 S12 | the added bullet under **S18** above (first open, prefix counting) |
-| 2609.0003 S13 | the added bullet under **S10** above (`?v=` reload unchanged) |
-| 2609.0003 S14 | **S17** above, rewritten in place (forged repeat; the panel is no longer the tell) |
-| 2609.0003 S15 | `cull-qa.md` **S36**, re-run with one added assertion |
-| 2609.0003 S16 | below — new |
+| 2609.0003 Self-reloaded magnify card returns at magnify scale | below — new |
+| 2609.0003 First open logs one mode line | the added bullet under **"Load posts exactly one zoom message"** above (first open, prefix counting) |
+| 2609.0003 Versioned reload logs one mode line | the added bullet under **"Reloaded magnify card returns already magnified"** above (`?v=` reload unchanged) |
+| 2609.0003 Forged ready logs no second mode line | **"Forged second ready changes nothing"** above, rewritten in place (forged repeat; the panel is no longer the tell) |
+| 2609.0003 Culled self-reload comes back paused | `cull-qa.md` **"Self reload while culled stays paused"**, re-run with one added assertion |
+| 2609.0003 Reveal self-reload applies no root zoom | below — new |
 
-## 2609.0003 S11 — a self-reloading card comes back at board zoom, not 1/K
+## 2609.0003 Self-reloaded magnify card returns at magnify scale — a self-reloading card comes back at board zoom, not 1/K
 
-The bug #99 fixed, and the reason `magnify-card-qa.md` S9 above is retired: a
+The bug #99 fixed, and the reason `magnify-card-qa.md` "Early settle zoom applies at ready time" above is retired: a
 document that reloads *itself* changes neither `src` nor `lastChangedMs`, so
 before the fix the host discarded its `ready` and sent it no root zoom at all —
 leaving it laid out in a `K×` viewport inside a `frame × K` box, i.e. rendered at
@@ -407,7 +405,7 @@ a third of its size with broken scroll height.
 
 **Premise: a VISIBLE, unculled card.** A culled card is `visibility:hidden`
 (#106) and cannot be double-clicked to borrow, so the console recipe below is
-unavailable there; the culled path is `cull-qa.md` S36 (2609.0003 S15) instead.
+unavailable there; the culled path is `cull-qa.md` "Self reload while culled stays paused" (2609.0003 "Culled self-reload comes back paused") instead.
 
 - [x] Open `magnify-probe.html` as a card and zoom the board above 1× (e.g. 2×).
       Let it settle.
@@ -415,7 +413,7 @@ unavailable there; the culled path is `cull-qa.md` S36 (2609.0003 S15) instead.
       offsetWidth`, `window.innerWidth` — and the received-zoom panel's contents.
 - [ ] Borrow the card (double-click), open its console, and **select the card's
       iframe as the execution context** (the top-document context makes the next
-      step a silent no-op — same caveat as S15/S17).
+      step a silent no-op — same caveat as "Self-posted zoom message is ignored" and "Forged second ready changes nothing").
 - [x] Run `location.reload()`.
 - [x] **Tell 1 — the wire.** The received-zoom panel (it resets with the
       document) shows **at least one** `{tarmac:"zoom"}` entry with `z = 3`.
@@ -440,7 +438,7 @@ unavailable there; the culled path is `cull-qa.md` S36 (2609.0003 S15) instead.
 
 **Fallback if the iframe execution context is unavailable** (the dev inspector
 does not always offer it): use a copy of `magnify-probe.html` that calls
-`location.reload()` once — guarded by `window.name`, the `cull-qa.md` S36 idiom —
+`location.reload()` once — guarded by `window.name`, the `cull-qa.md` "Self reload while culled stays paused" idiom —
 from inside its own received-zoom handler. Generation 1 receives the zoom and
 reloads; generation 2 must receive one too. Same premise, no devtools needed.
 
@@ -477,17 +475,17 @@ to the reloaded document's own `ready` arriving and landing. Neither reload
 produced a second `zoom-mode` line. The optional `wrap-probe.html`
 character-offset cross-check was **not run**.
 
-## 2609.0003 S16 — a reveal card's self-reload stays reveal
+## 2609.0003 Reveal self-reload applies no root zoom — a reveal card's self-reload stays reveal
 
-The render-level counterpart of the in-force invariant (`2609.0003` S7): a repeat
+The render-level counterpart of the in-force invariant (`2609.0003` "Forged magnify ready leaves reveal unzoomed"): a repeat
 `ready` is answered from the mode **already in force**, never from what that
 `ready` claims. If it were answered from the claim, a forged or re-declared
 `meta:"magnify"` would inject root zoom `K` into a reveal document and break its
 layout outright.
 
-**Fixture: the S8 recipe, not `wrap-probe-reveal.html`.** Use a copy of
+**Fixture: the "Meta-less document logs no capability line" recipe, not `wrap-probe-reveal.html`.** Use a copy of
 `magnify-probe.html` with its meta flipped to `<meta name="tarmac-zoom"
-content="reveal">` — exactly what S8 above prescribes. `wrap-probe-reveal.html`
+content="reveal">` — exactly what "Meta-less document logs no capability line" above prescribes. `wrap-probe-reveal.html`
 is the wrong instrument here: it is a wrap-signature probe and has **no
 received-zoom panel**, so the assertion below could not be read off it at all.
 
@@ -508,7 +506,7 @@ received-zoom panel**, so the assertion below could not be read off it at all.
 
 Observation (2026-09-05, `7702f59`): **PASS.** Fixture `s16probe.html` — the
 `magnify-probe.html` copy with the meta flipped to `content="reveal"`, per the
-S8 recipe, plus the QA controls described under **Run conditions**. On open, the
+"Meta-less document logs no capability line" recipe, plus the QA controls described under **Run conditions**. On open, the
 console strip read exactly one `zoom-mode declared=reveal effective=reveal`
 (badge `⌥ 2`: that line plus the probe's own first report —
 `s16_declared_reveal.png`, which is cropped to the badge and that strip line) and
@@ -532,7 +530,7 @@ rather than a console, because this build offers no inspector.
 
 ## Run conditions
 
-For the 2026-09-05 run of `2609.0003` S11–S16 above, and of the S10 / S17 / S18
+For the 2026-09-05 run of the six [Q] scenarios of `2609.0003` above, and of the "Reloaded magnify card returns already magnified", "Forged second ready changes nothing" and "Load posts exactly one zoom message"
 observations earlier in this sheet.
 
 **Commit under test:** `7702f59` on `fix/99-magnify-self-reload` (PR #107 →
@@ -575,7 +573,7 @@ of `desktop/qa/magnify-probe.html` were used instead, under
 same file with the meta flipped to `reveal`). Each adds, and changes nothing
 else:
 
-- a `window.name`-backed **generation counter** (the `cull-qa.md` S36 idiom),
+- a `window.name`-backed **generation counter** (the `cull-qa.md` "Self reload while culled stays paused" idiom),
   shown in the report block and in every `[magnify-probe]` console line, so the
   two sides of a self-reload can never be confused;
 - an `innerWidth / ICB probe` **ratio** line — 3.000 when root zoom `K` landed,
@@ -601,12 +599,12 @@ and 37 are derived from the strip**, because at 144% the card's header sits
 above the window edge in those captures. Each event adds three to five
 `[magnify-probe]` / `[qa99]` entries — five for the `?v=` reload, 32 → 37, whose
 new load logs its own `zoom-mode` line and an extra intermediate report — and a
-`zoom-mode` line only where S13 expects one.
+`zoom-mode` line only where "Versioned reload logs one mode line" expects one.
 
-**How the card was culled (S15).** By wheel-panning the board about 2.8
+**How the card was culled ("Culled self-reload comes back paused").** By wheel-panning the board about 2.8
 viewports to the right and back, not by switching boards: a card on an inactive
 board is `display:none`, which is not the cull path #106 gates. Recorded again
-in the `cull-qa.md` S36 re-run observation.
+in the `cull-qa.md` "Self reload while culled stays paused" re-run observation.
 
 **Other deviations and noise.** The first press of the reload button at 144%,
 issued immediately after the right-click that probed for an inspector, did

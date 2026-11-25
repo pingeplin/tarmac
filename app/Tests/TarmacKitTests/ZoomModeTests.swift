@@ -2,11 +2,11 @@ import XCTest
 
 @testable import TarmacKit
 
-/// Spec 2607.0006 S1 — the magnify-or-reveal decision for an HTML card from its
+/// Spec 2607.0006 "Zoom meta parsing ignores case and spaces" — the magnify-or-reveal decision for an HTML card from its
 /// `<meta name="tarmac-zoom">`. The capability probe that once split declared from
 /// effective died with the macOS 26 floor (#94), so the declaration is the verdict.
 final class ZoomModeTests: XCTestCase {
-    // MARK: - declared (2607.0006 S1)
+    // MARK: - declared (2607.0006 "Zoom meta parsing ignores case and spaces")
 
     func testRecognizesMagnifyCaseAndWhitespaceInsensitively() {
         XCTAssertEqual(ZoomMode.declared(metaContent: "magnify"), .magnify)
@@ -45,21 +45,24 @@ final class ZoomModeTests: XCTestCase {
         ZoomMode.ready(inForce: inForce, meta: meta)
     }
 
-    func testS1AdoptsMagnifyLogsTheLineAndMagnifiesWhenMagnifyIsDeclared() {
+    /// "First magnify ready adopts logs and posts zoom".
+    func testAdoptsMagnifyLogsTheLineAndMagnifiesWhenMagnifyIsDeclared() {
         XCTAssertEqual(
             ready(nil, "magnify"),
             ZoomMode.ReadyActions(adopt: .magnify, logLine: logLine(.magnify), magnify: true)
         )
     }
 
-    func testS2AMetaLessDocumentTakesTheMagnifyDefaultAndMagnifiesButLogsNothing() {
+    /// "First ready without meta adopts magnify silently".
+    func testAMetaLessDocumentTakesTheMagnifyDefaultAndMagnifiesButLogsNothing() {
         XCTAssertEqual(ready(nil, nil), ZoomMode.ReadyActions(adopt: .magnify, logLine: nil, magnify: true))
     }
 
+    /// "First ready without meta adopts magnify silently".
     /// A present-but-useless tag still logs — only an ABSENT tag is silent. The
     /// shim's `el.content || ""` really can deliver "", and a typo is still a tag
     /// the author wrote. Expected values are literal per row.
-    func testS2APresentButUselessTagStillLogsResolvingToTheDefault() {
+    func testAPresentButUselessTagStillLogsResolvingToTheDefault() {
         let rows: [(meta: String, mode: ZoomMode, magnify: Bool)] = [
             ("", .magnify, true),
             ("banana", .magnify, true),
@@ -75,17 +78,19 @@ final class ZoomModeTests: XCTestCase {
         }
     }
 
-    func testS3AdoptsRevealLogsTheLineAndDoesNotMagnifyWhenRevealIsDeclared() {
+    /// "First reveal ready posts no zoom".
+    func testAdoptsRevealLogsTheLineAndDoesNotMagnifyWhenRevealIsDeclared() {
         XCTAssertEqual(
             ready(nil, "reveal"),
             ZoomMode.ReadyActions(adopt: .reveal, logLine: logLine(.reveal), magnify: false)
         )
     }
 
+    /// "Zoom payload always carries the magnify factor".
     /// Every shape that must answer with magnification — first ready and repeat
     /// alike. In the desktop app the answer carried the frozen root zoom K; the
     /// constant is the view's, so what is pinned here is that the decision is made.
-    func testS5EveryMagnifyingShapeAnswersWithMagnification() {
+    func testEveryMagnifyingShapeAnswersWithMagnification() {
         let cases: [(label: String, inForce: ZoomMode?, meta: String?)] = [
             ("a first magnify ready", nil, "magnify"),
             ("a first meta-less ready", nil, nil),
@@ -97,35 +102,41 @@ final class ZoomModeTests: XCTestCase {
         }
     }
 
-    func testS4TheSelfReloadShapeIsAnsweredWithMagnificationAdoptingAndLoggingNothing() {
+    /// "Repeat magnify ready posts zoom again".
+    func testTheSelfReloadShapeIsAnsweredWithMagnificationAdoptingAndLoggingNothing() {
         XCTAssertEqual(
             ready(.magnify, "magnify"),
             ZoomMode.ReadyActions(adopt: nil, logLine: nil, magnify: true)
         )
     }
 
-    func testS4AndWithNoMetaAtAllTheCommonerRealShape() {
+    /// "Repeat magnify ready posts zoom again".
+    func testAndWithNoMetaAtAllTheCommonerRealShape() {
         XCTAssertEqual(ready(.magnify, nil), ZoomMode.ReadyActions(adopt: nil, logLine: nil, magnify: true))
     }
 
-    func testS6AForgedRevealCannotFlipAMagnifyCardsModeOrAddAConsoleLine() {
+    /// "Forged reveal ready keeps magnify in force".
+    func testAForgedRevealCannotFlipAMagnifyCardsModeOrAddAConsoleLine() {
         XCTAssertEqual(ready(.magnify, "reveal"), ZoomMode.ReadyActions(adopt: nil, logLine: nil, magnify: true))
     }
 
+    /// "Forged magnify ready leaves reveal unzoomed".
     /// The in-force invariant: a repeat decides from the mode already adopted,
     /// never from its own meta. Deciding from `declared` here would hand a reveal
     /// document root magnification and break its layout outright.
-    func testS7AForgedMagnifyCannotInjectMagnificationIntoARevealCard() {
+    func testAForgedMagnifyCannotInjectMagnificationIntoARevealCard() {
         XCTAssertEqual(ready(.reveal, "magnify"), ZoomMode.ReadyActions(adopt: nil, logLine: nil, magnify: false))
     }
 
-    func testS7ARevealCardsHonestRepeatIsEquallySilent() {
+    /// "Forged magnify ready leaves reveal unzoomed".
+    func testARevealCardsHonestRepeatIsEquallySilent() {
         XCTAssertEqual(ready(.reveal, "reveal"), ZoomMode.ReadyActions(adopt: nil, logLine: nil, magnify: false))
     }
 
+    /// "Forged magnify ready leaves reveal unzoomed".
     /// Completes the inForce × meta grid: without this, "reveal in force" is only
     /// ever exercised with a meta present.
-    func testS7AndARevealCardsMetaLessRepeatTheLastCellOfTheTable() {
+    func testAndARevealCardsMetaLessRepeatTheLastCellOfTheTable() {
         XCTAssertEqual(ready(.reveal, nil), ZoomMode.ReadyActions(adopt: nil, logLine: nil, magnify: false))
     }
 

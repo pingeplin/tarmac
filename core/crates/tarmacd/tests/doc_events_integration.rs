@@ -32,7 +32,7 @@ fn recv_doc_event(app: &mut Conn) -> (String, String) {
     }
 }
 
-// S45
+// "Push reaches the app as a doc event"
 #[test]
 fn a_push_on_a_cli_connection_is_acked_and_given_to_the_app() {
     let (daemon, mut app, doc) = with_open_card();
@@ -42,7 +42,7 @@ fn a_push_on_a_cli_connection_is_acked_and_given_to_the_app() {
     assert_eq!(recv_doc_event(&mut app), (doc, r#"{"n":1}"#.to_string()));
 }
 
-// S46: the app is read on a thread of its own, so the daemon's queue to it
+// "Thousand pushes arrive in order": the app is read on a thread of its own, so the daemon's queue to it
 // is what keeps the order.
 #[test]
 fn a_thousand_pushes_on_one_connection_reach_the_app_in_order() {
@@ -57,7 +57,7 @@ fn a_thousand_pushes_on_one_connection_reach_the_app_in_order() {
     assert_eq!(reader.join().unwrap(), expected);
 }
 
-// S24
+// "Push from the app role is ignored"
 #[test]
 fn a_push_on_an_app_connection_is_ignored() {
     let (_daemon, mut app, doc) = with_open_card();
@@ -71,7 +71,7 @@ fn a_push_on_an_app_connection_is_ignored() {
     app.recv_file_event_for(&doc);
 }
 
-// S50: `{t:"push", path:"/x", value:1}`.
+// "Malformed push frame keeps the connection": `{t:"push", path:"/x", value:1}`.
 #[test]
 fn a_push_whose_value_is_not_a_string_is_a_malformed_frame_and_the_connection_goes_on() {
     let (daemon, _app, doc) = with_open_card();
@@ -99,7 +99,7 @@ fn string_of_the_limit(path: &str) -> String {
     value
 }
 
-// S51
+// "Oversize doc event is refused"
 #[test]
 fn a_value_whose_doc_event_is_over_the_frame_limit_is_refused_and_the_app_stays() {
     let (daemon, mut app, doc) = with_open_card();

@@ -41,35 +41,35 @@ final class TermKeyBindingTests: XCTestCase {
     private let optLeft: [UInt8] = [0x1b, 0x62]  // ESC b (backward-word)
     private let optRight: [UInt8] = [0x1b, 0x66]  // ESC f (forward-word)
 
-    // MARK: Happy path — Ghostty byte parity (S1–S5)
+    // MARK: Happy path — Ghostty byte parity
 
-    func testCmdDeleteSendsCtrlU() {  // S1 — ⌫ is not an arrow ⇒ command only
+    func testCmdDeleteSendsCtrlU() {  // "Cmd-Backspace sends line kill byte" — ⌫ is not an arrow ⇒ command only
         XCTAssertEqual(decide(delete, command), ctrlU)
     }
-    func testCmdLeftSendsCtrlA() {  // S2 — ← is an arrow ⇒ +function+numericPad
+    func testCmdLeftSendsCtrlA() {  // "Cmd-Left sends line start byte" — ← is an arrow ⇒ +function+numericPad
         XCTAssertEqual(decide(left, command | arrow), ctrlA)
     }
-    func testCmdRightSendsCtrlE() {  // S3
+    func testCmdRightSendsCtrlE() {  // "Cmd-Right sends line end byte"
         XCTAssertEqual(decide(right, command | arrow), ctrlE)
     }
-    func testOptUpSendsEsc1Semi3A() {  // S4
+    func testOptUpSendsEsc1Semi3A() {  // "Option-Up sends alt-modified up arrow"
         XCTAssertEqual(decide(up, option | arrow), optUp)
     }
-    func testOptDownSendsEsc1Semi3B() {  // S5
+    func testOptDownSendsEsc1Semi3B() {  // "Option-Down sends alt-modified down arrow"
         XCTAssertEqual(decide(down, option | arrow), optDown)
     }
-    func testOptLeftSendsEscB() {  // S15 — word-jump, as Terminal.app / iTerm2 send
+    func testOptLeftSendsEscB() {  // "Option-Left sends ESC b for word back" — word-jump, as Terminal.app / iTerm2 send
         XCTAssertEqual(decide(left, option | arrow), optLeft)
     }
-    func testOptRightSendsEscF() {  // S16
+    func testOptRightSendsEscF() {  // "Option-Right sends ESC f for word forward"
         XCTAssertEqual(decide(right, option | arrow), optRight)
     }
 
-    // MARK: CapsLock invariance — every row (S6)
+    // MARK: CapsLock invariance — every row
 
     /// CapsLock-on (routine for CJK ASCII/中文 switching) must yield the identical
     /// result to CapsLock-off for every recognized shortcut.
-    func testCapsLockNeverChangesOutcome() {  // S6
+    func testCapsLockNeverChangesOutcome() {  // "Caps Lock never changes any recognized combo"
         XCTAssertEqual(decide(delete, command | capsLock), ctrlU)
         XCTAssertEqual(decide(left, command | arrow | capsLock), ctrlA)
         XCTAssertEqual(decide(right, command | arrow | capsLock), ctrlE)
@@ -79,62 +79,63 @@ final class TermKeyBindingTests: XCTestCase {
         XCTAssertEqual(decide(right, option | arrow | capsLock), optRight)
     }
 
-    // MARK: Exact-modifier gating (S7–S8)
+    // MARK: Exact-modifier gating
 
     /// ⌘ shortcuts fire only when ⌘ is the SOLE intent modifier — adding control,
     /// option, or shift must defer to super (nil), keeping ⌃⌘← etc. unchanged.
     /// Checked across all three ⌘ rows (51/123/124) so loosening any single row's
     /// equality can't survive.
-    func testCmdWithExtraIntentModifierDefers() {  // S7
+    func testCmdWithExtraIntentModifierDefers() {  // "Cmd plus another modifier is not handled"
         XCTAssertNil(decide(left, command | control | arrow))
         XCTAssertNil(decide(left, command | option | arrow))
         XCTAssertNil(decide(left, command | shift | arrow))
         XCTAssertNil(decide(delete, command | control))  // ⌘⌫ row (no arrow bits)
         XCTAssertNil(decide(right, command | shift | arrow))  // ⌘→ row
     }
-    func testShiftWithOptArrowDefers() {  // S8 — ⇧⌥↑ / ⇧⌥↓ (both ⌥ rows)
+    func testShiftWithOptArrowDefers() {  // "Option-Shift-Up is not handled" — ⇧⌥↑ / ⇧⌥↓ (both ⌥ rows)
         XCTAssertNil(decide(up, option | shift | arrow))
         XCTAssertNil(decide(down, option | shift | arrow))
     }
-    func testShiftWithOptLeftRightDefers() {  // S17 — ⇧⌥← / ⇧⌥→
+    func testShiftWithOptLeftRightDefers() {  // "Shift with Option-Arrow is not handled" — ⇧⌥← / ⇧⌥→
         XCTAssertNil(decide(left, option | shift | arrow))
         XCTAssertNil(decide(right, option | shift | arrow))
     }
 
-    // MARK: IME gate (S9, S18) — paired bytes-off / nil-on on identical input
+    // MARK: IME gate — paired bytes-off / nil-on on identical input
 
-    func testComposingDefers() {  // S9
+    func testComposingDefers() {  // "Composing IME blocks injected bytes"
         XCTAssertEqual(decide(delete, command, composing: false), ctrlU)
         XCTAssertNil(decide(delete, command, composing: true))
         // Also on an ⌥-arrow row, so the gate can't be keyCode-specific.
         XCTAssertEqual(decide(up, option | arrow, composing: false), optUp)
         XCTAssertNil(decide(up, option | arrow, composing: true))
     }
-    func testComposingDefersTheOptLeftRightRowsToo() {  // S18
+    func testComposingDefersTheOptLeftRightRowsToo() {  // "Composing or kitty blocks Option-Arrow words"
         XCTAssertEqual(decide(left, option | arrow, composing: false), optLeft)
         XCTAssertNil(decide(left, option | arrow, composing: true))
         XCTAssertEqual(decide(right, option | arrow, composing: false), optRight)
         XCTAssertNil(decide(right, option | arrow, composing: true))
     }
 
-    // MARK: No-regression — keys the terminal's own encoder keeps (S12–S14, S19)
+    // MARK: No-regression — keys the terminal's own encoder keeps
 
     /// ⌃←/→ are claimed by macOS Mission Control — we must not steal them either.
-    func testControlLeftRightDefer() {  // S19
+    func testControlLeftRightDefer() {  // "Ctrl-Arrow is still not handled"
         XCTAssertNil(decide(left, control | arrow))
         XCTAssertNil(decide(right, control | arrow))
     }
-    func testOptDeleteWordDeleteDefers() {  // S12 — ⌥⌫ word delete (⌫ not an arrow)
+    func testOptDeleteWordDeleteDefers() {  // "Option-Backspace is not handled" — ⌥⌫ word delete (⌫ not an arrow)
         XCTAssertNil(decide(delete, option))
     }
-    func testPlainKeysDefer() {  // S13 — bare ⌫ and plain arrows
+    func testPlainKeysDefer() {  // "Plain Backspace and arrows are not handled"
         XCTAssertNil(decide(delete, 0))
         XCTAssertNil(decide(left, arrow))
         XCTAssertNil(decide(right, arrow))
         XCTAssertNil(decide(up, arrow))
         XCTAssertNil(decide(down, arrow))
     }
-    func testUnrecognizedKeyCodeDefers() {  // S14 — guards the default even with ⌘ held
+    /// "Unrecognized key codes are not handled" — guards the default even with ⌘ held.
+    func testUnrecognizedKeyCodeDefers() {
         XCTAssertNil(decide(0, command))  // 'a'
         XCTAssertNil(decide(36, command))  // Return
     }

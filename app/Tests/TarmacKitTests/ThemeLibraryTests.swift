@@ -7,15 +7,15 @@ import XCTest
 final class ThemeLibraryTests: XCTestCase {
     private let draculaPalette = ThemeFile.palette(from: ThemeFixture.draculaColours)
 
-    /// S20
-    func testS20ALibraryWithNoFileIsTheCatalogue() {
+    /// "Empty library equals the shipped catalog"
+    func testALibraryWithNoFileIsTheCatalogue() {
         XCTAssertEqual(ThemeLibrary.shipped, ThemeLibrary(files: []))
         XCTAssertEqual(ThemeLibrary.shipped.all, ThemeCatalog.all)
         XCTAssertEqual(ThemeLibrary.shipped.refused, [])
     }
 
-    /// S21
-    func testS21TheFileThemesFollowTheCatalogueByTitle() {
+    /// "Library sorts files and lists refused ones"
+    func testTheFileThemesFollowTheCatalogueByTitle() {
         let files =
             ["beta", "Alpha", "alpha", "Zed"].map { ThemeFixture.file($0) } + [
                 ThemeFixture.file("broken", "foreground = #fff"),
@@ -41,16 +41,16 @@ final class ThemeLibraryTests: XCTestCase {
         XCTAssertEqual(ThemeLibrary(files: files.reversed()), library)
     }
 
-    /// S13
-    func testS13ARefusedFileHasItsDetail() {
+    /// "Refusals have readable reason and detail"
+    func testARefusedFileHasItsDetail() {
         XCTAssertEqual(
             ThemeLibrary.Refused(file: "Dracula", refusal: .missing(key: "foreground")).detail,
             "Dracula: has no foreground"
         )
     }
 
-    /// S22
-    func testS22AnIdNamesItsEntryForEitherAppearance() throws {
+    /// "File ids resolve exactly or fall back"
+    func testAnIdNamesItsEntryForEitherAppearance() throws {
         let library = ThemeLibrary(files: [ThemeFixture.file("Dracula")])
         let entry = try XCTUnwrap(library.fileThemes.first)
 
@@ -60,8 +60,8 @@ final class ThemeLibraryTests: XCTestCase {
         XCTAssertEqual(library.entry("catppuccin-mocha", for: .light).id, "catppuccin-mocha")
     }
 
-    /// S22 — the id is compared exactly.
-    func testS22AnIdNoThemeHasGivesTheStandardTheme() {
+    /// "File ids resolve exactly or fall back" — the id is compared exactly.
+    func testAnIdNoThemeHasGivesTheStandardTheme() {
         let library = ThemeLibrary(files: [ThemeFixture.file("Dracula")])
 
         for id in ["file:Gone", "Dracula", "file:dracula", nil] {
@@ -70,8 +70,8 @@ final class ThemeLibraryTests: XCTestCase {
         }
     }
 
-    /// S23
-    func testS23AFileWithTheTitleOfABuiltInThemeIsAThemeOfItsOwn() {
+    /// "File theme may share a built-in title"
+    func testAFileWithTheTitleOfABuiltInThemeIsAThemeOfItsOwn() {
         let library = ThemeLibrary(files: [ThemeFixture.file("Catppuccin Mocha")])
 
         let pair = library.all.filter { $0.title == "Catppuccin Mocha" }
@@ -84,8 +84,8 @@ final class ThemeLibraryTests: XCTestCase {
         XCTAssertEqual(ThemeCatalog.all.map(\.isFromFile), Array(repeating: false, count: 8))
     }
 
-    /// S24
-    func testS24TheThemeInEffectCanBeAFileTheme() throws {
+    /// "Theme in effect can be a file theme"
+    func testTheThemeInEffectCanBeAFileTheme() throws {
         let library = ThemeLibrary(files: [ThemeFixture.file("Dracula")])
         let entry = try XCTUnwrap(library.fileThemes.first)
 
@@ -100,8 +100,8 @@ final class ThemeLibraryTests: XCTestCase {
         )
     }
 
-    /// S25
-    func testS25WhichNamesAreRead() {
+    /// "Hidden and junk file names are not read"
+    func testWhichNamesAreRead() {
         for name in ["", ".DS_Store", ".Dracula.swp", "Dracula~", "a\u{1}b", "a\nb", "a\u{7f}b"] {
             XCTAssertFalse(ThemeLibrary.reads(name), name.debugDescription)
         }
@@ -110,8 +110,8 @@ final class ThemeLibraryTests: XCTestCase {
         }
     }
 
-    /// S26
-    func testS26LibrariesAreEqualWhenTheirThemesAre() {
+    /// "Library equality ignores comments only"
+    func testLibrariesAreEqualWhenTheirThemesAre() {
         let library = ThemeLibrary(files: [ThemeFixture.file("Dracula")])
         let changed = ThemeLibrary(files: [ThemeFixture.file("Dracula", ThemeFixture.dracula(background: "#282a37"))])
 

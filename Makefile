@@ -193,7 +193,7 @@ qa-quit: core
 	CASE="$(CASE)" \
 	node $(ROOT)/scripts/qa/quit.mjs
 
-# Resume after a restart (spec 2611.0011 S37, 2611.0015 D15): it kills the dev
+# Resume after a restart (spec 2611.0011 "QA runner drives the stand-in scenario", 2611.0015 D15): it kills the dev
 # daemon by the pid that holds its socket, so every dev terminal ends; `make run`
 # again after. One CASE per run.
 qa-resume: CASE ?= reopen

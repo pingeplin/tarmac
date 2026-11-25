@@ -53,7 +53,7 @@ final class BoardRestoreTests: XCTestCase {
 
     // MARK: - the last folder (2611.0007)
 
-    /// S4
+    /// "Restore plan carries cwd and succeeds"
     func testAColdSpawnStartsInItsRecordedFolderAndSucceedsItsPersistedId() {
         let restored = plan([termTile("t0")], records: ["t0": TermRecord(lastCwd: "/w")])
         XCTAssertEqual(
@@ -62,46 +62,50 @@ final class BoardRestoreTests: XCTestCase {
         )
     }
 
-    // MARK: - 2611.0011 S7: the resume command a cold spawn offers
+    // MARK: - 2611.0011 "Restore plan carries the resume command": the resume command a cold spawn offers
 
     private let resumed = TermRecord(lastCwd: "/w", resume: ResumeRecord(cmd: "claude --resume ab-12"))
 
-    func testS7AColdSpawnCarriesItsRecordsResumeCommand() {
+    /// "Restore plan carries the resume command".
+    func testAColdSpawnCarriesItsRecordsResumeCommand() {
         let restored = plan([termTile("t0")], records: ["t0": resumed])
         XCTAssertEqual(restored.terms.map(\.spawn), [SpawnRequest(cwd: "/w", succeeds: "t0")])
         XCTAssertEqual(restored.terms.map(\.resume), ["claude --resume ab-12"])
     }
 
-    func testS7AReboundTerminalOffersNoResume() {
+    /// "Restore plan carries the resume command".
+    func testAReboundTerminalOffersNoResume() {
         let restored = plan([termTile("t0")], live: ["t0"], records: ["t0": resumed])
         XCTAssertEqual(restored.terms.map(\.resume), [nil])
     }
 
-    func testS7ARefusedCommandIsNotOfferedAndTheSpawnIsUnchanged() {
+    /// "Restore plan carries the resume command".
+    func testARefusedCommandIsNotOfferedAndTheSpawnIsUnchanged() {
         let refused = TermRecord(lastCwd: "/w", resume: ResumeRecord(cmd: "echo a\necho b"))
         let restored = plan([termTile("t0")], records: ["t0": refused])
         XCTAssertEqual(restored.terms.map(\.spawn), [SpawnRequest(cwd: "/w", succeeds: "t0")])
         XCTAssertEqual(restored.terms.map(\.resume), [nil])
     }
 
-    func testS7ALegacyTileAndTheBoardsFreshTerminalOfferNoResume() {
+    /// "Restore plan carries the resume command".
+    func testALegacyTileAndTheBoardsFreshTerminalOfferNoResume() {
         XCTAssertEqual(plan([termTile(nil)], records: ["t0": resumed]).terms.map(\.resume), [nil])
         XCTAssertEqual(plan([], records: ["t0": resumed]).terms.map(\.resume), [nil])
     }
 
-    /// S10
+    /// "Live terminal gets no cwd in the plan"
     func testAReboundTerminalGetsNoFolderAndSucceedsNothing() {
         let restored = plan([termTile("t0")], live: ["t0"], records: ["t0": TermRecord(lastCwd: "/w")])
         XCTAssertEqual(restored.terms, [Term(termID: "t0", frame: tileFrame, z: 3, spawn: nil)])
     }
 
-    /// S11
+    /// "Tile without record gets no cwd"
     func testAColdSpawnWithNoRecordStillSucceedsItsPersistedId() {
         let restored = plan([termTile("t0")], records: ["other": TermRecord(lastCwd: "/w")])
         XCTAssertEqual(restored.terms.map(\.spawn), [SpawnRequest(succeeds: "t0")])
     }
 
-    /// S12
+    /// "Fresh board terminal gets no cwd or succeeds"
     func testTheOneTerminalAddedToABoardWithNoneGetsNoFolder() {
         let restored = plan(
             [docTile("/a.md")], docs: [registered("/a.md")], records: ["t0": TermRecord(lastCwd: "/w")]
@@ -109,7 +113,7 @@ final class BoardRestoreTests: XCTestCase {
         XCTAssertEqual(restored.terms.map(\.spawn), [SpawnRequest()])
     }
 
-    /// S21
+    /// "Legacy tile without term id gets no cwd"
     func testALegacyTileWithNoIdGetsNoFolder() {
         let restored = plan([termTile(nil)], records: ["t0": TermRecord(lastCwd: "/w")])
         XCTAssertEqual(restored.terms.map(\.spawn), [SpawnRequest()])
@@ -249,7 +253,8 @@ final class BoardRestoreTests: XCTestCase {
         XCTAssertEqual(restored.docs.map(\.ownerTermID), [nil])
     }
 
-    func test2611_0024S14ThePlanCarriesEachDocsSidebar() {
+    /// 2611.0024 "Restore plan carries sidebar and drops unknown docs".
+    func testThePlanCarriesEachDocsSidebar() {
         var a = docTile("/a.md")
         a.sidebarW = 300.5
         a.sidebarOpen = false

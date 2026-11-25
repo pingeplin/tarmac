@@ -9,7 +9,7 @@ final class OwnChildTests: XCTestCase {
             DaemonSpawner.spawn(program: "/bin/sleep", arguments: ["30"], environment: [:], logPath: "/dev/null"))
     }
 
-    /// S4: a pid that is not a child of this process is recorded and refused,
+    /// "Fenced sender refuses unsafe pids": a pid that is not a child of this process is recorded and refused,
     /// and nothing is delivered.
     func testAPidThatIsNotAChildOfTheTestIsRefused() throws {
         let reaped = try child()
@@ -28,7 +28,7 @@ final class OwnChildTests: XCTestCase {
         for pid in foreign { XCTAssertFalse(OwnChild.signal(pid, 0), "pid \(pid)") }
     }
 
-    /// S5: a live child of this process gets the signal.
+    /// "Fenced sender signals a live child": a live child of this process gets the signal.
     func testAChildOfTheTestGetsTheSignal() throws {
         let pid = try child()
         let fence = FencedSignal()

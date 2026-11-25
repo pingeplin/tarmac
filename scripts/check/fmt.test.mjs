@@ -48,13 +48,13 @@ function fmt(dir, args, env = process.env) {
 const runCheck = (dir, env) => fmt(dir, ["--check", "rust"], env);
 const runWrite = (dir, env) => fmt(dir, ["--write", "rust"], env);
 
-test("S1: a formatted tree passes and says nothing", () => {
+test("Formatted Rust tree passes the check: a formatted tree passes and says nothing", () => {
   const run = runCheck(repo());
 
   assert.deepEqual(run, CLEAN);
 });
 
-test("S2: one file the formatter would rewrite is named, with the command that fixes it", () => {
+test("Unformatted Rust file fails with report: one file the formatter would rewrite is named, with the command that fixes it", () => {
   const run = runCheck(repo({ "core/src/ugly.rs": UGLY }));
 
   assert.equal(run.code, 1);
@@ -67,7 +67,7 @@ test("S2: one file the formatter would rewrite is named, with the command that f
   ]);
 });
 
-test("S3: after a write, the check passes", () => {
+test("Fmt then check passes: after a write, the check passes", () => {
   const dir = repo({ "core/src/ugly.rs": UGLY });
 
   const before = runCheck(dir).code;
@@ -77,7 +77,7 @@ test("S3: after a write, the check passes", () => {
   assert.deepEqual([before, runCheck(dir).code], [1, 0]);
 });
 
-test("S21: a write succeeds silently and leaves other files alone", () => {
+test("Fmt rewrites only tracked files of its language: a write succeeds silently and leaves other files alone", () => {
   const dir = repo({ "core/src/ugly.rs": UGLY, "core/src/main.rs": "mod stray;\nfn main() {}\n", "notes.swift": "let  x=1\n" });
   write(dir, "core/src/stray.rs", UGLY);
 
@@ -93,7 +93,7 @@ test("S21: a write succeeds silently and leaves other files alone", () => {
   assert.equal(readFileSync(join(dir, "notes.swift"), "utf8"), "let  x=1\n");
 });
 
-test("S10: an untracked file is not checked or rewritten, even when a tracked mod names it", () => {
+test("Untracked unnamed Rust file is skipped: an untracked file is not checked or rewritten, even when a tracked mod names it", () => {
   const dir = repo({ "core/src/main.rs": "mod stray;\nfn main() {}\n" });
   write(dir, "core/src/stray.rs", UGLY);
   write(dir, "core/src/loose.rs", UGLY);
@@ -105,7 +105,7 @@ test("S10: an untracked file is not checked or rewritten, even when a tracked mo
   assert.deepEqual(["stray", "loose"].map((name) => readFileSync(join(dir, `core/src/${name}.rs`), "utf8")), [UGLY, UGLY]);
 });
 
-test("S19: a check changes no byte, no mtime and no git status line", () => {
+test("Check leaves files and git status untouched: a check changes no byte, no mtime and no git status line", () => {
   const dir = repo({ "core/src/ugly.rs": UGLY });
   const snapshot = () => ({
     status: git(dir, "status", "--porcelain"),
@@ -165,11 +165,11 @@ test("outside a git repository the check cannot run", () => {
   assert.equal(run.err[0], "✗ fmt: not in a git repository");
 });
 
-test("S22: a repository with no file of the language passes and says nothing", () => {
+test("Language with no tracked file passes: a repository with no file of the language passes and says nothing", () => {
   assert.deepEqual(runCheck(repo({ "core/src/main.rs": null, "README.md": "x\n" })), CLEAN);
 });
 
-test("S14: with no formatter on the PATH the check cannot run, and says so", () => {
+test("Missing rustfmt exits 2 with next steps: with no formatter on the PATH the check cannot run, and says so", () => {
   const dir = repo({ "core/src/ugly.rs": UGLY });
   const bare = pathWithOnlyGit();
 
@@ -184,7 +184,7 @@ test("S14: with no formatter on the PATH the check cannot run, and says so", () 
   assert.equal(readFileSync(join(dir, "core/src/ugly.rs"), "utf8"), UGLY);
 });
 
-test("S20: a file that does not parse is a check that cannot run, not an unformatted file", () => {
+test("Unparseable Rust file exits 2 not 1: a file that does not parse is a check that cannot run, not an unformatted file", () => {
   const dir = repo({ "core/src/bad.rs": "fn x( {\n", "core/src/ugly.rs": UGLY });
 
   const check = runCheck(dir);
@@ -199,7 +199,7 @@ test("S20: a file that does not parse is a check that cannot run, not an unforma
   assert.equal(readFileSync(join(dir, "core/src/ugly.rs"), "utf8"), UGLY);
 });
 
-test("S15: a name that is not a language is refused with the names that are", () => {
+test("Unknown language name exits 2: a name that is not a language is refused with the names that are", () => {
   const run = fmt(repo(), ["--check", "cobol"]);
 
   assert.equal(run.code, 2);
@@ -208,7 +208,7 @@ test("S15: a name that is not a language is refused with the names that are", ()
   assert.ok(run.err.some((line) => line.startsWith("  fix  ")) && run.err.some((line) => line.startsWith("  then ")));
 });
 
-test("S12: three unformatted files are counted and listed in byte order", () => {
+test("Report counts files and sorts paths: three unformatted files are counted and listed in byte order", () => {
   const text = notFormatted(["core/b.rs", "core/a.rs", "app/Z.swift"]);
 
   assert.deepEqual(text.split("\n").slice(0, 4), [
@@ -219,7 +219,7 @@ test("S12: three unformatted files are counted and listed in byte order", () => 
   ]);
 });
 
-test("S7: a formatted Swift tree passes; an unformatted file is named; a write fixes it", () => {
+test("Swift follows the Rust format scenarios: a formatted Swift tree passes; an unformatted file is named; a write fixes it", () => {
   const dir = repo({ "app/Sources/A.swift": UGLY_SWIFT, "app/Sources/B.swift": "let x = 1\n" });
 
   const before = fmt(dir, ["--check", "swift"]);
@@ -231,7 +231,7 @@ test("S7: a formatted Swift tree passes; an unformatted file is named; a write f
   assert.equal(readFileSync(join(dir, "app/Sources/A.swift"), "utf8"), "let x = 1\n");
 });
 
-test("S7: with no swift on the PATH the Swift check cannot run, and says so", () => {
+test("Swift follows the Rust format scenarios: with no swift on the PATH the Swift check cannot run, and says so", () => {
   const run = fmt(repo({ "app/Sources/A.swift": UGLY_SWIFT }), ["--check", "swift"], pathWithOnlyGit());
 
   assert.equal(run.code, 2);
@@ -239,7 +239,7 @@ test("S7: with no swift on the PATH the Swift check cannot run, and says so", ()
   assert.ok(!run.err.some((line) => line.startsWith("  at ")));
 });
 
-test("S11: every tracked Swift file is in scope wherever it is, and an untracked one never is", () => {
+test("Swift check covers package and QA scripts: every tracked Swift file is in scope wherever it is, and an untracked one never is", () => {
   const dir = repo({ "app/Package.swift": UGLY_SWIFT, "scripts/qa/probe.swift": UGLY_SWIFT });
   write(dir, "app/Vendor/Lib.swift", UGLY_SWIFT);
 
@@ -257,7 +257,7 @@ test("the Swift formatter reads the configuration nearest to the file", () => {
   assert.deepEqual([configured.code, defaults.code], [0, 1]);
 });
 
-test("S18: with no language named, the files of both languages are in one list", () => {
+test("Both languages unformatted give one report: with no language named, the files of both languages are in one list", () => {
   const run = fmt(repo({ "core/src/ugly.rs": UGLY, "app/A.swift": UGLY_SWIFT }), ["--check"]);
 
   assert.equal(run.code, 1);
@@ -318,7 +318,7 @@ test("a #! that is not the first two bytes does not exempt a Swift file", () => 
   assert.equal(run.code, 1);
 });
 
-test("S19: a Swift check changes no byte, no mtime and no git status line", () => {
+test("Check leaves files and git status untouched: a Swift check changes no byte, no mtime and no git status line", () => {
   const dir = repo({ "app/A.swift": UGLY_SWIFT });
   const snapshot = () => [git(dir, "status", "--porcelain"), readFileSync(join(dir, "app/A.swift"), "utf8"), statSync(join(dir, "app/A.swift")).mtimeMs];
   const before = snapshot();

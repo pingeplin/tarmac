@@ -2,7 +2,7 @@ import XCTest
 
 @testable import TarmacKit
 
-/// Spec 2607.0004 S1: kind is derived from the path extension alone.
+/// Spec 2607.0004 "Doc kind routes html extensions to html": kind is derived from the path extension alone.
 final class DocKindTests: XCTestCase {
     func testHTMLAndHTMRouteToHTMLCaseInsensitively() {
         XCTAssertEqual(DocKind(path: "/a/b/a.html"), .html)

@@ -68,9 +68,9 @@ fn err(msg: &str) -> Msg {
     Msg::Err { msg: msg.into() }
 }
 
-// S1
+// "Daemon forwards term new to the app"
 #[test]
-fn s1_the_app_gets_the_request_with_its_number_and_the_callers_board() {
+fn the_app_gets_the_request_with_its_number_and_the_callers_board() {
     let daemon = TestDaemon::start_sh();
     let mut app = daemon.connect_app_drained();
     live_term(&daemon, &mut app, "t1", None);
@@ -90,9 +90,9 @@ fn s1_the_app_gets_the_request_with_its_number_and_the_callers_board() {
     );
 }
 
-// S2
+// "App answer reaches the CLI and lists terminal"
 #[test]
-fn s2_the_cli_gets_the_new_terminal_which_is_live_on_its_board() {
+fn the_cli_gets_the_new_terminal_which_is_live_on_its_board() {
     let daemon = TestDaemon::start_sh();
     let mut app = daemon.connect_app_drained();
     live_term(&daemon, &mut app, "t1", None);
@@ -106,9 +106,9 @@ fn s2_the_cli_gets_the_new_terminal_which_is_live_on_its_board() {
     assert_eq!(t9.board_id, "board-0");
 }
 
-// S3
+// "Forwarded frame carries a background board id"
 #[test]
-fn s3_a_caller_on_a_background_board_names_that_board() {
+fn a_caller_on_a_background_board_names_that_board() {
     let daemon = TestDaemon::start_sh();
     let mut app = daemon.connect_app_drained();
     app.create_board("board-1");
@@ -121,9 +121,9 @@ fn s3_a_caller_on_a_background_board_names_that_board() {
     assert!(matches!(msg, Msg::TermNew { board_id: Some(b), .. } if b == "board-1"));
 }
 
-// S11
+// "Request without an owner uses the active board"
 #[test]
-fn s11_no_caller_or_one_not_live_is_the_active_board_with_no_owner() {
+fn no_caller_or_one_not_live_is_the_active_board_with_no_owner() {
     let daemon = TestDaemon::start_sh();
     let mut app = daemon.connect_app_drained();
     app.create_board("board-1");
@@ -139,9 +139,9 @@ fn s11_no_caller_or_one_not_live_is_the_active_board_with_no_owner() {
     }
 }
 
-// S13
+// "Answer for a closed CLI is dropped"
 #[test]
-fn s13_an_answer_for_a_cli_that_went_away_is_dropped() {
+fn an_answer_for_a_cli_that_went_away_is_dropped() {
     let daemon = TestDaemon::start_sh();
     let mut app = daemon.connect_app_drained();
     let cli = ask(&daemon.sock, "echo hi", "/tmp", None);
@@ -156,9 +156,9 @@ fn s13_an_answer_for_a_cli_that_went_away_is_dropped() {
     assert_eq!(answer(&mut again), err("m"), "the daemon goes on serving");
 }
 
-// S16
+// "No app connected refuses term new"
 #[test]
-fn s16_with_no_app_the_cli_is_refused_and_nothing_is_spawned() {
+fn with_no_app_the_cli_is_refused_and_nothing_is_spawned() {
     let daemon = TestDaemon::start_sh();
 
     let mut cli = ask(&daemon.sock, "echo hi", "/tmp", None);
@@ -167,9 +167,9 @@ fn s16_with_no_app_the_cli_is_refused_and_nothing_is_spawned() {
     assert!(cli_terms(&daemon.sock).is_empty());
 }
 
-// S17
+// "App disconnect fails the pending request"
 #[test]
-fn s17_an_app_that_goes_away_ends_the_request() {
+fn an_app_that_goes_away_ends_the_request() {
     let daemon = TestDaemon::start_sh();
     let mut app = daemon.connect_app_drained();
     let mut cli = ask(&daemon.sock, "echo hi", "/tmp", None);
@@ -180,9 +180,9 @@ fn s17_an_app_that_goes_away_ends_the_request() {
     assert_eq!(answer(&mut cli), err("the app went away"));
 }
 
-// S17
+// "App disconnect fails the pending request"
 #[test]
-fn s17_an_app_that_takes_the_place_of_the_first_ends_its_requests() {
+fn an_app_that_takes_the_place_of_the_first_ends_its_requests() {
     let daemon = TestDaemon::start_sh();
     let mut first = daemon.connect_app_drained();
     let mut cli = ask(&daemon.sock, "echo hi", "/tmp", None);
@@ -193,9 +193,9 @@ fn s17_an_app_that_takes_the_place_of_the_first_ends_its_requests() {
     assert_eq!(answer(&mut cli), err("the app went away"));
 }
 
-// S18
+// "App error is relayed to the CLI"
 #[test]
-fn s18_the_apps_refusal_is_the_clis_err() {
+fn the_apps_refusal_is_the_clis_err() {
     let daemon = TestDaemon::start_sh();
     let mut app = daemon.connect_app_drained();
     let mut cli = ask(&daemon.sock, "echo hi", "/tmp", None);
@@ -206,9 +206,9 @@ fn s18_the_apps_refusal_is_the_clis_err() {
     assert_eq!(answer(&mut cli), err("m"));
 }
 
-// S19
+// "Invalid command is refused by CLI and daemon"
 #[test]
-fn s19_the_daemon_refuses_a_command_the_check_refuses_and_forwards_nothing() {
+fn the_daemon_refuses_a_command_the_check_refuses_and_forwards_nothing() {
     let daemon = TestDaemon::start_sh();
     let mut app = daemon.connect_app_drained();
 
@@ -221,9 +221,9 @@ fn s19_the_daemon_refuses_a_command_the_check_refuses_and_forwards_nothing() {
     assert!(none_forwarded(&mut app));
 }
 
-// S20
+// "Bad cwd path is refused"
 #[test]
-fn s20_a_folder_that_is_not_an_absolute_directory_is_refused_and_forwards_nothing() {
+fn a_folder_that_is_not_an_absolute_directory_is_refused_and_forwards_nothing() {
     let daemon = TestDaemon::start_sh();
     let mut app = daemon.connect_app_drained();
     let file = daemon.dir.join("a-file");
@@ -239,9 +239,9 @@ fn s20_a_folder_that_is_not_an_absolute_directory_is_refused_and_forwards_nothin
     assert!(none_forwarded(&mut app));
 }
 
-// S24
+// "Concurrent requests each get their own answer"
 #[test]
-fn s24_two_requests_answered_in_the_reverse_order_each_get_their_own_terminal() {
+fn two_requests_answered_in_the_reverse_order_each_get_their_own_terminal() {
     let daemon = TestDaemon::start_sh();
     let mut app = daemon.connect_app_drained();
     let mut first = ask(&daemon.sock, "echo one", "/tmp", None);
@@ -257,9 +257,9 @@ fn s24_two_requests_answered_in_the_reverse_order_each_get_their_own_terminal() 
     assert_eq!(answer(&mut second), ok("t10"));
 }
 
-// S25
+// "Answer with no pending request is ignored"
 #[test]
-fn s25_an_answer_with_no_request_is_ignored() {
+fn an_answer_with_no_request_is_ignored() {
     let daemon = TestDaemon::start_sh();
     let mut app = daemon.connect_app_drained();
 
@@ -273,9 +273,9 @@ fn s25_an_answer_with_no_request_is_ignored() {
     assert_eq!(answer(&mut cli), err("m"));
 }
 
-// S27
+// "Answer without spawned terminal reports failed start"
 #[test]
-fn s27_an_answer_for_a_terminal_the_daemon_does_not_hold_is_a_failed_start() {
+fn an_answer_for_a_terminal_the_daemon_does_not_hold_is_a_failed_start() {
     let daemon = TestDaemon::start_sh();
     let mut app = daemon.connect_app_drained();
     let mut cli = ask(&daemon.sock, "echo hi", "/tmp", None);

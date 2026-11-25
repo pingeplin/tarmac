@@ -114,8 +114,9 @@ final class DevSnapshotTests: XCTestCase {
         cards(snapshot).first { $0["id"] == .string(id) } ?? [:]
     }
 
-    // MARK: - S1 shape
+    // MARK: - "Snapshot builder returns exact key names" shape
 
+    /// "Snapshot builder returns exact key names".
     func testS1TheSnapshotCarriesExactlyTheDocumentedTopLevelKeys() {
         let snapshot = fields(DevSnapshot.build(input()))
         XCTAssertEqual(
@@ -133,12 +134,13 @@ final class DevSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - content_origin (2610.0002 S6)
+    // MARK: - content_origin (2610.0002 "Display point flips Cocoa coordinates")
 
+    /// "Display point flips Cocoa coordinates".
     /// Cocoa's screen points have their origin at the primary screen's
     /// bottom-left; a display point is measured from its top-left. Nothing is
     /// clamped: a screen above and left of the primary one is negative in both.
-    func testS6ACocoaScreenPointBecomesADisplayPoint() {
+    func testACocoaScreenPointBecomesADisplayPoint() {
         XCTAssertEqual(
             DevSnapshot.displayPoint(cocoa: CGPoint(x: 730, y: 1218), primaryScreenHeight: 1440),
             CGPoint(x: 730, y: 222)
@@ -149,7 +151,8 @@ final class DevSnapshotTests: XCTestCase {
         )
     }
 
-    func testS6TheSnapshotSaysWhereItsContentCoordinatesStartOnTheDisplay() {
+    /// "Display point flips Cocoa coordinates".
+    func testTheSnapshotSaysWhereItsContentCoordinatesStartOnTheDisplay() {
         let shown = fields(DevSnapshot.build(input(contentOrigin: CGPoint(x: 730, y: 222))))
         XCTAssertEqual(shown["content_origin"], ["x": 730, "y": 222])
 
@@ -157,9 +160,10 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(windowless["content_origin"], .null)
     }
 
+    /// "Snapshot builder returns exact key names".
     /// The board's own viewport, away from the defaults: `smoke.mjs` waits on
     /// `viewport.zoom` after every `zoom`.
-    func testS1TheViewportIsTheOneSupplied() {
+    func testTheViewportIsTheOneSupplied() {
         let viewport = DevSnapshot.Viewport(zoom: 1.7, center: CGPoint(x: 12, y: -34))
         XCTAssertEqual(
             fields(DevSnapshot.build(input(viewport: viewport)))["viewport"],
@@ -167,7 +171,8 @@ final class DevSnapshotTests: XCTestCase {
         )
     }
 
-    func testS1ACardCarriesItsIdKindAndWorldFrame() {
+    /// "Snapshot builder returns exact key names".
+    func testACardCarriesItsIdKindAndWorldFrame() {
         let snapshot = DevSnapshot.build(input())
         XCTAssertEqual(card(snapshot, "t-1")["kind"], "term")
         XCTAssertEqual(card(snapshot, "/Users/e/a.b.md")["kind"], "doc")
@@ -182,17 +187,19 @@ final class DevSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - scroll (2610.0003 S15)
+    // MARK: - scroll (2610.0003 "Snapshot carries each card's scroll state")
 
-    func test2610S15ACardSaysWhereItsContentIsScrolledTo() throws {
+    /// "Snapshot carries each card's scroll state".
+    func testACardSaysWhereItsContentIsScrolledTo() throws {
         let snapshot = DevSnapshot.build(input(cards: [term(scroll: try scroll()), doc(scroll: try scroll())]))
         let expected: JSONValue = ["offset": 30, "visible": 100, "total": 400, "shown": true, "thumb": .null]
         XCTAssertEqual(card(snapshot, "t-1")["scroll"], expected)
         XCTAssertEqual(card(snapshot, "/Users/e/a.b.md")["scroll"], expected)
     }
 
+    /// "Snapshot carries each card's scroll state".
     /// Shown is both facts: a thumb laid out, and an alpha above nothing.
-    func test2610S15ShownNeedsAThumbLaidOutAndAnAlphaAboveZero() throws {
+    func testShownNeedsAThumbLaidOutAndAnAlphaAboveZero() throws {
         func shown(_ scroll: DevSnapshot.Scroll) -> JSONValue? {
             fields(card(DevSnapshot.build(input(cards: [term(scroll: scroll)])), "t-1")["scroll"])["shown"]
         }
@@ -201,9 +208,10 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(shown(try scroll(laidOut: true, alpha: 0)), false)
     }
 
+    /// 2610.0004 "Snapshot carries the thumb rectangle".
     /// Where the thumb is, for a tool that aims at it; a stale frame of a
     /// thumb that is not laid out is no thumb.
-    func test2610_0004S14ACardSaysWhereItsThumbIs() throws {
+    func testACardSaysWhereItsThumbIs() throws {
         func thumb(_ scroll: DevSnapshot.Scroll) -> JSONValue? {
             fields(card(DevSnapshot.build(input(cards: [term(scroll: scroll)])), "t-1")["scroll"])["thumb"]
         }
@@ -215,19 +223,22 @@ final class DevSnapshotTests: XCTestCase {
             thumb(try scroll(alpha: 0, thumb: rect)), ["x": 379, "y": 33, "w": 10, "h": 24], "a faded thumb")
     }
 
-    func test2610_0004S14ShownDoesNotLookAtTheThumbsRect() throws {
+    /// 2610.0004 "Snapshot carries the thumb rectangle".
+    func testShownDoesNotLookAtTheThumbsRect() throws {
         let snapshot = DevSnapshot.build(input(cards: [term(scroll: try scroll(alpha: 1, thumb: nil))]))
         XCTAssertEqual(fields(card(snapshot, "t-1")["scroll"])["shown"], true)
     }
 
-    func test2610S15ACardWithNoMetricsSaysNull() {
+    /// "Snapshot carries each card's scroll state".
+    func testACardWithNoMetricsSaysNull() {
         let snapshot = DevSnapshot.build(input())
         XCTAssertEqual(card(snapshot, "t-1")["scroll"], .null)
         XCTAssertEqual(card(snapshot, "/Users/e/a.b.md")["scroll"], .null)
     }
 
+    /// "Snapshot carries each card's scroll state".
     /// The paths a scenario waits on: a null `scroll` resolves no `shown`.
-    func test2610S15UntilCanWaitOnACardsScroll() throws {
+    func testUntilCanWaitOnACardsScroll() throws {
         let snapshot = DevSnapshot.build(input(cards: [term(scroll: try scroll()), doc()]))
         func holds(_ source: String) throws -> Bool { DevUntil.evaluate(try DevUntil.parse(source), against: snapshot) }
         XCTAssertTrue(try holds("cards[t-1].scroll.shown == true"))
@@ -236,10 +247,11 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertFalse(try holds("cards[/Users/e/a.b.md].scroll.shown == false"))
     }
 
-    // MARK: - S2 a doc card has no `term` key at all
+    // MARK: - "Doc card snapshot has no term key"
 
+    /// "Doc card snapshot has no term key".
     /// A `term` key holding null would read as a resolvable path to `--until`.
-    func testS2ADocCardHasNoTermKeyAndATerminalHasExactlySeven() throws {
+    func testADocCardHasNoTermKeyAndATerminalHasExactlySeven() throws {
         let snapshot = DevSnapshot.build(input())
         XCTAssertEqual(
             fields(card(snapshot, "t-1")["term"]).keys.sorted(),
@@ -277,9 +289,10 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(facts(terminal(tail: ""))["scrollback_tail"], "")
     }
 
-    // MARK: - 2611.0011 S26 the resume and reopen offers
+    // MARK: - 2611.0011 "Dev snapshot reports offers" the resume and reopen offers
 
-    func testS26AResumeOfferIsReportedWithWhetherItIsArmed() throws {
+    /// "Dev snapshot reports offers".
+    func testAResumeOfferIsReportedWithWhetherItIsArmed() throws {
         let armed = try terminal(offerAfter: [.output(byteCount: 5)])
         XCTAssertEqual(fields(facts(armed)["resume"])["armed"], true)
         let waiting = try terminal(offerAfter: [])
@@ -292,22 +305,25 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertNil(facts(armed)["reopen"])
     }
 
-    func testS26ADeadCardWithAnOfferIsReportedAsReopen() {
+    /// "Dev snapshot reports offers".
+    func testADeadCardWithAnOfferIsReportedAsReopen() {
         var dead = terminal(live: false, dead: true)
         dead.reopen = true
         XCTAssertEqual(facts(dead)["reopen"], true)
         XCTAssertNil(facts(dead)["resume"])
     }
 
-    func testS26ATerminalWithNoOfferHasNeither() {
+    /// "Dev snapshot reports offers".
+    func testATerminalWithNoOfferHasNeither() {
         let plain = facts(terminal())
         XCTAssertNil(plain["resume"])
         XCTAssertNil(plain["reopen"])
     }
 
-    // MARK: - 2611.0015 S22: the panel, the header chip, the choices and the toasts
+    // MARK: - 2611.0015 "Dev snapshot reports panel chip and choices": the panel, the header chip, the choices and the toasts
 
-    func testS22AQueuedAndAnArmedOfferAreReportedWithTheirPanel() throws {
+    /// "Dev snapshot reports panel chip and choices".
+    func testAQueuedAndAnArmedOfferAreReportedWithTheirPanel() throws {
         let queued = try terminal(offerAfter: [.request])
         XCTAssertEqual(
             facts(queued)["resume"],
@@ -324,14 +340,16 @@ final class DevSnapshotTests: XCTestCase {
             ])
     }
 
-    func testS22AHeaderChipIsReportedAsItsCommandAndNoChipHasNoKey() {
+    /// "Dev snapshot reports panel chip and choices".
+    func testAHeaderChipIsReportedAsItsCommandAndNoChipHasNoKey() {
         var chip = terminal()
         chip.resumeChip = "echo HI"
         XCTAssertEqual(facts(chip)["resume_chip"], "echo HI")
         XCTAssertNil(facts(terminal())["resume_chip"])
     }
 
-    func testS22TheRestoreCardReportsItsChoicesOrNone() throws {
+    /// "Dev snapshot reports panel chip and choices".
+    func testTheRestoreCardReportsItsChoicesOrNone() throws {
         func card(resume: String?) throws -> RestoreCard {
             try XCTUnwrap(
                 RestoreCard.make(
@@ -352,7 +370,8 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(none, .array([]))
     }
 
-    func testS22TheToastsOnScreenAreListedOldestFirst() {
+    /// "Dev snapshot reports panel chip and choices".
+    func testTheToastsOnScreenAreListedOldestFirst() {
         XCTAssertEqual(
             fields(DevSnapshot.build(input(toasts: [ResumeHeaderChip.copiedToast])))["toasts"],
             ["resume command copied"])
@@ -360,17 +379,19 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(fields(DevSnapshot.build(input()))["toasts"], .array([]))
     }
 
-    // MARK: - S3 screen_rect is the measurement, or null
+    // MARK: - "Culled card has null screen rect" screen_rect is the measurement, or null
 
-    func testS3AnUnmeasuredCardReportsNullAndKeepsItsBoardRect() {
+    /// "Culled card has null screen rect".
+    func testAnUnmeasuredCardReportsNullAndKeepsItsBoardRect() {
         let card = card(DevSnapshot.build(input()), "t-1")
         XCTAssertEqual(card["screen_rect"], .null)
         XCTAssertEqual(card["board_rect"], ["x": 10, "y": 20, "w": 400, "h": 300])
     }
 
+    /// "Culled card has null screen rect".
     /// The two deliberately disagree. Reporting the projection would make the
     /// suite's "painted where the transform says" check compare it with itself.
-    func testS3TheMeasuredRectIsReportedNotTheProjectionOfTheBoardRect() {
+    func testTheMeasuredRectIsReportedNotTheProjectionOfTheBoardRect() {
         let measured = CGRect(x: 999, y: 888, width: 77, height: 66)
         let source = input(cards: [term(screenRect: measured)])
         let card = card(DevSnapshot.build(source), "t-1")
@@ -380,34 +401,38 @@ final class DevSnapshotTests: XCTestCase {
             DevSnapshot.screenRect(of: source.cards[0].frame, viewport: source.viewport, viewRect: view), measured)
     }
 
+    /// "Culled card has null screen rect".
     /// A view that measured zero is an observation and must survive as one.
-    func testS3AZeroSizeMeasurementIsMeasuredNotAbsent() {
+    func testAZeroSizeMeasurementIsMeasuredNotAbsent() {
         let zero = CGRect(x: 12, y: 34, width: 0, height: 0)
         let card = card(DevSnapshot.build(input(cards: [term(screenRect: zero)])), "t-1")
         XCTAssertEqual(card["screen_rect"], ["x": 12, "y": 34, "w": 0, "h": 0])
     }
 
-    // MARK: - S5 absent facts are null, never empty strings
+    // MARK: - "Missing proc and selection are null" absent facts are null, never empty strings
 
     private func facts(_ terminal: Terminal) -> [String: JSONValue] {
         fields(card(DevSnapshot.build(input(cards: [term(terminal)])), "t-1")["term"])
     }
 
-    func testS5NoProcIsNull() {
+    /// "Missing proc and selection are null".
+    func testNoProcIsNull() {
         XCTAssertEqual(facts(terminal(proc: nil))["proc"], .null)
     }
 
+    /// "Missing proc and selection are null".
     /// `""` would make `contains ""` match vacuously, so the normalisation is a
     /// decision and lives in the builder, not in the view that reads it.
-    func testS5AnEmptySelectionIsNull() {
+    func testAnEmptySelectionIsNull() {
         XCTAssertEqual(facts(terminal(selection: ""))["selection"], .null)
         XCTAssertEqual(facts(terminal(selection: nil))["selection"], .null)
         XCTAssertEqual(facts(terminal(selection: "hi"))["selection"], "hi")
     }
 
-    // MARK: - S6 the active board only
+    // MARK: - "Snapshot lists only active board cards"
 
-    func testS6OnlyTheCardsPassedAreReportedInTheirOrder() {
+    /// "Snapshot lists only active board cards".
+    func testOnlyTheCardsPassedAreReportedInTheirOrder() {
         XCTAssertEqual(cards(DevSnapshot.build(input(cards: [term()]))).map { $0["id"] }, ["t-1"])
         XCTAssertEqual(
             cards(DevSnapshot.build(input(cards: [doc(), term()]))).map { $0["id"] },
@@ -415,35 +440,39 @@ final class DevSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - S74 visibility is reported, not assumed
+    // MARK: - "Snapshot reports page visibility" visibility is reported, not assumed
 
-    func testS74VisibilityIsTheSuppliedState() {
+    /// "Snapshot reports page visibility".
+    func testVisibilityIsTheSuppliedState() {
         XCTAssertEqual(fields(DevSnapshot.build(input(visibility: .hidden)))["visibility"], "hidden")
         XCTAssertEqual(fields(DevSnapshot.build(input(visibility: .visible)))["visibility"], "visible")
     }
 
+    /// "Snapshot reports page visibility".
     /// Hidden is a window nobody can see — ordered out or in the Dock — and not
     /// one merely behind another app's, which still draws.
-    func testS74AWindowOrderedOutOrMiniaturizedIsHidden() {
+    func testAWindowOrderedOutOrMiniaturizedIsHidden() {
         XCTAssertEqual(DevSnapshot.Visibility(windowVisible: true, miniaturized: false), .visible)
         XCTAssertEqual(DevSnapshot.Visibility(windowVisible: false, miniaturized: false), .hidden)
         XCTAssertEqual(DevSnapshot.Visibility(windowVisible: true, miniaturized: true), .hidden)
         XCTAssertEqual(DevSnapshot.Visibility(windowVisible: false, miniaturized: true), .hidden)
     }
 
-    // MARK: - S75 term.alive is live && !dead
+    // MARK: - "Term alive is false for dead cards" term.alive is live && !dead
 
+    /// "Term alive is false for dead cards".
     /// A dead card still draws and takes focus, then swallows every `type`.
-    func testS75AHeldOpenDeadCardIsNotAlive() {
+    func testAHeldOpenDeadCardIsNotAlive() {
         XCTAssertEqual(facts(terminal(live: true, dead: false))["alive"], true)
         XCTAssertEqual(facts(terminal(live: true, dead: true))["alive"], false)
         XCTAssertEqual(facts(terminal(live: false, dead: false))["alive"], false)
         XCTAssertEqual(facts(terminal(live: false, dead: true))["alive"], false)
     }
 
-    // MARK: - S76 ids are the bare wire ids
+    // MARK: - "Card ids drop their kind prefix" ids are the bare wire ids
 
-    func testS76TheSelectedCardIsFocusedCardAndTheOnlyFocusedOne() {
+    /// "Card ids drop their kind prefix".
+    func testTheSelectedCardIsFocusedCardAndTheOnlyFocusedOne() {
         let snapshot = DevSnapshot.build(input(selectedCard: "t-1"))
         XCTAssertEqual(cards(snapshot).map { $0["id"] }, ["t-1", "/Users/e/a.b.md"])
         XCTAssertEqual(fields(snapshot)["focused_card"], "t-1")
@@ -457,9 +486,10 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(cards(snapshot).map { $0["focused"] }, [false, false])
     }
 
-    // MARK: - S7/S8 the projection agrees with the board transform
+    // MARK: - the projection agrees with the board transform
 
-    func testS7TheProjectionMatchesWorldToViewAtBothCorners() {
+    /// "Board rect projects with view origin".
+    func testTheProjectionMatchesWorldToViewAtBothCorners() {
         let rect = CGRect(x: 120, y: 60, width: 200, height: 100)
         let center = CGPoint(x: 500, y: 350)
         let viewportCenter = CGPoint(x: view.midX, y: view.midY)
@@ -478,10 +508,11 @@ final class DevSnapshotTests: XCTestCase {
         }
     }
 
+    /// "Board rect projects with view origin".
     /// Independent of `worldToView`, so a shared convention error cannot hide.
     /// View centre = (24 + 500, 40 + 350) = (524, 390); zoom 2.
     /// x = (120 − 500)·2 + 524 = −236; y = (60 − 350)·2 + 390 = −190.
-    func testS7TheProjectionMatchesAHandComputedLiteral() {
+    func testTheProjectionMatchesAHandComputedLiteral() {
         let got = DevSnapshot.screenRect(
             of: CGRect(x: 120, y: 60, width: 200, height: 100),
             viewport: DevSnapshot.Viewport(zoom: 2, center: CGPoint(x: 500, y: 350)),
@@ -490,7 +521,8 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(got, CGRect(x: -236, y: -190, width: 400, height: 200))
     }
 
-    func testS8AtZoomOneTheProjectionIsATranslationByTheViewOrigin() {
+    /// "Projection scales size by zoom".
+    func testAtZoomOneTheProjectionIsATranslationByTheViewOrigin() {
         let rect = CGRect(x: 100, y: 50, width: 200, height: 120)
         let viewport = DevSnapshot.Viewport(zoom: 1, center: CGPoint(x: view.width / 2, y: view.height / 2))
         XCTAssertEqual(
@@ -499,8 +531,9 @@ final class DevSnapshotTests: XCTestCase {
         )
     }
 
+    /// "Projection scales size by zoom".
     /// The load-bearing row: at zoom 1 copying the size straight through passes.
-    func testS8ZoomScalesTheSizeNotOnlyTheOrigin() {
+    func testZoomScalesTheSizeNotOnlyTheOrigin() {
         let rect = CGRect(x: 100, y: 50, width: 200, height: 120)
         let viewport = DevSnapshot.Viewport(zoom: 2.37, center: CGPoint(x: view.width / 2, y: view.height / 2))
         let got = DevSnapshot.screenRect(of: rect, viewport: viewport, viewRect: view)
@@ -508,7 +541,7 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(got.height, 284.4, accuracy: 1e-9)
     }
 
-    // MARK: - S35 / S5 (2609.0018) the quit guard's facts
+    // MARK: - "Snapshot reports quit guard state" / "Snapshot quit guard hides alpha when hidden" (2609.0018) the quit guard's facts
 
     private func quitGuard(
         phase: Guard.Phase = .showing, visible: Bool = true, alpha: Double = 0.5,
@@ -520,7 +553,8 @@ final class DevSnapshotTests: XCTestCase {
         )
     }
 
-    func testS35TheGuardsFactsRideAlong() {
+    /// "Snapshot reports quit guard state".
+    func testTheGuardsFactsRideAlong() {
         XCTAssertEqual(
             fields(DevSnapshot.build(input(quitGuard: quitGuard())))["quit_guard"],
             [
@@ -583,41 +617,46 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(Guard.Route(QuitGuard.Route.terminateNow), .terminate)
     }
 
+    /// "Snapshot reports quit guard state".
     /// Null rather than a missing key: `--until` reads a missing path as
     /// unresolvable, which would make `quit_guard.retargeted == true` a silent
     /// false instead of a fact.
-    func testS35NoGuardIsNullAndNoPressIsNull() {
+    func testNoGuardIsNullAndNoPressIsNull() {
         XCTAssertEqual(fields(DevSnapshot.build(input(quitGuard: nil)))["quit_guard"], .null)
         let pressless = fields(fields(DevSnapshot.build(input(quitGuard: quitGuard(lastPress: nil))))["quit_guard"])
         XCTAssertEqual(pressless["last_press"], .null)
     }
 
+    /// "Snapshot quit guard hides alpha when hidden".
     /// A hidden panel keeps whatever alpha it was left at — AppKit resets it to
     /// 1 — which would read as a notice at full opacity.
-    func testS5AHiddenNoticeReadsAlphaZero() {
+    func testAHiddenNoticeReadsAlphaZero() {
         let snapshot = DevSnapshot.build(input(quitGuard: quitGuard(phase: .idle, visible: false, alpha: 1)))
         XCTAssertEqual(fields(fields(snapshot)["quit_guard"])["notice"], ["visible": false, "alpha": 0])
     }
 
+    /// "Snapshot quit guard hides alpha when hidden".
     /// After a tap's release the guard is idle while the notice still fades:
     /// `visible` is the discriminator, never `phase`.
-    func testS5AVisibleNoticeKeepsItsAlphaWhileTheGuardIsIdle() {
+    func testAVisibleNoticeKeepsItsAlphaWhileTheGuardIsIdle() {
         let snapshot = DevSnapshot.build(input(quitGuard: quitGuard(phase: .idle, visible: true, alpha: 0.3)))
         XCTAssertEqual(fields(fields(snapshot)["quit_guard"])["notice"], ["visible": true, "alpha": 0.3])
     }
 
-    // MARK: - S9 (2609.0018) borrowed is a doc card's fact
+    // MARK: - "Snapshot marks the borrowed doc card" (2609.0018) borrowed is a doc card's fact
 
     private func mixed() -> [Card] { [doc("/a/c.html"), doc("/a/b.md"), term()] }
 
-    func testS9BorrowedIsTrueOnlyForTheBorrowedCardAndAbsentFromATerminal() {
+    /// "Snapshot marks the borrowed doc card".
+    func testBorrowedIsTrueOnlyForTheBorrowedCardAndAbsentFromATerminal() {
         let snapshot = DevSnapshot.build(input(cards: mixed(), borrowedCard: "/a/c.html"))
         XCTAssertEqual(card(snapshot, "/a/c.html")["borrowed"], true)
         XCTAssertEqual(card(snapshot, "/a/b.md")["borrowed"], false)
         XCTAssertNil(card(snapshot, "t-1")["borrowed"])
     }
 
-    func testS9BorrowedIsFalseOnEveryDocCardWhenNothingIs() {
+    /// "Snapshot marks the borrowed doc card".
+    func testBorrowedIsFalseOnEveryDocCardWhenNothingIs() {
         let snapshot = DevSnapshot.build(input(cards: mixed(), borrowedCard: nil))
         XCTAssertEqual(card(snapshot, "/a/c.html")["borrowed"], false)
         XCTAssertEqual(card(snapshot, "/a/b.md")["borrowed"], false)
@@ -886,8 +925,8 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(DevSnapshot.scrollbackTailLines, 40)
     }
 
-    /// 2610.0005 S13 — a role with nothing saved says `null`, so a reader can
-    /// tell "the system default" from a key it failed to find. 2610.0006 S12 —
+    /// 2610.0005 "Snapshot reports the three font roles" — a role with nothing saved says `null`, so a reader can
+    /// tell "the system default" from a key it failed to find. 2610.0006 "Snapshot reports font sizes" —
     /// Terminal and Document say their size; Interface has none.
     func testTheSnapshotReportsEachRolesSavedFamilyAndWhatItResolvedTo() {
         let fonts = DevSnapshot.Fonts(
@@ -922,12 +961,12 @@ final class DevSnapshotTests: XCTestCase {
         )
     }
 
-    /// 2610.0008 S30 — the choice the app holds, the variant in effect and
+    /// 2610.0008 "Snapshot reports theme choice and name" — the choice the app holds, the variant in effect and
     /// the theme's id are three facts, and the snapshot writes each as it is
     /// given: the name is not made from the variant, and the variant is not
     /// made from the choice. The key itself is in the list of
     /// `testS1TheSnapshotCarriesExactlyTheDocumentedTopLevelKeys`.
-    func test2610_0008S30TheSnapshotReportsTheThemeChosenTheVariantAndTheName() {
+    func testTheSnapshotReportsTheThemeChosenTheVariantAndTheName() {
         func theme(_ choice: ThemeChoice, _ inEffect: ThemeVariant, _ name: String) -> JSONValue? {
             let theme = DevSnapshot.Theme(choice: choice, inEffect: inEffect, name: name)
             return fields(DevSnapshot.build(input(theme: theme)))["theme"]
@@ -940,9 +979,9 @@ final class DevSnapshotTests: XCTestCase {
         XCTAssertEqual(facts(theme(.light, .dark, "catppuccin-mocha")), ["light", "dark", "catppuccin-mocha"])
     }
 
-    /// 2610.0009 S41 — where the theme files are, what they gave, and what
+    /// 2610.0009 "Snapshot reports folder and file theme lists" — where the theme files are, what they gave, and what
     /// the detector found in the theme in effect.
-    func test2610_0009S41TheSnapshotReportsTheThemeFiles() {
+    func testTheSnapshotReportsTheThemeFiles() {
         let theme = DevSnapshot.Theme(
             choice: .dark, inEffect: .dark, name: "file:Dracula", folder: "/w/.dev/config/themes",
             available: ["breeze-light", "file:Dracula"], refused: ["broken: has no background"],
@@ -959,8 +998,8 @@ final class DevSnapshotTests: XCTestCase {
         )
     }
 
-    /// 2610.0009 S41
-    func test2610_0009S41AThemeWithNoFilesHasEmptyMembers() {
+    /// 2610.0009 "Snapshot reports folder and file theme lists"
+    func testAThemeWithNoFilesHasEmptyMembers() {
         let theme = DevSnapshot.Theme(choice: .dark, inEffect: .dark, name: "breeze-dark")
 
         XCTAssertEqual(

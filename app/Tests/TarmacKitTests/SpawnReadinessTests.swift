@@ -7,8 +7,8 @@ final class SpawnReadinessTests: XCTestCase {
         XCTAssertTrue(SpawnReadiness.ready(connected: true, viewReady: true, built: true, restored: true))
     }
 
-    /// 2611.0016 S12: each gap holds the spawn, so `term_new` is refused.
-    func testS12EachMissingConditionIsNotReady() {
+    /// 2611.0016 "Plan refuses a board not ready in app": each gap holds the spawn, so `term_new` is refused.
+    func testEachMissingConditionIsNotReady() {
         let cases: [(String, Bool, Bool, Bool, Bool)] = [
             ("built but not restored on this connection", true, true, true, false),
             ("restored on this connection but not built", true, true, false, true),

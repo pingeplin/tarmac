@@ -29,9 +29,9 @@ fn lines(out: &Report) -> Vec<String> {
     out.stdout.lines().map(|l| split_received(l).0).collect()
 }
 
-// S12
+// "Events prints one line per frame"
 #[test]
-fn s12_each_frame_is_one_json_line_and_the_snapshot_is_marked() {
+fn each_frame_is_one_json_line_and_the_snapshot_is_marked() {
     let daemon = Streamer::writing(vec![
         term_report("t1", Some("blocked"), Some("May I?"), Some("claude"), false),
         Msg::Ack,
@@ -66,7 +66,7 @@ fn s12_each_frame_is_one_json_line_and_the_snapshot_is_marked() {
     assert!(!String::from_utf8_lossy(&raw).contains("kinds") && !String::from_utf8_lossy(&raw).contains("term_id"));
 }
 
-// S12, and the board of a frame that carries one.
+// "Events prints one line per frame", and the board of a frame that carries one.
 #[test]
 fn a_frame_with_a_board_names_it_after_the_terminal() {
     let daemon = Streamer::writing(vec![
@@ -86,9 +86,9 @@ fn a_frame_with_a_board_names_it_after_the_terminal() {
     );
 }
 
-// S12
+// "Events prints one line per frame"
 #[test]
-fn s12_the_filter_flags_are_sent_as_given() {
+fn the_filter_flags_are_sent_as_given() {
     let daemon = Streamer::writing(vec![Msg::Ack]);
 
     daemon.run(&["events", "--term", "t1", "--kind", "exit,bell"]);
@@ -127,9 +127,9 @@ fn a_stream_quiet_for_longer_than_5_s_goes_on() {
     assert_eq!(lines(&out), [r#"{"event":"bell","term":"t1"}"#], "{}", out.stderr);
 }
 
-// S29
+// "Unknown terminal or kind is refused"
 #[test]
-fn s29_a_refusal_is_printed_and_exits_1() {
+fn a_refusal_is_printed_and_exits_1() {
     let daemon = Streamer::writing(vec![Msg::Err { msg: "unknown terminal: t9".into() }]);
 
     let out = daemon.run(&["events", "--term", "t9"]);
@@ -137,15 +137,15 @@ fn s29_a_refusal_is_printed_and_exits_1() {
     assert_eq!((out.code(), out.stdout.as_str(), out.stderr.as_str()), (Some(1), "", "tarmac: unknown terminal: t9\n"));
 }
 
-// S31
+// "Wait timeouts exit 124"
 #[test]
-fn s31_a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
+fn a_daemon_that_never_answers_is_the_no_answer_line_after_5_s() {
     assert_never_answered(&["events"]);
 }
 
-// S32
+// "Lost daemon connection exits 1"
 #[test]
-fn s32_a_lagged_stream_is_named() {
+fn a_lagged_stream_is_named() {
     let daemon = Streamer::writing(vec![Msg::Ack, Msg::Err { msg: "lagged".into() }]);
 
     let out = daemon.run(&["events"]);
@@ -156,9 +156,9 @@ fn s32_a_lagged_stream_is_named() {
     );
 }
 
-// S33: the whole matrix is `parse`'s unit test.
+// "Bad wait usage exits 2": the whole matrix is `parse`'s unit test.
 #[test]
-fn s33_a_usage_error_exits_2_with_no_connection() {
+fn a_usage_error_exits_2_with_no_connection() {
     let daemon = Streamer::writing(vec![Msg::Ack]);
 
     assert_usage(
@@ -168,9 +168,9 @@ fn s33_a_usage_error_exits_2_with_no_connection() {
     assert!(untouched(&daemon.double));
 }
 
-// S35
+// "Events exits quietly on closed stdout"
 #[test]
-fn s35_a_closed_stdout_ends_events_with_exit_0() {
+fn a_closed_stdout_ends_events_with_exit_0() {
     let mut steps = vec![Step::Write(Msg::Ack)];
     for _ in 0..100 {
         steps.push(Step::Write(bell("t1")));

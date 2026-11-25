@@ -21,7 +21,7 @@ final class CardProtocolTests: XCTestCase {
         String(decoding: response.body, as: UTF8.self)
     }
 
-    /// S3
+    /// "Handler serves html with CSP and shim first"
     func testCSPIsByteExact() {
         XCTAssertEqual(
             CardProtocol.csp,
@@ -29,7 +29,7 @@ final class CardProtocolTests: XCTestCase {
         )
     }
 
-    /// S9
+    /// "Served body puts the shim after the doctype"
     func testTheShimFollowsALeadingDoctype() {
         let path = "/tmp/doctype.html"
         let resp = serve(SchemeFixtures.docURI(path), disk: .init([path: Data("<!DOCTYPE html><html></html>".utf8)]))
@@ -38,7 +38,7 @@ final class CardProtocolTests: XCTestCase {
         XCTAssertEqual(text(resp), "<!DOCTYPE html><script>/*shim*/</script>\n<html></html>")
     }
 
-    /// S10
+    /// "BOM and comment before doctype stay first"
     func testTheShimFollowsTheBomCommentAndDoctypeAheadOfTheContent() {
         let path = "/tmp/lead.html"
         let lead = Data([0xEF, 0xBB, 0xBF] + Array("<!-- n -->\n<!doctype html>".utf8))
@@ -48,7 +48,7 @@ final class CardProtocolTests: XCTestCase {
         XCTAssertEqual(Array(resp.body.prefix(3)), [0xEF, 0xBB, 0xBF])
     }
 
-    /// S11
+    /// "Shim follows a BOM when no doctype exists"
     func testTheShimFollowsALeadingBomWhenThereIsNoDoctype() {
         let path = "/tmp/bom.html"
         let file = Data([0xEF, 0xBB, 0xBF] + Array("<html>bom</html>".utf8))
@@ -67,7 +67,7 @@ final class CardProtocolTests: XCTestCase {
         XCTAssertEqual(text(resp), "<!doctype html><script>S</script>\n<p>x</p>")
     }
 
-    /// S14
+    /// "Font values fill after the doctype"
     func testTheFilledFontValuesSitInsideTheScriptAfterTheDoctype() throws {
         let fonts = CardFontVariables(interfaceFamily: nil, documentFamily: nil, documentSize: 20)
         let filled = fonts.filling("const f=[\(CardFontVariables.marker)][0];")
@@ -110,7 +110,7 @@ final class CardProtocolTests: XCTestCase {
         XCTAssertEqual(CardProtocol.resolve(uri: "tarmac-card://doc/%2Ftmp%2Fa.html?v=1"), .read(path: "/tmp/a.html"))
     }
 
-    /// S8
+    /// "Special characters in path round-trip through handler"
     func testRoundTripsExoticFilename() throws {
         let path = "/var/folders/zz/T/tarmac-card-test-1-spaces-CJK-圖表-percent%25-hash#-q?-19"
         let uri = "tarmac-card://doc/\(SchemeFixtures.encoded(path))?v=99"
@@ -122,7 +122,7 @@ final class CardProtocolTests: XCTestCase {
         XCTAssertNotNil(resp.body.range(of: Data("exotic".utf8)))
     }
 
-    /// S15
+    /// "Missing file serves 404 without shim"
     func testMissingFileIs404WithNoShim() throws {
         let path = "/tmp/tarmac-card-test-does-not-exist.html"
         let disk = SchemeFixtures.Disk()
@@ -144,17 +144,17 @@ final class CardProtocolTests: XCTestCase {
         XCTAssertEqual(String(decoding: resp.body, as: UTF8.self), "/tmp/a.html: disk on fire")
     }
 
-    /// S16
+    /// "Malformed URL serves 400 without panic"
     func testEmptyPathIs400() {
         XCTAssertEqual(serve("tarmac-card://doc/?v=1").status, 400)
     }
 
-    /// S16
+    /// "Malformed URL serves 400 without panic"
     func testNonUTF8PercentSequenceIs400() {
         XCTAssertEqual(serve("tarmac-card://doc/%FF?v=1").status, 400)
     }
 
-    /// S16
+    /// "Malformed URL serves 400 without panic"
     func testWrongShapeURIIs400() {
         XCTAssertEqual(serve("https://doc/foo.html").status, 400)
         XCTAssertEqual(serve("tarmac-card://other/foo.html").status, 400)

@@ -6,8 +6,8 @@ import XCTest
 final class PageThemeTests: XCTestCase {
     private func palette(_ id: String) -> Palette { ThemeCatalog.theme(id).palette }
 
-    /// S57 — from a dark theme to a dark theme is a change.
-    func testS57APaletteIsNewsOnlyWhenItDiffersFromTheOneThePageHas() {
+    /// "Page theme takes only a changed palette" — from a dark theme to a dark theme is a change.
+    func testAPaletteIsNewsOnlyWhenItDiffersFromTheOneThePageHas() {
         var page = PageTheme(palette("breeze-dark"))
 
         XCTAssertFalse(page.take(palette("breeze-dark")))

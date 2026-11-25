@@ -15,7 +15,8 @@ final class CardWheelTests: XCTestCase {
 
     // MARK: - precise
 
-    func testS2APreciseDeltaBecomesWholeDocumentUnits() {
+    /// "Precise wheel converts to scaled points".
+    func testAPreciseDeltaBecomesWholeDocumentUnits() {
         var down = CardWheel()
         XCTAssertEqual(points(&down, dy: -10), .points(dx: 0, dy: -15))
 
@@ -30,16 +31,18 @@ final class CardWheelTests: XCTestCase {
         XCTAssertEqual(points(&fractional, dy: -10, scale: scale), .points(dx: 0, dy: -17))
     }
 
+    /// "Carry holds travel across small steps".
     /// −1.5 a time: the tie goes up, to −1, and its half is owed to the next.
-    func testS3TheCarryHoldsTravel() {
+    func testTheCarryHoldsTravel() {
         var wheel = CardWheel()
         let answers = (0..<30).map { _ in points(&wheel, dy: -1) }
         let expected = (0..<30).map { CardWheel.Delta.points(dx: 0, dy: $0.isMultiple(of: 2) ? -1 : -2) }
         XCTAssertEqual(answers, expected)
     }
 
+    /// "Slow drag is not lost".
     /// 0.375 a time, and a tie at 0.5 on the fourth.
-    func testS4ASlowDragIsNotLost() {
+    func testASlowDragIsNotLost() {
         var wheel = CardWheel()
         let answers = (0..<8).map { _ in points(&wheel, dy: 0.25) }
         XCTAssertEqual(answers, [0, 1, 0, 1, 0, 0, 1, 0].map { .points(dx: 0, dy: $0) })
@@ -47,7 +50,8 @@ final class CardWheelTests: XCTestCase {
 
     // MARK: - notched
 
-    func testS5ANotchedDeltaIsScaledAsLines() {
+    /// "Notched wheel converts to scaled lines".
+    func testANotchedDeltaIsScaledAsLines() {
         var wheel = CardWheel()
         XCTAssertEqual(wheel.convert(dx: 0, dy: -1, precise: false, scale: 1.5), .lines(dx: 0, dy: -1.5))
         XCTAssertEqual(wheel.convert(dx: 2, dy: 0, precise: false, scale: 3), .lines(dx: 6, dy: 0))
@@ -55,6 +59,7 @@ final class CardWheelTests: XCTestCase {
 
     // MARK: - pass-through
 
+    /// "Scale of one passes through untouched".
     func testS15NothingIsConvertedAtAScaleOfOneOrOneThatIsNoScale() {
         for scale in [1, 0, -2, CGFloat.nan, .infinity] {
             for precise in [true, false] {
@@ -64,6 +69,7 @@ final class CardWheelTests: XCTestCase {
         }
     }
 
+    /// "Scale of one passes through untouched".
     /// 1.25 is chosen so that a pass-through which added to the residue (2),
     /// quantized into it (0) or cleared it (0) would each answer otherwise,
     /// and the axes go opposite ways so that one's residue is not the other's.
@@ -74,8 +80,9 @@ final class CardWheelTests: XCTestCase {
         XCTAssertEqual(points(&wheel, dx: 0.25, dy: -0.25), .points(dx: 1, dy: -1))
     }
 
+    /// "Zero step is an answer not nil".
     /// The event is still passed on: its phase is content.
-    func testS16AZeroStepIsAnAnswer() {
+    func testAZeroStepIsAnAnswer() {
         var small = CardWheel()
         XCTAssertEqual(points(&small, dy: 0.25), .points(dx: 0, dy: 0))
 
@@ -85,21 +92,24 @@ final class CardWheelTests: XCTestCase {
 
     // MARK: - residue
 
-    func testS17TheAxesDoNotShareResidue() {
+    /// "Axes keep separate residue".
+    func testTheAxesDoNotShareResidue() {
         var wheel = CardWheel()
         XCTAssertEqual(points(&wheel, dx: 0.25), .points(dx: 0, dy: 0))
         XCTAssertEqual(points(&wheel, dy: 0.25), .points(dx: 0, dy: 0))
         XCTAssertEqual(points(&wheel, dx: 0.25), .points(dx: 1, dy: 0))
     }
 
-    func testS18ANotchedEventNeitherReadsNorWritesTheResidue() {
+    /// "Notched event leaves residue alone".
+    func testANotchedEventNeitherReadsNorWritesTheResidue() {
         var wheel = CardWheel()
         XCTAssertEqual(points(&wheel, dx: 0.25, dy: -0.25), .points(dx: 0, dy: 0))
         XCTAssertEqual(wheel.convert(dx: 1, dy: -1, precise: false, scale: 1.5), .lines(dx: 1.5, dy: -1.5))
         XCTAssertEqual(points(&wheel, dx: 0.25, dy: -0.25), .points(dx: 1, dy: -1))
     }
 
-    func testS19EachWheelKeepsItsOwnResidue() {
+    /// "Two wheels keep their own residue".
+    func testEachWheelKeepsItsOwnResidue() {
         var first = CardWheel()
         var second = CardWheel()
         XCTAssertEqual(points(&first, dy: 0.25), .points(dx: 0, dy: 0))
@@ -107,7 +117,8 @@ final class CardWheelTests: XCTestCase {
         XCTAssertEqual(points(&first, dy: 0.25), .points(dx: 0, dy: 1))
     }
 
-    func testS20NoTravelIsMadeOrLost() {
+    /// "No travel is made or lost".
+    func testNoTravelIsMadeOrLost() {
         var wheel = CardWheel()
         let deltas = [0.25, 0.25, -0.75, 2.5, -0.25, 0.25, 1.5, -3.75]
         var steps: [Int] = []

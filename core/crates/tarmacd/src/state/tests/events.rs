@@ -26,7 +26,7 @@ fn exits(daemon: &Daemon, term_id: &str) -> Option<Option<i64>> {
     daemon.exits.lock().unwrap().lookup(term_id)
 }
 
-// S18
+// "Exit ring is written before the term goes"
 #[tokio::test]
 async fn an_ended_term_is_in_the_ring_and_out_of_terms() {
     let daemon = on_source(tmp_dir("ring").join("state.json"), Silent).await;
@@ -38,7 +38,7 @@ async fn an_ended_term_is_in_the_ring_and_out_of_terms() {
     assert!(daemon.term("T").await.is_none());
 }
 
-// S19, at the state: the snapshot of a reused id.
+// "Live terminal wins over the exit ring", at the state: the snapshot of a reused id.
 #[tokio::test]
 async fn a_live_term_wins_over_its_exit_in_the_ring() {
     let daemon = on_source(tmp_dir("ring-live").join("state.json"), Silent).await;
@@ -52,7 +52,7 @@ async fn a_live_term_wins_over_its_exit_in_the_ring() {
     assert_eq!(live.snapshot, vec![]);
 }
 
-// S22
+// "Event tap does not change push"
 #[tokio::test]
 async fn a_file_event_reaches_a_subscriber_and_the_doc_is_still_held_with_no_app() {
     let tmp = tmp_dir("tap-held");
@@ -88,7 +88,7 @@ async fn a_refresh_and_a_data_file_reach_a_subscriber() {
     next_matching(&mut rx, |m| is_file_event(m, &data)).await;
 }
 
-// S22
+// "Event tap does not change push"
 #[tokio::test]
 async fn push_with_an_app_and_no_subscriber_reaches_the_app() {
     let daemon = on_source(tmp_dir("tap-app").join("state.json"), Silent).await;
@@ -99,7 +99,7 @@ async fn push_with_an_app_and_no_subscriber_reaches_the_app() {
     assert_eq!(pushed(&mut app), vec![output]);
 }
 
-// S23
+// "Subscribing adds no file watch"
 #[tokio::test]
 async fn subscribers_and_the_terms_list_make_no_watch() {
     let tmp = tmp_dir("no-watch");
@@ -129,7 +129,7 @@ async fn subscribers_and_the_terms_list_make_no_watch() {
     assert_eq!((calls.count(Change::Watch), calls.count(Change::Unwatch)), (1, 0));
 }
 
-// S24
+// "Terms list does not wait on stuck cwd"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_cwd_reads_of_the_terms_list_run_at_the_same_time() {
     let r = rig("terms-stuck").await;

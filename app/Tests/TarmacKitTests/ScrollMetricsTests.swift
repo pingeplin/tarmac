@@ -8,7 +8,8 @@ import XCTest
 final class ScrollMetricsTests: XCTestCase {
     private let sample = ScrollMetrics(offset: 30, visible: 100, total: 400)
 
-    func testS1ItHoldsWhatItWasGivenAndSaysWhetherTheContentOverflows() throws {
+    /// "Metrics hold offset visible and total".
+    func testItHoldsWhatItWasGivenAndSaysWhetherTheContentOverflows() throws {
         let metrics = try XCTUnwrap(sample)
         XCTAssertEqual(metrics.offset, 30)
         XCTAssertEqual(metrics.visible, 100)
@@ -21,7 +22,8 @@ final class ScrollMetricsTests: XCTestCase {
 
     // MARK: - a web card's report
 
-    func testS2AReportIsADictionaryOfThreeNumbers() throws {
+    /// "Metrics build from a numeric report".
+    func testAReportIsADictionaryOfThreeNumbers() throws {
         let sample = try XCTUnwrap(sample)
         XCTAssertEqual(ScrollMetrics(report: ["offset": 30, "visible": 100, "total": 400]), sample)
         XCTAssertEqual(ScrollMetrics(report: ["offset": 30.0, "visible": 100.0, "total": 400.0]), sample)
@@ -35,9 +37,10 @@ final class ScrollMetricsTests: XCTestCase {
         )
     }
 
+    /// "Metrics build from a numeric report".
     /// A page's 0 and 1 bridge to `Bool` as its `true` does; only the last is
     /// not a number.
-    func testS2AZeroAndAOneAreNumbers() {
+    func testAZeroAndAOneAreNumbers() {
         let report: [String: Any] = [
             "offset": NSNumber(value: 0), "visible": NSNumber(value: 1), "total": NSNumber(value: 1),
         ]
@@ -45,7 +48,8 @@ final class ScrollMetricsTests: XCTestCase {
         XCTAssertNotNil(ScrollMetrics(report: report))
     }
 
-    func testS33AReportThatIsNotThreeNumbersIsRefused() {
+    /// "Report with missing or mistyped key refused".
+    func testAReportThatIsNotThreeNumbersIsRefused() {
         let refused: [Any] = [
             ["offset": 30, "visible": 100],
             ["visible": 100, "total": 400],
@@ -64,15 +68,17 @@ final class ScrollMetricsTests: XCTestCase {
 
     // MARK: - validation
 
+    /// "Metrics clamp an out-of-range offset".
     /// An overscroll is the nearest edge, not a refusal.
-    func testS20TheOffsetIsClampedIntoItsRange() {
+    func testTheOffsetIsClampedIntoItsRange() {
         XCTAssertEqual(ScrollMetrics(offset: -5, visible: 100, total: 400)?.offset, 0)
         XCTAssertEqual(ScrollMetrics(offset: 350, visible: 100, total: 400)?.offset, 300)
         XCTAssertEqual(ScrollMetrics(offset: 40, visible: 100, total: 100)?.offset, 0)
         XCTAssertEqual(ScrollMetrics(offset: -40, visible: 100, total: 100)?.offset, 0)
     }
 
-    func testS32NumbersThatDescribeNoScrollerAreRefused() {
+    /// "Metrics refuse invalid numbers".
+    func testNumbersThatDescribeNoScrollerAreRefused() {
         for bad in [Double.nan, .infinity, -.infinity] {
             XCTAssertNil(ScrollMetrics(offset: bad, visible: 100, total: 400), "offset \(bad)")
             XCTAssertNil(ScrollMetrics(offset: 30, visible: bad, total: 400), "visible \(bad)")

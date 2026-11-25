@@ -2,20 +2,22 @@ import XCTest
 
 @testable import TarmacKit
 
-/// What `Message` refuses in a frame it knows (spec 2611.0003 S41).
+/// What `Message` refuses in a frame it knows (spec 2611.0003 "Doc event decode needs a string data field").
 final class MessagesTests: XCTestCase {
     private func decoded(_ fields: [String: MsgPackValue]) throws -> Message {
         try Message.decode(payload: MsgPack.encode(.map(fields)))
     }
 
-    func testS41ADocEventDecodesWithItsPathAndValue() throws {
+    /// "Doc event decode needs a string data field".
+    func testADocEventDecodesWithItsPathAndValue() throws {
         XCTAssertEqual(
             try decoded(["t": .string("doc_event"), "path": .string("/a/dash.html"), "value": .string("[1]")]),
             .docEvent(path: "/a/dash.html", value: "[1]")
         )
     }
 
-    func testS41ADocEventWithNoValueIsRefused() {
+    /// "Doc event decode needs a string data field".
+    func testADocEventWithNoValueIsRefused() {
         for fields: [String: MsgPackValue] in [
             ["t": .string("doc_event"), "path": .string("/a/dash.html")],
             ["t": .string("doc_event"), "path": .string("/a/dash.html"), "value": .nil],
@@ -26,7 +28,8 @@ final class MessagesTests: XCTestCase {
         }
     }
 
-    func testS41ADocEventWhoseValueIsNoStringIsRefused() {
+    /// "Doc event decode needs a string data field".
+    func testADocEventWhoseValueIsNoStringIsRefused() {
         for value: MsgPackValue in [.int(1), .binary(Data("[1]".utf8)), .array([.string("[1]")])] {
             XCTAssertThrowsError(
                 try decoded(["t": .string("doc_event"), "path": .string("/a/dash.html"), "value": value])
@@ -36,8 +39,8 @@ final class MessagesTests: XCTestCase {
         }
     }
 
-    // 2611.0013 S37: an older daemon's frame (vector 22's bytes) has no place.
-    func testS37ATermReportWithNoBoardAndNoCwdDecodesWithBothNil() throws {
+    // 2611.0013 "Older daemon frame decodes without board": an older daemon's frame (vector 22's bytes) has no place.
+    func testATermReportWithNoBoardAndNoCwdDecodesWithBothNil() throws {
         let v22 = hexData(
             """
             87 a1 74 ab 74 65 72 6d 5f 72 65 70 6f 72 74 a7 74 65 72 6d 5f 69 64 a2 74 31
@@ -52,7 +55,7 @@ final class MessagesTests: XCTestCase {
         XCTAssertNil(cwd)
     }
 
-    // 2611.0013 S15: a bell and an exit with no board, and a report with no
+    // 2611.0013 "Inbox wire frames match in both codecs": a bell and an exit with no board, and a report with no
     // place, write no key for it.
     func testANilBoardAndANilCwdPutNoKeyOnTheWire() throws {
         let frames: [Message] = [
@@ -132,8 +135,8 @@ final class MessagesTests: XCTestCase {
         )
     }
 
-    /// 2611.0024 S8: the S4 frames of the Rust suite fail on the key's name.
-    func test2611_0024S8ASidebarKeyOfTheWrongTypeFailsTheFrame() {
+    /// 2611.0024 "Swift throws bad field for wrong-typed sidebar keys": the frames of "Rust rejects wrong-typed sidebar keys" in the Rust suite fail on the key's name.
+    func testASidebarKeyOfTheWrongTypeFailsTheFrame() {
         let vector44 = """
             83 a1 74 a6 6c 61 79 6f 75 74 a4 64 6f 63 6b 90 a5 74 69 6c 65 73 91
             84 a4 6b 69 6e 64 a3 64 6f 63 a4 70 61 74 68 a5 2f 61 2e 6d 64

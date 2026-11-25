@@ -19,29 +19,29 @@ final class DocFrontMatterTests: XCTestCase {
         XCTAssertEqual(split.body, markdown, file: file, line: line)
     }
 
-    /// S1
-    func test2611_0022S1TheFieldsComeOutAndTheBodyIsTheRest() {
+    /// "Basic front matter gives fields and body"
+    func testTheFieldsComeOutAndTheBodyIsTheRest() {
         let split = DocFrontMatter.split("---\ntitle: Hello\nstatus: proposed\n---\n# Body\n")
 
         XCTAssertEqual(split.fields, [field("title", "Hello"), field("status", "proposed")])
         XCTAssertEqual(split.body, "# Body\n")
     }
 
-    /// S2
-    func test2611_0022S2OnePairOfMatchingQuotesIsRemoved() {
+    /// "Quoted values lose their quotes"
+    func testOnePairOfMatchingQuotesIsRemoved() {
         XCTAssertEqual(fields("title: \"A: b\""), [field("title", "A: b")])
         XCTAssertEqual(fields("x: 'y'"), [field("x", "y")])
         XCTAssertEqual(fields("x: \"y'"), [field("x", "\"y'")])
         XCTAssertEqual(fields("x: \""), [field("x", "\"")])
     }
 
-    /// S3
-    func test2611_0022S3AnInlineListIsSplitTrimmedAndUnquoted() {
+    /// "Inline list drops empty items"
+    func testAnInlineListIsSplitTrimmedAndUnquoted() {
         XCTAssertEqual(fields("tags: [mcp, \"api\", , release-2]"), [field("tags", list: ["mcp", "api", "release-2"])])
     }
 
-    /// S4
-    func test2611_0022S4ABlockListAndTheLinesThatFollowAList() {
+    /// "Block lists and empty keys parse"
+    func testABlockListAndTheLinesThatFollowAList() {
         XCTAssertEqual(
             fields("tags:\n  - a\n  - \"b\"\nnext: 1"), [field("tags", list: ["a", "b"]), field("next", "1")]
         )
@@ -52,8 +52,8 @@ final class DocFrontMatterTests: XCTestCase {
         XCTAssertEqual(fields("tags:\n - a\n -"), [field("tags", list: ["a"])])
     }
 
-    /// S5
-    func test2611_0022S5OtherLinesJoinTheFieldAbove() {
+    /// "Continuation comment and nested lines parse"
+    func testOtherLinesJoinTheFieldAbove() {
         XCTAssertEqual(fields("desc: one\n  two\n# note\nx: 1"), [field("desc", "one\ntwo\n# note"), field("x", "1")])
         XCTAssertEqual(
             fields("metadata:\n  type: project\n  originSessionId: abc"),
@@ -68,27 +68,27 @@ final class DocFrontMatterTests: XCTestCase {
         XCTAssertEqual(fields("k: \"\"\n  more"), [field("k", "more")])
     }
 
-    /// S6
-    func test2611_0022S6ABlockWithNoKeyLineOrWithAProseLineIsNotFrontMatter() {
+    /// "Prose between fences is not front matter"
+    func testABlockWithNoKeyLineOrWithAProseLineIsNotFrontMatter() {
         assertUnchanged("---\n\nSome text\n\n---\nmore")
         assertUnchanged("---\nSome prose here.\nNote: x\n---\nmore")
     }
 
-    /// S7
-    func test2611_0022S7ABlockWithNoClosingLineIsNotFrontMatter() {
+    /// "Missing closing line leaves text unchanged"
+    func testABlockWithNoClosingLineIsNotFrontMatter() {
         assertUnchanged("---\ntitle: x\n# Heading")
     }
 
-    /// S8
-    func test2611_0022S8CRLFLinesAndADotsClosingLine() {
+    /// "CRLF and dot closing line parse"
+    func testCRLFLinesAndADotsClosingLine() {
         let split = DocFrontMatter.split("---\r\ntitle: x\r\n...\r\nbody")
 
         XCTAssertEqual(split.fields, [field("title", "x")])
         XCTAssertEqual(split.body, "body")
     }
 
-    /// S9
-    func test2611_0022S9AFenceMayEndInSpacesButNotStartWithOne() {
+    /// "Fence with trailing spaces parses"
+    func testAFenceMayEndInSpacesButNotStartWithOne() {
         let split = DocFrontMatter.split("---  \ntitle: x\n---  \nbody")
         XCTAssertEqual(split.fields, [field("title", "x")])
         XCTAssertEqual(split.body, "body")
@@ -98,16 +98,16 @@ final class DocFrontMatterTests: XCTestCase {
         assertUnchanged("...\ntitle: x\n---\n")
     }
 
-    /// S10 — design 2611.0020 D8's stated cost.
-    func test2611_0022S10ANoteBetweenTwoBreaksIsAField() {
+    /// "Setext rule is read as front matter" — design 2611.0020 D8's stated cost.
+    func testANoteBetweenTwoBreaksIsAField() {
         let split = DocFrontMatter.split("---\nNote: text\n---\nbody")
 
         XCTAssertEqual(split.fields, [field("Note", "text")])
         XCTAssertEqual(split.body, "body")
     }
 
-    /// S11
-    func test2611_0022S11TheShapeOfAKey() {
+    /// "Key shape decides what is a field"
+    func testTheShapeOfAKey() {
         assertUnchanged("---\nkey:value\n---\n")
         for key in ["my_key-2", "my key", "a.b", "標題", "_k", "2k"] {
             XCTAssertEqual(fields("\(key): v"), [field(key, "v")], key)
@@ -116,8 +116,8 @@ final class DocFrontMatterTests: XCTestCase {
         XCTAssertEqual(fields("key : v"), [field("key", "v")])
     }
 
-    /// S12
-    func test2611_0022S12AnEmptyDocAFirstLineAloneAndAClosingLineAtTheEnd() {
+    /// "Empty doc and fence at end of text"
+    func testAnEmptyDocAFirstLineAloneAndAClosingLineAtTheEnd() {
         assertUnchanged("")
         assertUnchanged("---")
 

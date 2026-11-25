@@ -5,10 +5,8 @@ import XCTest
 
 /// The HTML card shim as it ships (`TarmacApp/Resources/Web/card_shim.js`),
 /// run in a stand-in window with stand-in schedulers: the scheduler gate of
-/// spec 2609.0002 (S5–S28, S40–S42), the zoom handshake of spec 2609.0003
-/// (S8–S10) and the font properties of spec 2610.0010 (S8–S20). Scenario ids
-/// are per spec and collide — both specs have an S8, an S9 and an S10 — so a
-/// 2609.0003 or 2610.0010 test names its spec.
+/// spec 2609.0002, the zoom handshake of spec 2609.0003
+/// and the font properties of spec 2610.0010.
 ///
 /// Two rules of the stand-in window make the assertions mean anything:
 ///
@@ -18,10 +16,10 @@ import XCTest
 /// - Native ids come from one range per family, far above the shim's own
 ///   counter, which starts at 1. Without that, "the native was called with
 ///   the native id" cannot be told from a wrapper passing its own id through,
-///   and S7 and S40 pass whatever the shim does.
+///   and "Pause cancels outstanding native frame request" and "Cancel wrappers are transparent before any cull" pass whatever the shim does.
 ///
 /// "The card calls X" is always spelled `window.X(...)`: the wrappers are
-/// installed on `window`, and going through it is what lets S6 say which
+/// installed on `window`, and going through it is what lets "Shim ignores replaced scheduler globals" say which
 /// reference a resume uses.
 final class CardShimTests: XCTestCase {
     private static let rafIdBase = 1000
@@ -396,44 +394,48 @@ final class CardShimTests: XCTestCase {
         return Shim(context: context)
     }
 
-    // MARK: - the shipped shim loads and still handshakes (S5)
+    // MARK: - the shipped shim loads and still handshakes ("Shim loaded on fake natives posts ready")
 
-    func testS5PostsReadyWithTheDocumentsOwnMetaAndAppliesAHostZoom() throws {
+    /// "Shim loaded on fake natives posts ready".
+    func testPostsReadyWithTheDocumentsOwnMetaAndAppliesAHostZoom() throws {
         let shim = try loadShim(meta: "magnify")
 
         shim.run("h.domReady()")
-        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "S5: ready")
+        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "Shim loaded on fake natives posts ready: ready")
 
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
-        XCTAssertEqual(shim.number("h.style.zoom"), 3, "S5: zoom")
+        XCTAssertEqual(shim.number("h.style.zoom"), 3, "Shim loaded on fake natives posts ready: zoom")
     }
 
-    func testS5ReportsANullMetaForADocumentWithNoTarmacZoomTag() throws {
+    /// "Shim loaded on fake natives posts ready".
+    func testReportsANullMetaForADocumentWithNoTarmacZoomTag() throws {
         let shim = try loadShim(meta: nil)
         shim.run("h.domReady()")
-        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: nil)), "S5")
+        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: nil)), "Shim loaded on fake natives posts ready")
     }
 
+    /// "Shim loaded on fake natives posts ready".
     /// What matters is that the natives exist before the shim runs, so it
     /// captures the functions these tests observe; a `typeof` after load would
     /// only re-check the shim's own wrappers. A shim that could load with one
     /// missing would have captured nothing, and every other scenario would
     /// pass whatever it did.
-    func testS5FailsLoudlyIfASchedulerNativeIsMissingWhenTheShimCaptures() throws {
+    func testFailsLoudlyIfASchedulerNativeIsMissingWhenTheShimCaptures() throws {
         for native in ["requestAnimationFrame", "cancelAnimationFrame", "setTimeout", "clearTimeout", "setInterval"] {
             let context = try window(meta: "magnify", omitting: native)
             var thrown: JSValue?
             context.exceptionHandler = { _, error in thrown = error }
             context.evaluateScript(try source())
-            XCTAssertNotNil(thrown, "S5: the shim loaded without \(native)")
+            XCTAssertNotNil(thrown, "Shim loaded on fake natives posts ready: the shim loaded without \(native)")
         }
     }
 
-    // MARK: - the gate uses the natives captured at load, not the current globals (S6)
+    // MARK: - the gate uses the natives captured at load, not the current globals ("Shim ignores replaced scheduler globals")
 
+    /// "Shim ignores replaced scheduler globals".
     /// The callbacks are issued before the globals are replaced: once they
     /// are, card code can no longer reach the wrappers at all.
-    func testS6CancelsAndResumesThroughCapturedReferencesAfterACardReplacesThem() throws {
+    func testCancelsAndResumesThroughCapturedReferencesAfterACardReplacesThem() throws {
         let shim = try loadShim()
         shim.run(
             """
@@ -452,44 +454,56 @@ final class CardShimTests: XCTestCase {
             """)
 
         shim.pause()
-        XCTAssertTrue(try shim.ids("h.calls.cancelAnimationFrame").contains(nativeFrameId), "S6: cancel")
+        XCTAssertTrue(
+            try shim.ids("h.calls.cancelAnimationFrame").contains(nativeFrameId),
+            "Shim ignores replaced scheduler globals: cancel")
 
         shim.run("h.fireTimeout(timeoutId)")
-        XCTAssertEqual(try shim.strings("ran"), [], "S6: ran while paused")
+        XCTAssertEqual(try shim.strings("ran"), [], "Shim ignores replaced scheduler globals: ran while paused")
 
         shim.resumeAndDrain()
-        XCTAssertEqual(try shim.strings("ran").sorted(), ["frame", "timeout"], "S6: resume")
+        XCTAssertEqual(
+            try shim.strings("ran").sorted(), ["frame", "timeout"], "Shim ignores replaced scheduler globals: resume")
     }
 
-    // MARK: - requestAnimationFrame gate (S7–S11)
+    // MARK: - requestAnimationFrame gate
 
-    func testS7PauseCallsTheNativeCancelAnimationFrameWithTheOutstandingNativeId() throws {
+    /// "Pause cancels outstanding native frame request".
+    func testPauseCallsTheNativeCancelAnimationFrameWithTheOutstandingNativeId() throws {
         let shim = try loadShim()
         shim.run("var ran = false; window.requestAnimationFrame(() => { ran = true; });")
         let nativeId = try shim.id("h.calls.requestAnimationFrame[0]")
-        XCTAssertGreaterThanOrEqual(nativeId, Self.rafIdBase, "S7: a native id")
+        XCTAssertGreaterThanOrEqual(
+            nativeId, Self.rafIdBase, "Pause cancels outstanding native frame request: a native id")
 
         shim.pause()
 
-        XCTAssertEqual(try shim.ids("h.calls.cancelAnimationFrame"), [nativeId], "S7: cancelled")
-        XCTAssertEqual(try shim.ids("h.pendingFrameIds()"), [], "S7: pending")
-        XCTAssertEqual(shim.flag("ran"), false, "S7: ran")
+        XCTAssertEqual(
+            try shim.ids("h.calls.cancelAnimationFrame"), [nativeId],
+            "Pause cancels outstanding native frame request: cancelled")
+        XCTAssertEqual(
+            try shim.ids("h.pendingFrameIds()"), [], "Pause cancels outstanding native frame request: pending")
+        XCTAssertEqual(shim.flag("ran"), false, "Pause cancels outstanding native frame request: ran")
     }
 
-    func testS8APausedRAFCallReachesNoNativeAndStillReturnsAUsableId() throws {
+    /// "Paused frame request returns distinct id".
+    func testAPausedRAFCallReachesNoNativeAndStillReturnsAUsableId() throws {
         let shim = try loadShim()
         shim.pause()
         let before = try shim.count("h.calls.requestAnimationFrame")
 
         shim.run("var a = window.requestAnimationFrame(() => {}); var b = window.requestAnimationFrame(() => {});")
 
-        XCTAssertEqual(try shim.count("h.calls.requestAnimationFrame"), before, "S8: reached the native")
-        XCTAssertFalse(shim.run("a").isUndefined, "S8: first id")
-        XCTAssertFalse(shim.run("b").isUndefined, "S8: second id")
-        XCTAssertEqual(shim.flag("Object.is(a, b)"), false, "S8: the ids are one")
+        XCTAssertEqual(
+            try shim.count("h.calls.requestAnimationFrame"), before,
+            "Paused frame request returns distinct id: reached the native")
+        XCTAssertFalse(shim.run("a").isUndefined, "Paused frame request returns distinct id: first id")
+        XCTAssertFalse(shim.run("b").isUndefined, "Paused frame request returns distinct id: second id")
+        XCTAssertEqual(shim.flag("Object.is(a, b)"), false, "Paused frame request returns distinct id: the ids are one")
     }
 
-    func testS9ResumeIssuesExactlyOneNativeFrameAndDeliversAllHeldCallbacksOnceInOrder() throws {
+    /// "Resume makes one native frame request".
+    func testResumeIssuesExactlyOneNativeFrameAndDeliversAllHeldCallbacksOnceInOrder() throws {
         let shim = try loadShim()
         shim.run("var ran = []; window.requestAnimationFrame(() => ran.push('pre'));")
         shim.pause()
@@ -501,13 +515,17 @@ final class CardShimTests: XCTestCase {
 
         let nativeCallsBefore = try shim.count("h.calls.requestAnimationFrame")
         shim.resume()
-        XCTAssertEqual(try shim.count("h.calls.requestAnimationFrame"), nativeCallsBefore + 1, "S9: one native frame")
+        XCTAssertEqual(
+            try shim.count("h.calls.requestAnimationFrame"), nativeCallsBefore + 1,
+            "Resume makes one native frame request: one native frame")
 
         shim.run("h.driveFrame(1)")
-        XCTAssertEqual(try shim.strings("ran"), ["pre", "mid", "post"], "S9: delivered")
+        XCTAssertEqual(
+            try shim.strings("ran"), ["pre", "mid", "post"], "Resume makes one native frame request: delivered")
     }
 
-    func testS10CancelAnimationFrameOnAHeldIdDropsOnlyThatCallback() throws {
+    /// "Cancelled held frame is never delivered".
+    func testCancelAnimationFrameOnAHeldIdDropsOnlyThatCallback() throws {
         let shim = try loadShim()
         shim.pause()
         shim.run(
@@ -519,35 +537,40 @@ final class CardShimTests: XCTestCase {
             """)
         shim.resumeAndDrain()
 
-        XCTAssertEqual(try shim.strings("ran"), ["kept"], "S10")
+        XCTAssertEqual(try shim.strings("ran"), ["kept"], "Cancelled held frame is never delivered")
     }
 
-    func testS11AReIssuedCallbackReceivesTheFreshCatchUpTimestamp() throws {
+    /// "Resumed frames receive fresh timestamp".
+    func testAReIssuedCallbackReceivesTheFreshCatchUpTimestamp() throws {
         let shim = try loadShim()
         shim.run("var seen = []; window.requestAnimationFrame((ts) => seen.push(ts));")
         shim.pause()
         shim.resume()
         shim.run("h.driveFrame(987)")
 
-        XCTAssertEqual(try shim.ids("seen"), [987], "S11")
+        XCTAssertEqual(try shim.ids("seen"), [987], "Resumed frames receive fresh timestamp")
     }
 
-    // MARK: - setInterval gate (S12–S14)
+    // MARK: - setInterval gate
 
-    func testS12APausedIntervalDeliversNothingWhileTheNativeKeepsTicking() throws {
+    /// "Paused interval delivers nothing".
+    func testAPausedIntervalDeliversNothingWhileTheNativeKeepsTicking() throws {
         let shim = try loadShim()
         shim.run("var ticks = 0; window.setInterval(() => { ticks++; }, 16);")
         let nativeId = try shim.id("h.calls.setInterval[0].id")
-        XCTAssertGreaterThanOrEqual(nativeId, Self.intervalIdBase, "S12: a native id")
+        XCTAssertGreaterThanOrEqual(nativeId, Self.intervalIdBase, "Paused interval delivers nothing: a native id")
 
         shim.pause()
         shim.run("h.tickInterval(\(nativeId)); h.tickInterval(\(nativeId)); h.tickInterval(\(nativeId));")
 
-        XCTAssertEqual(shim.number("ticks"), 0, "S12: delivered")
-        XCTAssertFalse(try shim.ids("h.calls.clearInterval").contains(nativeId), "S12: the native was cleared")
+        XCTAssertEqual(shim.number("ticks"), 0, "Paused interval delivers nothing: delivered")
+        XCTAssertFalse(
+            try shim.ids("h.calls.clearInterval").contains(nativeId),
+            "Paused interval delivers nothing: the native was cleared")
     }
 
-    func testS13MissedTicksAreDroppedNotFlushedOnResume() throws {
+    /// "Resumed interval runs once not three times".
+    func testMissedTicksAreDroppedNotFlushedOnResume() throws {
         let shim = try loadShim()
         shim.run("var ticks = 0; window.setInterval(() => { ticks++; }, 16);")
         let nativeId = try shim.id("h.calls.setInterval[0].id")
@@ -556,42 +579,50 @@ final class CardShimTests: XCTestCase {
         shim.run("h.tickInterval(\(nativeId)); h.tickInterval(\(nativeId)); h.tickInterval(\(nativeId));")
 
         shim.resumeAndDrain()
-        XCTAssertEqual(shim.number("ticks"), 0, "S13: the resume itself delivered")
+        XCTAssertEqual(
+            shim.number("ticks"), 0, "Resumed interval runs once not three times: the resume itself delivered")
 
         shim.run("h.tickInterval(\(nativeId))")
-        XCTAssertEqual(shim.number("ticks"), 1, "S13: one tick, not the three missed")
+        XCTAssertEqual(
+            shim.number("ticks"), 1, "Resumed interval runs once not three times: one tick, not the three missed")
     }
 
-    func testS14ClearIntervalWhilePausedReachesTheNativeAndEndsTheInterval() throws {
+    /// "Interval cleared while paused stays cleared".
+    func testClearIntervalWhilePausedReachesTheNativeAndEndsTheInterval() throws {
         let shim = try loadShim()
         shim.run("var ticks = 0; var id = window.setInterval(() => { ticks++; }, 16);")
         let nativeId = try shim.id("h.calls.setInterval[0].id")
 
         shim.pause()
         shim.run("window.clearInterval(id)")
-        XCTAssertTrue(try shim.ids("h.calls.clearInterval").contains(nativeId), "S14: cleared natively")
+        XCTAssertTrue(
+            try shim.ids("h.calls.clearInterval").contains(nativeId),
+            "Interval cleared while paused stays cleared: cleared natively")
 
         shim.resumeAndDrain()
-        XCTAssertEqual(shim.number("ticks"), 0, "S14: delivered")
+        XCTAssertEqual(shim.number("ticks"), 0, "Interval cleared while paused stays cleared: delivered")
         XCTAssertEqual(
-            shim.thrown("h.tickInterval(\(nativeId))"), "no armed native interval \(nativeId)", "S14: still armed"
+            shim.thrown("h.tickInterval(\(nativeId))"), "no armed native interval \(nativeId)",
+            "Interval cleared while paused stays cleared: still armed"
         )
     }
 
-    // MARK: - setTimeout gate (S15–S21)
+    // MARK: - setTimeout gate
 
+    /// "Timeout firing during pause is diverted".
     /// Issued while running: a gate at call time would let this one through.
-    func testS15ATimeoutWhoseNativeTimerFiresDuringThePauseIsDivertedNotRun() throws {
+    func testATimeoutWhoseNativeTimerFiresDuringThePauseIsDivertedNotRun() throws {
         let shim = try loadShim()
         shim.run("var ran = false; var id = window.setTimeout(() => { ran = true; }, 16);")
 
         shim.pause()
         shim.run("h.fireTimeout(id)")
 
-        XCTAssertEqual(shim.flag("ran"), false, "S15")
+        XCTAssertEqual(shim.flag("ran"), false, "Timeout firing during pause is diverted")
     }
 
-    func testS16ResumeFlushesItExactlyOnceThroughANativeSetTimeoutZeroHop() throws {
+    /// "Diverted timeout runs once after resume".
+    func testResumeFlushesItExactlyOnceThroughANativeSetTimeoutZeroHop() throws {
         let shim = try loadShim()
         shim.run("var runs = 0; var id = window.setTimeout(() => { runs++; }, 16);")
         shim.pause()
@@ -600,52 +631,64 @@ final class CardShimTests: XCTestCase {
         let before = try shim.count("h.calls.setTimeout")
         shim.resume()
 
-        XCTAssertEqual(shim.number("runs"), 0, "S16: ran inside the message listener")
-        XCTAssertFalse(shim.run("h.calls.setTimeout[\(before)]").isUndefined, "S16: the hop")
-        XCTAssertEqual(shim.number("h.calls.setTimeout[\(before)].delay"), 0, "S16: the hop's delay")
+        XCTAssertEqual(
+            shim.number("runs"), 0, "Diverted timeout runs once after resume: ran inside the message listener")
+        XCTAssertFalse(
+            shim.run("h.calls.setTimeout[\(before)]").isUndefined, "Diverted timeout runs once after resume: the hop")
+        XCTAssertEqual(
+            shim.number("h.calls.setTimeout[\(before)].delay"), 0,
+            "Diverted timeout runs once after resume: the hop's delay")
 
         shim.run("h.drainTimeouts()")
-        XCTAssertEqual(shim.number("runs"), 1, "S16: flushed")
+        XCTAssertEqual(shim.number("runs"), 1, "Diverted timeout runs once after resume: flushed")
 
         shim.run("h.drainTimeouts()")
-        XCTAssertEqual(shim.number("runs"), 1, "S16: flushed twice")
+        XCTAssertEqual(shim.number("runs"), 1, "Diverted timeout runs once after resume: flushed twice")
     }
 
-    func testS17ExtraArgumentsSurviveTheDivertAndTheFlush() throws {
+    /// "Diverted timeout keeps extra arguments".
+    func testExtraArgumentsSurviveTheDivertAndTheFlush() throws {
         let shim = try loadShim()
         shim.run("var seen = []; var id = window.setTimeout((...args) => seen.push(args), 16, 'a', 7);")
         shim.pause()
         shim.run("h.fireTimeout(id)")
         shim.resumeAndDrain()
 
-        XCTAssertEqual(shim.run("seen").toArray() as NSArray?, [["a", 7]], "S17")
+        XCTAssertEqual(shim.run("seen").toArray() as NSArray?, [["a", 7]], "Diverted timeout keeps extra arguments")
     }
 
-    func testS18ClearTimeoutOnADivertedCallbackStopsItRunningAtAnyPoint() throws {
+    /// "Cleared diverted timeout never runs".
+    func testClearTimeoutOnADivertedCallbackStopsItRunningAtAnyPoint() throws {
         let shim = try loadShim()
         shim.run("var ran = false; var id = window.setTimeout(() => { ran = true; }, 16);")
         shim.pause()
         shim.run("h.fireTimeout(id)")
-        XCTAssertEqual(shim.flag("ran"), false, "S18: ran during the pause")
+        XCTAssertEqual(shim.flag("ran"), false, "Cleared diverted timeout never runs: ran during the pause")
 
         shim.run("window.clearTimeout(id)")
         shim.resumeAndDrain()
 
-        XCTAssertEqual(shim.flag("ran"), false, "S18: ran on resume")
+        XCTAssertEqual(shim.flag("ran"), false, "Cleared diverted timeout never runs: ran on resume")
     }
 
-    func testS19ATimeoutIssuedWhilePausedArmsTheNativeImmediatelyWithItsOwnDelay() throws {
+    /// "Timeout issued while paused starts clock now".
+    func testATimeoutIssuedWhilePausedArmsTheNativeImmediatelyWithItsOwnDelay() throws {
         let shim = try loadShim()
         shim.pause()
         let before = try shim.count("h.calls.setTimeout")
 
         shim.run("window.setTimeout(() => {}, 5000)")
 
-        XCTAssertFalse(shim.run("h.calls.setTimeout[\(before)]").isUndefined, "S19: armed")
-        XCTAssertEqual(shim.number("h.calls.setTimeout[\(before)].delay"), 5000, "S19: delay")
+        XCTAssertFalse(
+            shim.run("h.calls.setTimeout[\(before)]").isUndefined, "Timeout issued while paused starts clock now: armed"
+        )
+        XCTAssertEqual(
+            shim.number("h.calls.setTimeout[\(before)].delay"), 5000,
+            "Timeout issued while paused starts clock now: delay")
     }
 
-    func testS20BothFamiliesFlushInIssueOrderWithinEachFamily() throws {
+    /// "Held callbacks resume in issue order".
+    func testBothFamiliesFlushInIssueOrderWithinEachFamily() throws {
         let shim = try loadShim()
         shim.run(
             """
@@ -667,15 +710,18 @@ final class CardShimTests: XCTestCase {
         shim.resumeAndDrain()
 
         let ran = try shim.strings("ran")
-        XCTAssertEqual(ran.filter { $0.hasPrefix("t") }, ["tA", "tB"], "S20: timeouts")
-        XCTAssertEqual(ran.filter { $0.hasPrefix("f") }, ["fX", "fY", "fZ"], "S20: frames")
+        XCTAssertEqual(
+            ran.filter { $0.hasPrefix("t") }, ["tA", "tB"], "Held callbacks resume in issue order: timeouts")
+        XCTAssertEqual(
+            ran.filter { $0.hasPrefix("f") }, ["fX", "fY", "fZ"], "Held callbacks resume in issue order: frames")
         // No interleaving under this drain order, which is what a single
         // shared queue would produce. The order across families is the
-        // engine's (S38, QA), not a promise of the shim.
-        XCTAssertEqual(ran, ["tA", "tB", "fX", "fY", "fZ"], "S20: interleaved")
+        // engine's ("Held timeouts run before held frames", QA), not a promise of the shim.
+        XCTAssertEqual(ran, ["tA", "tB", "fX", "fY", "fZ"], "Held callbacks resume in issue order: interleaved")
     }
 
-    func testS21EachFamilyIsCarriedByItsOwnCapturedNativePrimitive() throws {
+    /// "Resume uses matching native primitive per family".
+    func testEachFamilyIsCarriedByItsOwnCapturedNativePrimitive() throws {
         let shim = try loadShim()
         shim.run("var t = window.setTimeout(() => {}, 16); window.requestAnimationFrame(() => {});")
         shim.pause()
@@ -685,14 +731,21 @@ final class CardShimTests: XCTestCase {
         let framesBefore = try shim.count("h.calls.requestAnimationFrame")
         shim.resume()
 
-        XCTAssertEqual(try shim.count("h.calls.setTimeout"), timeoutsBefore + 1, "S21: one hop")
-        XCTAssertEqual(shim.number("h.calls.setTimeout[\(timeoutsBefore)].delay"), 0, "S21: the hop's delay")
-        XCTAssertEqual(try shim.count("h.calls.requestAnimationFrame"), framesBefore + 1, "S21: one frame")
+        XCTAssertEqual(
+            try shim.count("h.calls.setTimeout"), timeoutsBefore + 1,
+            "Resume uses matching native primitive per family: one hop")
+        XCTAssertEqual(
+            shim.number("h.calls.setTimeout[\(timeoutsBefore)].delay"), 0,
+            "Resume uses matching native primitive per family: the hop's delay")
+        XCTAssertEqual(
+            try shim.count("h.calls.requestAnimationFrame"), framesBefore + 1,
+            "Resume uses matching native primitive per family: one frame")
     }
 
-    // MARK: - idempotence and re-pause (S22–S25)
+    // MARK: - idempotence and re-pause
 
-    func testS22ARepeatPauseReCancelsNothingAndDoesNotDuplicateDeliveries() throws {
+    /// "Second cull message is free".
+    func testARepeatPauseReCancelsNothingAndDoesNotDuplicateDeliveries() throws {
         let shim = try loadShim()
         shim.run(
             """
@@ -707,17 +760,20 @@ final class CardShimTests: XCTestCase {
 
         shim.pause()
         shim.pause()
-        XCTAssertEqual(try shim.ids("h.calls.cancelAnimationFrame"), cancelsAfterFirstPause, "S22: re-cancelled")
+        XCTAssertEqual(
+            try shim.ids("h.calls.cancelAnimationFrame"), cancelsAfterFirstPause,
+            "Second cull message is free: re-cancelled")
 
         shim.resumeAndDrain()
-        XCTAssertEqual(try shim.strings("ran"), ["timeout", "frame"], "S22: delivered")
+        XCTAssertEqual(try shim.strings("ran"), ["timeout", "frame"], "Second cull message is free: delivered")
     }
 
+    /// "Resume message while running does nothing".
     /// The fixture that matters is live, outstanding work when the redundant
     /// resume arrives: a resume that skips its own early-out would sweep it
     /// into a catch-up flush, delivering it early here and again when its real
     /// native timers fire.
-    func testS23AResumeWhileRunningTouchesNothingTheCardAlreadyHasInFlight() throws {
+    func testAResumeWhileRunningTouchesNothingTheCardAlreadyHasInFlight() throws {
         let shim = try loadShim()
         shim.run(
             """
@@ -730,18 +786,25 @@ final class CardShimTests: XCTestCase {
         let timeoutsBefore = try shim.count("h.calls.setTimeout")
         shim.resume()
 
-        XCTAssertEqual(try shim.count("h.calls.requestAnimationFrame"), framesBefore, "S23: a catch-up frame")
-        XCTAssertEqual(try shim.count("h.calls.setTimeout"), timeoutsBefore, "S23: a hop")
-        XCTAssertEqual(try shim.strings("ran"), [], "S23: delivered early")
+        XCTAssertEqual(
+            try shim.count("h.calls.requestAnimationFrame"), framesBefore,
+            "Resume message while running does nothing: a catch-up frame")
+        XCTAssertEqual(
+            try shim.count("h.calls.setTimeout"), timeoutsBefore, "Resume message while running does nothing: a hop")
+        XCTAssertEqual(try shim.strings("ran"), [], "Resume message while running does nothing: delivered early")
 
         shim.run("h.driveFrame(1); h.fireTimeout(t);")
-        XCTAssertEqual(try shim.strings("ran"), ["frame", "timeout"], "S23: on their own native fires")
+        XCTAssertEqual(
+            try shim.strings("ran"), ["frame", "timeout"],
+            "Resume message while running does nothing: on their own native fires")
 
         shim.run("h.driveFrame(2); h.drainTimeouts();")
-        XCTAssertEqual(try shim.strings("ran"), ["frame", "timeout"], "S23: delivered again")
+        XCTAssertEqual(
+            try shim.strings("ran"), ["frame", "timeout"], "Resume message while running does nothing: delivered again")
     }
 
-    func testS24ARePauseDuringTheFlushReHoldsBothFamiliesAndLosesNeither() throws {
+    /// "Cull during resume re-holds callbacks".
+    func testARePauseDuringTheFlushReHoldsBothFamiliesAndLosesNeither() throws {
         let shim = try loadShim()
         shim.run("var ran = []; window.requestAnimationFrame(() => ran.push('frame'));")
         let nativeFrameId = try shim.id("h.calls.requestAnimationFrame[0]")
@@ -757,28 +820,36 @@ final class CardShimTests: XCTestCase {
         // The exact list is the assertion: the first pause retired the card's
         // own request, the second the catch-up, and nothing is cancelled twice
         // — a stale native id left behind would show up as a repeat.
-        XCTAssertEqual(try shim.ids("h.calls.cancelAnimationFrame"), [nativeFrameId, catchUpId], "S24: cancelled")
+        XCTAssertEqual(
+            try shim.ids("h.calls.cancelAnimationFrame"), [nativeFrameId, catchUpId],
+            "Cull during resume re-holds callbacks: cancelled")
 
         shim.run("h.drainTimeouts(); h.driveFrame(1);")
-        XCTAssertEqual(try shim.strings("ran"), [], "S24: ran while paused")
+        XCTAssertEqual(try shim.strings("ran"), [], "Cull during resume re-holds callbacks: ran while paused")
 
         shim.resumeAndDrain(2)
-        XCTAssertEqual(try shim.strings("ran"), ["timeout", "frame"], "S24: each exactly once")
+        XCTAssertEqual(
+            try shim.strings("ran"), ["timeout", "frame"], "Cull during resume re-holds callbacks: each exactly once")
     }
 
-    func testS25ACullArrivingBeforeDOMContentLoadedStillPauses() throws {
+    /// "Cull before ready still holds frames".
+    func testACullArrivingBeforeDOMContentLoadedStillPauses() throws {
         let shim = try loadShim()
 
         shim.pause()
-        XCTAssertFalse(try shim.posted().contains { $0["tarmac"] as? String == "ready" }, "S25: ready was posted")
+        XCTAssertFalse(
+            try shim.posted().contains { $0["tarmac"] as? String == "ready" },
+            "Cull before ready still holds frames: ready was posted")
 
         let before = try shim.count("h.calls.requestAnimationFrame")
         shim.run("window.requestAnimationFrame(() => {})")
 
-        XCTAssertEqual(try shim.count("h.calls.requestAnimationFrame"), before, "S25: reached the native")
+        XCTAssertEqual(
+            try shim.count("h.calls.requestAnimationFrame"), before,
+            "Cull before ready still holds frames: reached the native")
     }
 
-    // MARK: - a delivered callback is never delivered again (S41)
+    // MARK: - a delivered callback is never delivered again ("Delivered callback never runs again")
 
     // Every other exactly-once assertion stops after one pause → resume round
     // trip. A board culls and un-culls a card constantly as the user pans, and
@@ -786,42 +857,47 @@ final class CardShimTests: XCTestCase {
     // after a timeout flush leaves spent callbacks in the held queues, where
     // each later un-cull delivers them again — invisible inside one trip.
 
-    func testS41AFrameDeliveredNaturallyIsNotReDeliveredByALaterRoundTrip() throws {
+    /// "Delivered callback never runs again".
+    func testAFrameDeliveredNaturallyIsNotReDeliveredByALaterRoundTrip() throws {
         let shim = try loadShim()
         shim.run("var ran = []; window.requestAnimationFrame(() => ran.push('frame')); h.driveFrame(1);")
-        XCTAssertEqual(try shim.strings("ran"), ["frame"], "S41: delivered while running")
+        XCTAssertEqual(
+            try shim.strings("ran"), ["frame"], "Delivered callback never runs again: delivered while running")
 
         shim.pause()
         shim.resumeAndDrain(2)
-        XCTAssertEqual(try shim.strings("ran"), ["frame"], "S41: delivered again")
+        XCTAssertEqual(try shim.strings("ran"), ["frame"], "Delivered callback never runs again: delivered again")
     }
 
-    func testS41AFrameDeliveredByACatchUpFlushIsNotReDeliveredByTheNextOne() throws {
+    /// "Delivered callback never runs again".
+    func testAFrameDeliveredByACatchUpFlushIsNotReDeliveredByTheNextOne() throws {
         let shim = try loadShim()
         shim.pause()
         shim.run("var ran = []; window.requestAnimationFrame(() => ran.push('frame'));")
         shim.resumeAndDrain(1)
-        XCTAssertEqual(try shim.strings("ran"), ["frame"], "S41: flushed")
+        XCTAssertEqual(try shim.strings("ran"), ["frame"], "Delivered callback never runs again: flushed")
 
         shim.pause()
         shim.resumeAndDrain(2)
-        XCTAssertEqual(try shim.strings("ran"), ["frame"], "S41: flushed again")
+        XCTAssertEqual(try shim.strings("ran"), ["frame"], "Delivered callback never runs again: flushed again")
     }
 
-    func testS41ATimeoutDeliveredByAFlushIsNotReDeliveredByTheNextOne() throws {
+    /// "Delivered callback never runs again".
+    func testATimeoutDeliveredByAFlushIsNotReDeliveredByTheNextOne() throws {
         let shim = try loadShim()
         shim.run("var ran = []; var t = window.setTimeout(() => ran.push('timeout'), 16);")
         shim.pause()
         shim.run("h.fireTimeout(t)")
         shim.resumeAndDrain(1)
-        XCTAssertEqual(try shim.strings("ran"), ["timeout"], "S41: flushed")
+        XCTAssertEqual(try shim.strings("ran"), ["timeout"], "Delivered callback never runs again: flushed")
 
         shim.pause()
         shim.resumeAndDrain(2)
-        XCTAssertEqual(try shim.strings("ran"), ["timeout"], "S41: flushed again")
+        XCTAssertEqual(try shim.strings("ran"), ["timeout"], "Delivered callback never runs again: flushed again")
     }
 
-    func testS41SurvivesSeveralRoundTripsOverBothFamiliesAtOnce() throws {
+    /// "Delivered callback never runs again".
+    func testSurvivesSeveralRoundTripsOverBothFamiliesAtOnce() throws {
         let shim = try loadShim()
         shim.run("var ran = []; window.requestAnimationFrame(() => ran.push('frame'));")
         let nativeFrameId = try shim.id("h.calls.requestAnimationFrame[0]")
@@ -836,27 +912,34 @@ final class CardShimTests: XCTestCase {
         }
         shim.resumeAndDrain(5)
 
-        XCTAssertEqual(try shim.strings("ran"), ["timeout", "frame"], "S41: delivered")
+        XCTAssertEqual(try shim.strings("ran"), ["timeout", "frame"], "Delivered callback never runs again: delivered")
 
         // Once the queues have drained, later round trips must be free: only
         // the first resume needed a catch-up frame and a hop. A resume that
         // schedules either with nothing to flush leaves a pending native
         // request behind on every un-cull — the standing charge the gate
         // exists to remove.
-        XCTAssertEqual(try shim.count("h.calls.requestAnimationFrame"), 2, "S41: the card's frame and one catch-up")
-        XCTAssertEqual(try shim.count("h.calls.setTimeout"), timeoutsBefore + 2, "S41: the card's timeout and one hop")
+        XCTAssertEqual(
+            try shim.count("h.calls.requestAnimationFrame"), 2,
+            "Delivered callback never runs again: the card's frame and one catch-up")
+        XCTAssertEqual(
+            try shim.count("h.calls.setTimeout"), timeoutsBefore + 2,
+            "Delivered callback never runs again: the card's timeout and one hop")
 
         // A spent catch-up id must not be kept and cancelled by the next pause.
-        XCTAssertEqual(try shim.ids("h.calls.cancelAnimationFrame"), [nativeFrameId], "S41: cancelled")
+        XCTAssertEqual(
+            try shim.ids("h.calls.cancelAnimationFrame"), [nativeFrameId],
+            "Delivered callback never runs again: cancelled")
     }
 
-    // MARK: - a throwing flushed callback is isolated and reported (S42)
+    // MARK: - a throwing flushed callback is isolated and reported ("Throwing callback in flush is isolated")
 
+    /// "Throwing callback in flush is isolated".
     /// A throwing callback in the middle of each queue: the ones issued after
     /// it must still be delivered. The native schedulers give each callback
     /// its own task; the flush runs them in one loop, so it has to isolate
     /// them itself.
-    func testS42DoesNotStrandTheRestOfTheQueueInEitherFamily() throws {
+    func testDoesNotStrandTheRestOfTheQueueInEitherFamily() throws {
         let shim = try loadShim()
         shim.run(
             """
@@ -879,25 +962,29 @@ final class CardShimTests: XCTestCase {
 
         shim.resumeAndDrain()
 
-        XCTAssertEqual(try shim.strings("ran"), ["t1", "t3", "f1", "f3"], "S42")
+        XCTAssertEqual(try shim.strings("ran"), ["t1", "t3", "f1", "f3"], "Throwing callback in flush is isolated")
     }
 
+    /// "Throwing callback in flush is isolated".
     /// The live path lets a throw reach `window.onerror` and the error relay;
     /// swallowing it here would make a card's exception vanish exactly when
     /// its callback happened to be flushed after a cull.
-    func testS42RelaysTheExceptionRatherThanSwallowingIt() throws {
+    func testRelaysTheExceptionRatherThanSwallowingIt() throws {
         let shim = try loadShim()
         shim.run("var t = window.setTimeout(() => { throw new Error('boom-timeout'); }, 16);")
         shim.pause()
         shim.run("h.fireTimeout(t)")
         shim.resumeAndDrain()
 
-        XCTAssertTrue(try shim.hasPosted(["tarmac": "console", "level": "error", "args": ["boom-timeout"]]), "S42")
+        XCTAssertTrue(
+            try shim.hasPosted(["tarmac": "console", "level": "error", "args": ["boom-timeout"]]),
+            "Throwing callback in flush is isolated")
     }
 
-    // MARK: - the never-paused path stays transparent (S40)
+    // MARK: - the never-paused path stays transparent ("Cancel wrappers are transparent before any cull")
 
-    func testS40ForwardsEveryCancelToItsCapturedNativeAndRunsNothing() throws {
+    /// "Cancel wrappers are transparent before any cull".
+    func testForwardsEveryCancelToItsCapturedNativeAndRunsNothing() throws {
         let shim = try loadShim()
         shim.run(
             """
@@ -913,17 +1000,24 @@ final class CardShimTests: XCTestCase {
 
         shim.run("window.cancelAnimationFrame(frame); window.clearTimeout(timeout); window.clearInterval(interval);")
 
-        XCTAssertEqual(try shim.ids("h.calls.cancelAnimationFrame"), [nativeFrame], "S40: frame")
-        XCTAssertEqual(try shim.ids("h.calls.clearTimeout"), [nativeTimeout], "S40: timeout")
-        XCTAssertEqual(try shim.ids("h.calls.clearInterval"), [nativeInterval], "S40: interval")
+        XCTAssertEqual(
+            try shim.ids("h.calls.cancelAnimationFrame"), [nativeFrame],
+            "Cancel wrappers are transparent before any cull: frame")
+        XCTAssertEqual(
+            try shim.ids("h.calls.clearTimeout"), [nativeTimeout],
+            "Cancel wrappers are transparent before any cull: timeout")
+        XCTAssertEqual(
+            try shim.ids("h.calls.clearInterval"), [nativeInterval],
+            "Cancel wrappers are transparent before any cull: interval")
 
         shim.run("h.driveFrame(1); h.drainTimeouts();")
-        XCTAssertEqual(try shim.strings("ran"), [], "S40: ran")
+        XCTAssertEqual(try shim.strings("ran"), [], "Cancel wrappers are transparent before any cull: ran")
     }
 
-    // MARK: - relays are never gated (S26)
+    // MARK: - relays are never gated ("Console and escape relays work while paused")
 
-    func testS26APausedCardCanStillReportConsoleErrorsRejectionsAndEscape() throws {
+    /// "Console and escape relays work while paused".
+    func testAPausedCardCanStillReportConsoleErrorsRejectionsAndEscape() throws {
         let shim = try loadShim()
         shim.pause()
 
@@ -935,113 +1029,138 @@ final class CardShimTests: XCTestCase {
             h.fire("keydown", { key: "Escape" });
             """)
 
-        XCTAssertTrue(try shim.hasPosted(["tarmac": "console", "level": "log", "args": ["x"]]), "S26: console")
-        XCTAssertTrue(try shim.hasPosted(["tarmac": "console", "level": "error", "args": ["boom"]]), "S26: error")
-        XCTAssertTrue(try shim.hasPosted(["tarmac": "console", "level": "error", "args": ["nope"]]), "S26: rejection")
-        XCTAssertTrue(try shim.hasPosted(["tarmac": "escape"]), "S26: escape")
+        XCTAssertTrue(
+            try shim.hasPosted(["tarmac": "console", "level": "log", "args": ["x"]]),
+            "Console and escape relays work while paused: console")
+        XCTAssertTrue(
+            try shim.hasPosted(["tarmac": "console", "level": "error", "args": ["boom"]]),
+            "Console and escape relays work while paused: error")
+        XCTAssertTrue(
+            try shim.hasPosted(["tarmac": "console", "level": "error", "args": ["nope"]]),
+            "Console and escape relays work while paused: rejection")
+        XCTAssertTrue(try shim.hasPosted(["tarmac": "escape"]), "Console and escape relays work while paused: escape")
     }
 
+    /// "Console and escape relays work while paused".
     /// Ready is what carries the born-culled state.
-    func testS26ReadyStillPostsWhilePaused() throws {
+    func testReadyStillPostsWhilePaused() throws {
         let shim = try loadShim()
         shim.pause()
         shim.run("h.domReady()")
-        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "S26")
+        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "Console and escape relays work while paused")
     }
 
-    // MARK: - hostile and malformed cull messages (S27, S28)
+    // MARK: - hostile and malformed cull messages
 
-    func testS27ACullFromAnySourceOtherThanWindowParentIsIgnored() throws {
+    /// "Cull message from other source is ignored".
+    func testACullFromAnySourceOtherThanWindowParentIsIgnored() throws {
         let shim = try loadShim()
         shim.run("h.send({ tarmac: 'cull', culled: true }, { not: 'parent' })")
-        XCTAssertTrue(try shim.stillRunning(), "S27")
+        XCTAssertTrue(try shim.stillRunning(), "Cull message from other source is ignored")
     }
 
-    func testS28AMalformedCullLeavesTheGateStateUnchangedFromEitherState() throws {
+    /// "Malformed cull messages change nothing".
+    func testAMalformedCullLeavesTheGateStateUnchangedFromEitherState() throws {
         let running = try loadShim()
         running.run("h.send({ tarmac: 'cull' })")
-        XCTAssertTrue(try running.stillRunning(), "S28: running, no culled key")
+        XCTAssertTrue(try running.stillRunning(), "Malformed cull messages change nothing: running, no culled key")
         running.run("h.send({ tarmac: 'cull', culled: 'true' })")
-        XCTAssertTrue(try running.stillRunning(), "S28: running, culled a string")
+        XCTAssertTrue(try running.stillRunning(), "Malformed cull messages change nothing: running, culled a string")
 
         // The half that carries the weight: from paused, a naive
         // `paused = !!d.culled` would un-pause on the message with no key.
         let paused = try loadShim()
         paused.pause()
         paused.run("h.send({ tarmac: 'cull' })")
-        XCTAssertFalse(try paused.stillRunning(), "S28: paused, no culled key")
+        XCTAssertFalse(try paused.stillRunning(), "Malformed cull messages change nothing: paused, no culled key")
         paused.run("h.send({ tarmac: 'cull', culled: 'true' })")
-        XCTAssertFalse(try paused.stillRunning(), "S28: paused, culled a string")
+        XCTAssertFalse(try paused.stillRunning(), "Malformed cull messages change nothing: paused, culled a string")
     }
 
-    func testS28TheRelaysStillWorkAfterAMalformedCull() throws {
+    /// "Malformed cull messages change nothing".
+    func testTheRelaysStillWorkAfterAMalformedCull() throws {
         let shim = try loadShim()
         shim.run("h.send({ tarmac: 'cull', culled: {} }); window.console.log('alive');")
-        XCTAssertTrue(try shim.hasPosted(["tarmac": "console", "level": "log", "args": ["alive"]]), "S28")
+        XCTAssertTrue(
+            try shim.hasPosted(["tarmac": "console", "level": "log", "args": ["alive"]]),
+            "Malformed cull messages change nothing")
     }
 
     // MARK: - 2609.0003 (#99): the host may post zoom more than once per document
 
-    func test2609_0003S8AZoomArrivingBeforeDOMContentLoadedIsRetainedNotDropped() throws {
+    /// "Zoom sent before DOM ready applies on ready".
+    func testAZoomArrivingBeforeDOMContentLoadedIsRetainedNotDropped() throws {
         let shim = try loadShim(meta: "magnify")
 
         // The negative control: without it "the zoom landed" cannot be told
         // from "the shim applies whatever arrives, whenever".
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
-        XCTAssertTrue(shim.run("h.style.zoom").isUndefined, "2609.0003 S8: applied on arrival")
+        XCTAssertTrue(
+            shim.run("h.style.zoom").isUndefined,
+            "2609.0003 Zoom sent before DOM ready applies on ready: applied on arrival")
 
         shim.run("h.domReady()")
-        XCTAssertEqual(shim.number("h.style.zoom"), 3, "2609.0003 S8: retained")
-        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "2609.0003 S8: ready")
+        XCTAssertEqual(
+            shim.number("h.style.zoom"), 3, "2609.0003 Zoom sent before DOM ready applies on ready: retained")
+        XCTAssertTrue(
+            try shim.hasPosted(Self.ready(meta: "magnify")),
+            "2609.0003 Zoom sent before DOM ready applies on ready: ready")
     }
 
+    /// "Every post-ready zoom is applied".
     /// The premise of the #99 fix: the host re-posts the same constant on a
     /// self-reload, so a shim that ignored everything after the first zoom
     /// would leave the reloaded document unzoomed. The values are distinct
     /// because re-sending 3 and reading 3 cannot tell "applied again" from
     /// "ignored". That a repeat causes no relayout is not shown here — the
-    /// stand-in `style` has no layout behind it (2609.0003 S14, QA).
+    /// stand-in `style` has no layout behind it (2609.0003 "Forged ready logs no second mode line", QA).
     func test2609_0003S9EveryPostReadyZoomIsAppliedNotJustTheFirst() throws {
         let shim = try loadShim(meta: "magnify")
         shim.run("h.domReady()")
         let postedAfterReady = try shim.posted().count
 
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
-        XCTAssertEqual(shim.number("h.style.zoom"), 3, "2609.0003 S9: first")
+        XCTAssertEqual(shim.number("h.style.zoom"), 3, "2609.0003 Every post-ready zoom is applied: first")
         shim.run("h.send({ tarmac: 'zoom', z: 4 })")
-        XCTAssertEqual(shim.number("h.style.zoom"), 4, "2609.0003 S9: second")
+        XCTAssertEqual(shim.number("h.style.zoom"), 4, "2609.0003 Every post-ready zoom is applied: second")
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
-        XCTAssertEqual(shim.number("h.style.zoom"), 3, "2609.0003 S9: third")
+        XCTAssertEqual(shim.number("h.style.zoom"), 3, "2609.0003 Every post-ready zoom is applied: third")
 
-        XCTAssertEqual(try shim.posted().count, postedAfterReady, "2609.0003 S9: a zoom was answered")
+        XCTAssertEqual(
+            try shim.posted().count, postedAfterReady, "2609.0003 Every post-ready zoom is applied: a zoom was answered"
+        )
     }
 
-    func test2609_0003S10ARepeatZoomFromAnySourceButWindowParentIsIgnored() throws {
+    /// "Zoom from a foreign source is ignored".
+    func testARepeatZoomFromAnySourceButWindowParentIsIgnored() throws {
         let shim = try loadShim(meta: "magnify")
         shim.run("h.domReady(); h.send({ tarmac: 'zoom', z: 3 });")
 
         shim.run("h.send({ tarmac: 'zoom', z: 40 }, { nested: 'iframe' })")
-        XCTAssertEqual(shim.number("h.style.zoom"), 3, "2609.0003 S10")
+        XCTAssertEqual(shim.number("h.style.zoom"), 3, "2609.0003 Zoom from a foreign source is ignored")
     }
 
-    // MARK: - the wheel is not a message (2610.0002 S23)
+    // MARK: - the wheel is not a message (2610.0002 "Shim no longer relays scroll messages")
 
+    /// "Shim no longer relays scroll messages".
     /// The web view takes the wheel itself, so a `scroll` from the host is one
     /// more message the shim does not know: it scrolls nothing, and the
     /// listener is still there for the next one.
-    func test2610S23AScrollFromTheHostScrollsNothing() throws {
+    func testAScrollFromTheHostScrollsNothing() throws {
         let shim = try loadShim()
         shim.run("var scrolled = []; window.scrollBy = (dx, dy) => scrolled.push([dx, dy]);")
 
         shim.run("h.send({ tarmac: 'scroll', dx: 4, dy: -9 })")
-        XCTAssertEqual(try shim.count("scrolled"), 0, "2610.0002 S23: scrollBy")
+        XCTAssertEqual(try shim.count("scrolled"), 0, "2610.0002 Shim no longer relays scroll messages: scrollBy")
 
         shim.pause()
         shim.run("window.requestAnimationFrame(() => {});")
-        XCTAssertEqual(try shim.ids("h.pendingFrameIds()"), [], "2610.0002 S23: a cull after it still pauses")
+        XCTAssertEqual(
+            try shim.ids("h.pendingFrameIds()"), [],
+            "2610.0002 Shim no longer relays scroll messages: a cull after it still pauses")
     }
 
-    // MARK: - the root's scroll position is reported (2610.0003 S12, S13, S23–S25)
+    // MARK: - the root's scroll position is reported (2610.0003)
 
     /// A shim loaded into a window whose root is scrolled to 120 of 4800, 840
     /// of it showing: set once the shim has loaded, so what it posts is read
@@ -1058,7 +1177,8 @@ final class CardShimTests: XCTestCase {
 
     private static let triggers = ["h.scroll()", "h.fire('resize', {})", "h.observers[0].callback([])"]
 
-    func test2610S12EachTriggerPostsWhereTheRootIsScrolledTo() throws {
+    /// "Shim posts metrics on scroll and resize".
+    func testEachTriggerPostsWhereTheRootIsScrolledTo() throws {
         let shim = try loadScrolledShim()
         let report: NSDictionary = ["tarmac": "scrolled", "offset": 120, "visible": 840, "total": 4800]
 
@@ -1080,21 +1200,24 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(try reports(shim).last?["offset"] as? Int, 360, "read as it posts")
     }
 
-    func test2610S13TheRootsOwnScrollbarIsHiddenByReady() throws {
+    /// "Shim hides the root scrollbar".
+    func testTheRootsOwnScrollbarIsHiddenByReady() throws {
         let shim = try loadShim()
         shim.run("h.domReady()")
         XCTAssertEqual(shim.run("h.style.scrollbarWidth").toString(), "none")
     }
 
-    func test2610S23ANestedElementsScrollPostsNothing() throws {
+    /// "Element scroll posts nothing".
+    func testANestedElementsScrollPostsNothing() throws {
         let shim = try loadScrolledShim()
         shim.run("h.scroll({ id: 'inner' })")
         XCTAssertEqual(try reports(shim), [])
     }
 
+    /// "Report costs no scheduling".
     /// A culled card must leave no native frame pending (2609.0002): a report
     /// asks for none, and for no timer either, paused or not.
-    func test2610S24AReportCostsNoScheduling() throws {
+    func testAReportCostsNoScheduling() throws {
         let shim = try loadScrolledShim()
         func natives() throws -> [Int] {
             try ["requestAnimationFrame", "setTimeout", "setInterval"].map { try shim.count("h.calls.\($0)") }
@@ -1111,7 +1234,7 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(try reports(shim).count, 6, "a culled card still reports")
     }
 
-    // MARK: - the host scrolls the root to a position (2610.0004 S11, S32, S33)
+    // MARK: - the host scrolls the root to a position (2610.0004)
 
     /// A shim in a window scrolled 12 across, which records what `scrollTo`
     /// is asked for as "left top behavior".
@@ -1125,7 +1248,8 @@ final class CardShimTests: XCTestCase {
         return shim
     }
 
-    func test2610_0004S11AScrollToFromTheHostScrollsTheRootAtOnce() throws {
+    /// "Shim scrolls the window on scrollTo".
+    func testAScrollToFromTheHostScrollsTheRootAtOnce() throws {
         let shim = try loadScrollableShim()
         shim.run("h.send({ tarmac: 'scrollTo', y: 300 })")
         XCTAssertEqual(try shim.strings("scrolledTo"), ["12 300 instant"])
@@ -1134,7 +1258,8 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(try shim.strings("scrolledTo"), ["12 300 instant", "12 0 instant"])
     }
 
-    func test2610_0004S32AScrollToTheShimCannotTrustScrollsNothing() throws {
+    /// "Shim refuses a bad scrollTo message".
+    func testAScrollToTheShimCannotTrustScrollsNothing() throws {
         let shim = try loadScrollableShim()
         shim.run("h.send({ tarmac: 'scrollTo' })")
         for y in ["'300'", "true", "null", "NaN", "Infinity"] {
@@ -1150,7 +1275,8 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(try shim.count("scrolledTo"), 1, "the window does record one it trusts")
     }
 
-    func test2610_0004S33AScrollToCostsNoScheduling() throws {
+    /// "ScrollTo costs no frame or timer when culled".
+    func testAScrollToCostsNoScheduling() throws {
         let shim = try loadScrollableShim()
         func natives() throws -> [Int] {
             try ["requestAnimationFrame", "setTimeout", "setInterval"].map { try shim.count("h.calls.\($0)") }
@@ -1167,12 +1293,14 @@ final class CardShimTests: XCTestCase {
             try shim.strings("scrolledTo"), ["12 300 instant", "12 600 instant"], "a culled card still scrolls")
     }
 
-    func test2610S25AWindowWithNoResizeObserverStillReports() throws {
+    /// 2610.0003 "Shim loads without ResizeObserver".
+    func testAWindowWithNoResizeObserverStillReports() throws {
         let shim = try loadScrolledShim(omitting: "ResizeObserver")
         shim.run("h.scroll(); h.fire('resize', {});")
         XCTAssertEqual(try reports(shim).count, 2)
     }
 
+    /// 2610.0003 "Shim loads without ResizeObserver".
     /// Before the body exists a quirks-mode document has no scrolling
     /// element. A throw here would land in the card's own console.
     func test2610S25ADocumentWithNoScrollingElementPostsNothing() throws {
@@ -1186,9 +1314,9 @@ final class CardShimTests: XCTestCase {
         }
     }
 
-    // MARK: - a document follows the appearance unless it states a scheme (2610.0007 S67–S70)
+    // MARK: - a document follows the appearance unless it states a scheme (2610.0007)
 
-    // What the engine does with the meta is QA (2610.0007 S62–S66):
+    // What the engine does with the meta is QA (2610.0007):
     // JavaScriptCore has no CSS.
 
     private static let headElements =
@@ -1203,18 +1331,24 @@ final class CardShimTests: XCTestCase {
         return shim
     }
 
-    func test2610_0007S67TheShimsFirstActIsOneDefaultSchemeMetaInTheHead() throws {
+    /// "Shim adds a color-scheme meta first".
+    func testTheShimsFirstActIsOneDefaultSchemeMetaInTheHead() throws {
         let shim = try loadShim(head: true)
 
-        XCTAssertEqual(try shim.strings(Self.headElements), [Self.defaultScheme], "2610.0007 S67: the head")
-        XCTAssertEqual(try shim.strings("document.head.before"), [], "2610.0007 S67: what the shim did first")
+        XCTAssertEqual(
+            try shim.strings(Self.headElements), [Self.defaultScheme],
+            "2610.0007 Shim adds a color-scheme meta first: the head")
+        XCTAssertEqual(
+            try shim.strings("document.head.before"), [],
+            "2610.0007 Shim adds a color-scheme meta first: what the shim did first")
     }
 
+    /// "Shim yields to the page's own meta".
     /// The watch is on the root with its subtree: a meta is a child of the
     /// head, not of the root.
-    func test2610_0007S68AnElementThatIsNoSchemeMetaLeavesTheDefaultInPlace() throws {
+    func testAnElementThatIsNoSchemeMetaLeavesTheDefaultInPlace() throws {
         let shim = try loadShimInADocumentWithAHead()
-        XCTAssertEqual(try shim.count("h.watchers"), 1, "2610.0007 S68: one observer")
+        XCTAssertEqual(try shim.count("h.watchers"), 1, "2610.0007 Shim yields to the page's own meta: one observer")
         XCTAssertEqual(shim.flag("h.watchers[0].observed[0].target === document.documentElement"), true, "the root")
         XCTAssertEqual(shim.flag("h.watchers[0].observed[0].options.childList"), true, "childList")
         XCTAssertEqual(shim.flag("h.watchers[0].observed[0].options.subtree"), true, "subtree")
@@ -1228,68 +1362,97 @@ final class CardShimTests: XCTestCase {
             h.parse("style");
             """)
 
-        XCTAssertEqual(shim.flag("document.head.children[0] === scheme"), true, "2610.0007 S68: the default")
-        XCTAssertEqual(try shim.count("document.head.children"), 6, "2610.0007 S68: the head")
-        XCTAssertEqual(shim.flag("h.watchers[0].connected"), true, "2610.0007 S68: still watching")
+        XCTAssertEqual(
+            shim.flag("document.head.children[0] === scheme"), true,
+            "2610.0007 Shim yields to the page's own meta: the default")
+        XCTAssertEqual(
+            try shim.count("document.head.children"), 6, "2610.0007 Shim yields to the page's own meta: the head")
+        XCTAssertEqual(
+            shim.flag("h.watchers[0].connected"), true, "2610.0007 Shim yields to the page's own meta: still watching")
 
         shim.run("h.parse('meta', { name: 'color-scheme', content: 'dark' })")
-        XCTAssertEqual(shim.flag("document.head.children.includes(scheme)"), false, "2610.0007 S68: then the author's")
+        XCTAssertEqual(
+            shim.flag("document.head.children.includes(scheme)"), false,
+            "2610.0007 Shim yields to the page's own meta: then the author's")
     }
 
-    func test2610_0007S68AnAuthorsSchemeMetaInAnyLetterCaseRemovesTheDefaultAndEndsTheWatch() throws {
+    /// "Shim yields to the page's own meta".
+    func testAnAuthorsSchemeMetaInAnyLetterCaseRemovesTheDefaultAndEndsTheWatch() throws {
         for name in ["color-scheme", "Color-Scheme", "COLOR-SCHEME"] {
             let shim = try loadShimInADocumentWithAHead()
-            XCTAssertEqual(shim.flag("h.watchers[0].connected"), true, "2610.0007 S68: watching, \(name)")
+            XCTAssertEqual(
+                shim.flag("h.watchers[0].connected"), true,
+                "2610.0007 Shim yields to the page's own meta: watching, \(name)")
 
             shim.run("h.parse('meta', { name: '\(name)', content: 'light' })")
 
-            XCTAssertEqual(try shim.strings(Self.headElements), ["meta \(name) light"], "2610.0007 S68: the head")
+            XCTAssertEqual(
+                try shim.strings(Self.headElements), ["meta \(name) light"],
+                "2610.0007 Shim yields to the page's own meta: the head")
             XCTAssertEqual(
                 try shim.strings("document.head.changes"), ["append meta", "parse meta", "remove meta"],
-                "2610.0007 S68: \(name)"
+                "2610.0007 Shim yields to the page's own meta: \(name)"
             )
-            XCTAssertEqual(shim.flag("h.watchers[0].connected"), false, "2610.0007 S68: still watching, \(name)")
+            XCTAssertEqual(
+                shim.flag("h.watchers[0].connected"), false,
+                "2610.0007 Shim yields to the page's own meta: still watching, \(name)")
         }
     }
 
+    /// "Shim keeps its meta after load".
     /// The last part is the contract's "a meta that an author's script adds
     /// after the document is parsed is not a statement the default gives way
     /// to": an observer that is still connected would take the default away.
-    func test2610_0007S69DOMContentLoadedEndsTheWatchAndKeepsTheDefault() throws {
+    func testDOMContentLoadedEndsTheWatchAndKeepsTheDefault() throws {
         let shim = try loadShimInADocumentWithAHead()
         XCTAssertEqual(
-            shim.flag("h.watchers[0].connected"), true, "2610.0007 S69: watching while the document is parsed")
+            shim.flag("h.watchers[0].connected"), true,
+            "2610.0007 Shim keeps its meta after load: watching while the document is parsed")
 
         shim.run("h.domReady()")
-        XCTAssertEqual(shim.flag("h.watchers[0].connected"), false, "2610.0007 S69: still watching")
-        XCTAssertEqual(try shim.strings(Self.headElements), [Self.defaultScheme], "2610.0007 S69: the default")
+        XCTAssertEqual(
+            shim.flag("h.watchers[0].connected"), false, "2610.0007 Shim keeps its meta after load: still watching")
+        XCTAssertEqual(
+            try shim.strings(Self.headElements), [Self.defaultScheme],
+            "2610.0007 Shim keeps its meta after load: the default")
 
         shim.run("h.parse('meta', { name: 'color-scheme', content: 'light' })")
-        XCTAssertEqual(shim.flag("document.head.children[0] === scheme"), true, "2610.0007 S69: a late meta")
+        XCTAssertEqual(
+            shim.flag("document.head.children[0] === scheme"), true,
+            "2610.0007 Shim keeps its meta after load: a late meta")
     }
 
+    /// "Shim loads on the old stand-in window".
     /// The document every test outside this section runs in. A throw at load
     /// fails the test through the context's exception handler.
-    func test2610_0007S70ADocumentWithNoHeadLoadsTheShimAsItDidBefore() throws {
+    func testADocumentWithNoHeadLoadsTheShimAsItDidBefore() throws {
         let shim = try loadShim()
         XCTAssertEqual(
             try shim.strings("[typeof document.head, typeof document.createElement, typeof MutationObserver]"),
-            ["undefined", "undefined", "undefined"], "2610.0007 S70: the stand-in of today"
+            ["undefined", "undefined", "undefined"],
+            "2610.0007 Shim loads on the old stand-in window: the stand-in of today"
         )
 
         shim.run("h.domReady()")
-        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "2610.0007 S70: the rest of the shim")
+        XCTAssertTrue(
+            try shim.hasPosted(Self.ready(meta: "magnify")),
+            "2610.0007 Shim loads on the old stand-in window: the rest of the shim")
     }
 
-    func test2610_0007S70AWindowWithNoMutationObserverKeepsTheDefaultAndLoads() throws {
+    /// "Shim loads on the old stand-in window".
+    func testAWindowWithNoMutationObserverKeepsTheDefaultAndLoads() throws {
         let shim = try loadShim(omitting: "MutationObserver", head: true)
-        XCTAssertEqual(try shim.strings(Self.headElements), [Self.defaultScheme], "2610.0007 S70: the head")
+        XCTAssertEqual(
+            try shim.strings(Self.headElements), [Self.defaultScheme],
+            "2610.0007 Shim loads on the old stand-in window: the head")
 
         shim.run("h.domReady()")
-        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "2610.0007 S70: the rest of the shim")
+        XCTAssertTrue(
+            try shim.hasPosted(Self.ready(meta: "magnify")),
+            "2610.0007 Shim loads on the old stand-in window: the rest of the shim")
     }
 
-    // MARK: - the user's fonts as CSS properties (2610.0010 S8–S20)
+    // MARK: - the user's fonts as CSS properties (2610.0010)
 
     private static let fonts = CardFontVariables(interfaceFamily: "Menlo", documentFamily: "Georgia", documentSize: 16)
     private static let otherFonts = CardFontVariables(interfaceFamily: nil, documentFamily: nil, documentSize: 20)
@@ -1312,82 +1475,115 @@ final class CardShimTests: XCTestCase {
         shim.run("h.send({ tarmac: 'fonts', vars: \(vars) })")
     }
 
-    func test2610_0010S8TheShimHoldsTheMarkerOnceAsAComment() throws {
+    /// "Shipped shim holds the marker once".
+    func testTheShimHoldsTheMarkerOnceAsAComment() throws {
         let shim = try source()
-        XCTAssertEqual(shim.components(separatedBy: CardFontVariables.marker).count, 2, "S8: once")
-        XCTAssertTrue(shim.contains("[\(CardFontVariables.marker)][0]"), "S8: alone in the array")
-        XCTAssertTrue(CardFontVariables.marker.hasPrefix("/*"), "S8: a comment")
+        XCTAssertEqual(
+            shim.components(separatedBy: CardFontVariables.marker).count, 2, "Shipped shim holds the marker once: once")
+        XCTAssertTrue(
+            shim.contains("[\(CardFontVariables.marker)][0]"), "Shipped shim holds the marker once: alone in the array")
+        XCTAssertTrue(CardFontVariables.marker.hasPrefix("/*"), "Shipped shim holds the marker once: a comment")
     }
 
-    func test2610_0010S10AFilledShimDeclaresTheThreePropertiesBeforeTheDocumentIsParsed() throws {
+    /// "Filled shim declares one root rule early".
+    func testAFilledShimDeclaresTheThreePropertiesBeforeTheDocumentIsParsed() throws {
         let shim = try loadShim(fonts: Self.fonts)
-        XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 2, "S10: the media sheet and the font sheet")
-        XCTAssertEqual(try shim.count("document.adoptedStyleSheets[1].cssRules"), 1, "S10: one rule")
+        XCTAssertEqual(
+            try shim.count("document.adoptedStyleSheets"), 2,
+            "Filled shim declares one root rule early: the media sheet and the font sheet")
+        XCTAssertEqual(
+            try shim.count("document.adoptedStyleSheets[1].cssRules"), 1,
+            "Filled shim declares one root rule early: one rule")
         XCTAssertEqual(shim.run("document.adoptedStyleSheets[1].cssRules[0].selectorText").toString(), ":root")
         XCTAssertEqual(try declared(shim), try vars(Self.fonts))
     }
 
-    func test2610_0010S11TheFontsGoToTheSheetAndNeverToTheRootsStyleOrAttributes() throws {
+    /// "Shim sets no style or attribute on root".
+    func testTheFontsGoToTheSheetAndNeverToTheRootsStyleOrAttributes() throws {
         let shim = try loadShim(head: true, fonts: Self.fonts)
         sendFonts(shim, Self.otherFonts.json)
 
-        XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S11: the rule holds the message")
         XCTAssertEqual(
-            try shim.strings("Object.keys(h.style)"), ["setProperty"], "S11: the root's style holds no value")
-        XCTAssertEqual(try shim.count("h.rootWrites"), 0, "S11: no write on the root")
-        XCTAssertEqual(try shim.strings(Self.headElements), [Self.defaultScheme], "S11: the head")
+            try declared(shim), try vars(Self.otherFonts),
+            "Shim sets no style or attribute on root: the rule holds the message")
+        XCTAssertEqual(
+            try shim.strings("Object.keys(h.style)"), ["setProperty"],
+            "Shim sets no style or attribute on root: the root's style holds no value")
+        XCTAssertEqual(
+            try shim.count("h.rootWrites"), 0, "Shim sets no style or attribute on root: no write on the root")
+        XCTAssertEqual(
+            try shim.strings(Self.headElements), [Self.defaultScheme],
+            "Shim sets no style or attribute on root: the head")
     }
 
-    func test2610_0010S12ARawShimDeclaresNothing() throws {
+    /// "Raw shim declares nothing".
+    func testARawShimDeclaresNothing() throws {
         let shim = try loadShim(head: true)
-        XCTAssertEqual(try shim.count("h.sheets"), 1, "S12: the media sheet only is made")
-        XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 1, "S12: the media sheet only is adopted")
+        XCTAssertEqual(try shim.count("h.sheets"), 1, "Raw shim declares nothing: the media sheet only is made")
+        XCTAssertEqual(
+            try shim.count("document.adoptedStyleSheets"), 1,
+            "Raw shim declares nothing: the media sheet only is adopted")
         XCTAssertEqual(
             shim.flag("h.sheets.some((s) => s.cssRules.some((r) => r.selectorText === ':root'))"), false,
-            "S12: no font sheet is made")
+            "Raw shim declares nothing: no font sheet is made")
         shim.run("h.domReady()")
-        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "S12: the rest of the shim")
+        XCTAssertTrue(
+            try shim.hasPosted(Self.ready(meta: "magnify")), "Raw shim declares nothing: the rest of the shim")
     }
 
-    func test2610_0010S13AWindowWithNoConstructedStylesheetsLoadsAndStillWorks() throws {
+    /// "Shim without stylesheet support throws nothing".
+    func testAWindowWithNoConstructedStylesheetsLoadsAndStillWorks() throws {
         let shim = try loadShim(omitting: "CSSStyleSheet", fonts: Self.fonts)
         XCTAssertNil(
-            shim.thrown("h.send({ tarmac: 'fonts', vars: { '--tarmac-prose-size': '20px' } })"), "S13: a message")
+            shim.thrown("h.send({ tarmac: 'fonts', vars: { '--tarmac-prose-size': '20px' } })"),
+            "Shim without stylesheet support throws nothing: a message")
         shim.run("h.domReady()")
-        XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "S13: ready")
+        XCTAssertTrue(
+            try shim.hasPosted(Self.ready(meta: "magnify")), "Shim without stylesheet support throws nothing: ready")
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
-        XCTAssertEqual(shim.number("h.style.zoom"), 3, "S13: zoom")
+        XCTAssertEqual(shim.number("h.style.zoom"), 3, "Shim without stylesheet support throws nothing: zoom")
         shim.pause()
-        XCTAssertFalse(try shim.stillRunning(), "S13: cull")
+        XCTAssertFalse(try shim.stillRunning(), "Shim without stylesheet support throws nothing: cull")
     }
 
-    func test2610_0010S14TheFontsBlockRunsAfterTheStartedPostAndBeforeTheFirstListener() throws {
+    /// "Fonts block runs before the first listener".
+    func testTheFontsBlockRunsAfterTheStartedPostAndBeforeTheFirstListener() throws {
         let shim = try loadShim(head: true, fonts: Self.fonts)
-        XCTAssertEqual(try shim.count("h.sheets"), 2, "S14: the media sheet and the font sheet")
         XCTAssertEqual(
-            try shim.strings(Self.headElements), [Self.defaultScheme], "S14: the block added no head element")
-        XCTAssertEqual(try shim.posted().count, 1, "S14: one message by now")
+            try shim.count("h.sheets"), 2,
+            "Fonts block runs before the first listener: the media sheet and the font sheet")
+        XCTAssertEqual(
+            try shim.strings(Self.headElements), [Self.defaultScheme],
+            "Fonts block runs before the first listener: the block added no head element")
+        XCTAssertEqual(try shim.posted().count, 1, "Fonts block runs before the first listener: one message by now")
         XCTAssertEqual(
             shim.run("JSON.stringify(h.sheets[1].atConstruction.posted)").toString(),
             #"[{"tarmac":"started","source":"tarmac-card://doc/card.html?v=1"}]"#,
-            "S14: after started"
+            "Fonts block runs before the first listener: after started"
         )
-        XCTAssertEqual(try shim.strings("h.sheets[1].atConstruction.listeners"), [], "S14: before the first listener")
+        XCTAssertEqual(
+            try shim.strings("h.sheets[1].atConstruction.listeners"), [],
+            "Fonts block runs before the first listener: before the first listener")
     }
 
-    func test2610_0010S17AMessageSetsTheNewValuesAndALaterOneReplacesThem() throws {
+    /// "Fonts message updates the rule values".
+    func testAMessageSetsTheNewValuesAndALaterOneReplacesThem() throws {
         let shim = try loadShim(fonts: Self.fonts)
         sendFonts(shim, "{ '--tarmac-prose-size': '20px' }")
         var expected = try vars(Self.fonts)
         expected["--tarmac-prose-size"] = "20px"
-        XCTAssertEqual(try declared(shim), expected, "S17: one property named")
+        XCTAssertEqual(try declared(shim), expected, "Fonts message updates the rule values: one property named")
 
         sendFonts(shim, Self.otherFonts.json)
-        XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S17: all three named")
-        XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 2, "S17: still one font sheet")
+        XCTAssertEqual(
+            try declared(shim), try vars(Self.otherFonts), "Fonts message updates the rule values: all three named")
+        XCTAssertEqual(
+            try shim.count("document.adoptedStyleSheets"), 2,
+            "Fonts message updates the rule values: still one font sheet")
     }
 
-    func test2610_0010S18AMessageWithNoObjectOfVarsChangesNothing() throws {
+    /// "Bad fonts messages are ignored".
+    func testAMessageWithNoObjectOfVarsChangesNothing() throws {
         let shim = try loadShim(fonts: Self.fonts)
         for bad in ["undefined", "null", "['--tarmac-prose-size']", "'--tarmac-prose-size'", "7"] {
             sendFonts(shim, bad)
@@ -1395,7 +1591,8 @@ final class CardShimTests: XCTestCase {
         }
     }
 
-    func test2610_0010S18AnEntryIsSkippedUnlessItsNameStartsWithTarmacAndItsValueIsAString() throws {
+    /// "Bad fonts messages are ignored".
+    func testAnEntryIsSkippedUnlessItsNameStartsWithTarmacAndItsValueIsAString() throws {
         let shim = try loadShim(fonts: Self.fonts)
         sendFonts(
             shim,
@@ -1408,7 +1605,8 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(try declared(shim), expected)
     }
 
-    func test2610_0010S18AMessageNotFromTheParentIsIgnored() throws {
+    /// "Bad fonts messages are ignored".
+    func testAMessageNotFromTheParentIsIgnored() throws {
         let shim = try loadShim(fonts: Self.fonts)
         shim.run("h.send({ tarmac: 'fonts', vars: { '--tarmac-prose-size': '99px' } }, {})")
         XCTAssertEqual(try declared(shim), try vars(Self.fonts))
@@ -1418,34 +1616,43 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(try raw.count("h.sheets"), 1, "no sheet but the media sheet is made for it")
     }
 
-    func test2610_0010S19AMessageIsAppliedAtOnceAndTheLoadChangesNothingAfterIt() throws {
+    /// "Fonts message before load applies at once".
+    func testAMessageIsAppliedAtOnceAndTheLoadChangesNothingAfterIt() throws {
         for (shim, pageSheets) in [(try loadShim(fonts: Self.fonts), 0), (try loadShim(), 1)] {
             if pageSheets > 0 { shim.run("document.adoptedStyleSheets = [{ page: true }]") }
             sendFonts(shim, Self.otherFonts.json)
-            XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S19: before DOMContentLoaded")
+            XCTAssertEqual(
+                try declared(shim), try vars(Self.otherFonts),
+                "Fonts message before load applies at once: before DOMContentLoaded")
 
             shim.run("h.domReady()")
-            XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S19: after it")
-            XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 2, "S19: the sheets")
+            XCTAssertEqual(
+                try declared(shim), try vars(Self.otherFonts), "Fonts message before load applies at once: after it")
+            XCTAssertEqual(
+                try shim.count("document.adoptedStyleSheets"), 2,
+                "Fonts message before load applies at once: the sheets")
             XCTAssertEqual(
                 shim.flag("document.adoptedStyleSheets[0].page === true"), pageSheets > 0,
-                "S19: the page's own sheet first")
+                "Fonts message before load applies at once: the page's own sheet first")
         }
     }
 
-    func test2610_0010S20AMessageSchedulesNothingLeavesTheZoomAloneAndIsAppliedWhilePaused() throws {
+    /// "Fonts message adds no timer and keeps pause".
+    func testAMessageSchedulesNothingLeavesTheZoomAloneAndIsAppliedWhilePaused() throws {
         let shim = try loadShim(fonts: Self.fonts)
         let scheduled = "JSON.stringify([h.calls, h.pendingFrameIds(), h.pendingTimeoutIds()])"
         let before = shim.run(scheduled).toString()
         sendFonts(shim, Self.otherFonts.json)
         XCTAssertEqual(shim.run(scheduled).toString(), before)
-        XCTAssertEqual(shim.flag("'zoom' in h.style"), false, "S20: no zoom")
-        XCTAssertEqual(try declared(shim), try vars(Self.otherFonts), "S20: live")
+        XCTAssertEqual(shim.flag("'zoom' in h.style"), false, "Fonts message adds no timer and keeps pause: no zoom")
+        XCTAssertEqual(
+            try declared(shim), try vars(Self.otherFonts), "Fonts message adds no timer and keeps pause: live")
 
         shim.pause()
         sendFonts(shim, "{ '--tarmac-prose-size': '18px' }")
-        XCTAssertEqual(try declared(shim)["--tarmac-prose-size"], "18px", "S20: paused")
-        XCTAssertFalse(try shim.stillRunning(), "S20: still paused")
+        XCTAssertEqual(
+            try declared(shim)["--tarmac-prose-size"], "18px", "Fonts message adds no timer and keeps pause: paused")
+        XCTAssertFalse(try shim.stillRunning(), "Fonts message adds no timer and keeps pause: still paused")
     }
 
     // MARK: - the document tells its host that it has started (#213)
@@ -1538,19 +1745,20 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(shim.number("h.style.zoom"), 3, "zoom")
     }
 
+    /// "Malformed cull messages change nothing".
     /// The host pins a real boolean (`CardHostMessageTests`); this is the shim's half.
-    func testS28ANumberIsNoBooleanToTheGateFromEitherState() throws {
+    func testANumberIsNoBooleanToTheGateFromEitherState() throws {
         let running = try loadShim()
         running.run("h.send({ tarmac: 'cull', culled: 1 })")
-        XCTAssertTrue(try running.stillRunning(), "S28: running, culled 1")
+        XCTAssertTrue(try running.stillRunning(), "Malformed cull messages change nothing: running, culled 1")
 
         let paused = try loadShim()
         paused.pause()
         paused.run("h.send({ tarmac: 'cull', culled: 0 })")
-        XCTAssertFalse(try paused.stillRunning(), "S28: paused, culled 0")
+        XCTAssertFalse(try paused.stillRunning(), "Malformed cull messages change nothing: paused, culled 0")
     }
 
-    // MARK: - the data file (2611.0002 S1–S9)
+    // MARK: - the data file (2611.0002)
 
     private let address = "tarmac-card://doc/card.html?v=1"
 
@@ -1565,7 +1773,8 @@ final class CardShimTests: XCTestCase {
         }
     }
 
-    func test2611_0002S1ReadyNamesTheDataFileAndTheDocumentsAddress() throws {
+    /// "Data meta name reaches ready message".
+    func testReadyNamesTheDataFileAndTheDocumentsAddress() throws {
         let shim = try loadShim(meta: "magnify", data: "stats.json")
         shim.run("h.domReady()")
         XCTAssertEqual(
@@ -1575,7 +1784,8 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(try shim.posted().first?["source"] as? String, address, "the source of its started word")
     }
 
-    func test2611_0002S2ReadyNamesNoFileWithNoMetaOrAnEmptyOne() throws {
+    /// "Missing or empty data meta gives null".
+    func testReadyNamesNoFileWithNoMetaOrAnEmptyOne() throws {
         for data in [nil, ""] as [String?] {
             let shim = try loadShim(meta: nil, data: data)
             shim.run("h.domReady()")
@@ -1586,19 +1796,21 @@ final class CardShimTests: XCTestCase {
         }
     }
 
+    /// "Data name making ready over limit is refused".
     /// The shim's bound is the host page's, which is the app's line cap
     /// (`CardHostScriptTests`).
-    func test2611_0002S3TheShimMeasuresAgainstTheLineCapTheAppKeeps() throws {
+    func testTheShimMeasuresAgainstTheLineCapTheAppKeeps() throws {
         let regex = try NSRegularExpression(pattern: #"var messageCap = (\d+);"#)
         let text = try source()
         let match = try XCTUnwrap(regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)))
         XCTAssertEqual(Int(text[try XCTUnwrap(Range(match.range(at: 1), in: text))]), CardConsole.lineCap)
     }
 
+    /// "Data name making ready over limit is refused".
     /// The host page carries a message of at most `CardConsole.lineCap`
     /// characters of JSON. The name is measured as JSON writes it, and a page
     /// that took `console.error` for itself does not keep the line from the app.
-    func test2611_0002S3ANameThatDoesNotFitIsLeftOutAndSaidSo() throws {
+    func testANameThatDoesNotFitIsLeftOutAndSaidSo() throws {
         let fill = "(n, unit) => unit.repeat(n)"
         let room = "\(CardConsole.lineCap) - JSON.stringify({ tarmac: 'ready', meta: null, data: '' }).length"
         for (unit, width) in [("x", 1), ("\\\"", 2)] {
@@ -1627,17 +1839,19 @@ final class CardShimTests: XCTestCase {
         }
     }
 
+    /// "Data name making ready over limit is refused".
     /// A `ready` that its zoom meta alone takes over the bound is dropped by
     /// the host page whatever it names, as it is today: the name is kept, and
     /// the console is told nothing of it.
-    func test2611_0002S3AReadyTooLongWithoutTheNameKeepsItAndSaysNothing() throws {
+    func testAReadyTooLongWithoutTheNameKeepsItAndSaysNothing() throws {
         let shim = try loadShim(meta: String(repeating: "x", count: CardConsole.lineCap), data: "stats.json")
         shim.run("h.domReady()")
         XCTAssertEqual(try readies(shim).first?["data"] as? String, "stats.json")
         XCTAssertEqual(try nameErrors(shim), [])
     }
 
-    func test2611_0002S4BeforeAnyDataTheGlobalIsAnObjectWithNoData() throws {
+    /// "Data is undefined before any delivery".
+    func testBeforeAnyDataTheGlobalIsAnObjectWithNoData() throws {
         let shim = try loadShim()
         XCTAssertEqual(shim.run("typeof window.tarmac").toString(), "object")
         XCTAssertEqual(shim.flag("window.tarmac !== null && window.tarmac.data === undefined"), true)
@@ -1656,7 +1870,8 @@ final class CardShimTests: XCTestCase {
         return value.isString ? value.toString() : nil
     }
 
-    func test2611_0002S5ADeliveryIsParsedKeptAndDispatched() throws {
+    /// "Delivery fires event with parsed detail".
+    func testADeliveryIsParsedKeptAndDispatched() throws {
         let shim = try loadShim()
         listen(shim)
         deliver(shim, #"'{"n":1}'"#)
@@ -1666,7 +1881,8 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(shim.flag("window.tarmac.data === heard[0].detail"), true)
     }
 
-    func test2611_0002S6EachDeliveryIsDispatchedInOrderAndTheLastIsKept() throws {
+    /// "Second delivery replaces the first".
+    func testEachDeliveryIsDispatchedInOrderAndTheLastIsKept() throws {
         let shim = try loadShim()
         listen(shim)
         deliver(shim, #"'{"n":1}'"#)
@@ -1675,7 +1891,8 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(json(shim, "window.tarmac.data"), "[2]")
     }
 
-    func test2611_0002S7ADeliveryFromAnotherWindowIsIgnored() throws {
+    /// "Data from a non-parent window is ignored".
+    func testADeliveryFromAnotherWindowIsIgnored() throws {
         let shim = try loadShim()
         listen(shim)
         deliver(shim, "'[1]'")
@@ -1685,7 +1902,8 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(json(shim, "window.tarmac.data"), "[1]")
     }
 
-    func test2611_0002S8ATextThatIsNoStringOrNoJSONIsDroppedQuietly() throws {
+    /// "Bad delivery text is ignored".
+    func testATextThatIsNoStringOrNoJSONIsDroppedQuietly() throws {
         let shim = try loadShim()
         listen(shim)
         deliver(shim, "'[1]'")
@@ -1698,8 +1916,9 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(shim.number("heard.length"), 1, "no text")
     }
 
+    /// "Bad delivery text is ignored".
     /// A listener that throws is the page's error, not the shim's.
-    func test2611_0002S8AListenerThatThrowsDoesNotBreakTheNextDelivery() throws {
+    func testAListenerThatThrowsDoesNotBreakTheNextDelivery() throws {
         let shim = try loadShim()
         shim.run("window.addEventListener('tarmac:data', () => { throw new Error('boom'); })")
         listen(shim)
@@ -1708,7 +1927,8 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(json(shim, "window.tarmac.data"), "[2]")
     }
 
-    func test2611_0002S9APageThatTookTheGlobalKeepsIt() throws {
+    /// "Page own tarmac object is kept".
+    func testAPageThatTookTheGlobalKeepsIt() throws {
         let shim = try loadShim()
         listen(shim)
         shim.run("window.tarmac = { mine: true }")
@@ -1717,7 +1937,7 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(json(shim, "window.tarmac"), #"{"mine":true}"#)
     }
 
-    // MARK: - events (2611.0003 S35–S40)
+    // MARK: - events (2611.0003)
 
     private func listenForEvents(_ shim: Shim) {
         shim.run("var events = []; window.addEventListener('tarmac:push', (e) => events.push(e));")
@@ -1732,7 +1952,8 @@ final class CardShimTests: XCTestCase {
         try shim.posted().filter { $0["tarmac"] as? String == "console" }
     }
 
-    func test2611_0003S35EachTextIsParsedAndDispatchedInOrder() throws {
+    /// "Batch fires events in order".
+    func testEachTextIsParsedAndDispatchedInOrder() throws {
         let shim = try loadShim()
         listenForEvents(shim)
         sendEvents(shim, #"['{"n":1}', '{"n":2}']"#)
@@ -1740,9 +1961,10 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(json(shim, "events.map((e) => e.detail)"), #"[{"n":1},{"n":2}]"#)
     }
 
+    /// "Bad JSON text gives one console error".
     /// The line goes through the shim's own relay: a page that took
     /// `console.error` for itself does not keep it from the app (choice 17).
-    func test2611_0003S36ATextThatIsNoJSONIsOneErrorLineAndTheRestAreDispatched() throws {
+    func testATextThatIsNoJSONIsOneErrorLineAndTheRestAreDispatched() throws {
         let shim = try loadShim()
         listenForEvents(shim)
         shim.run("window.console.error = function () {}")
@@ -1754,7 +1976,8 @@ final class CardShimTests: XCTestCase {
         )
     }
 
-    func test2611_0003S37EventsFromAnotherWindowAreIgnored() throws {
+    /// "Events from another source are ignored".
+    func testEventsFromAnotherWindowAreIgnored() throws {
         let shim = try loadShim()
         listenForEvents(shim)
         sendEvents(shim, "['[1]']", from: "{}")
@@ -1764,7 +1987,8 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(json(shim, "events.map((e) => e.detail)"), "[[3]]")
     }
 
-    func test2611_0003S38AnEventLeavesTheDataAsItWas() throws {
+    /// "Events leave window data unchanged".
+    func testAnEventLeavesTheDataAsItWas() throws {
         let shim = try loadShim()
         listen(shim)
         listenForEvents(shim)
@@ -1784,10 +2008,11 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(none.flag("window.tarmac.data === undefined"), true)
     }
 
+    /// "Throwing listener does not stop the batch".
     /// The stand-in's `dispatchEvent` lets a listener's error out, as WebKit's
     /// does not: this is the shim's own guard. One listener records and then
     /// throws, so a text after the first is heard only past that guard.
-    func test2611_0003S39AListenerThatThrowsDoesNotStopTheNextText() throws {
+    func testAListenerThatThrowsDoesNotStopTheNextText() throws {
         let shim = try loadShim()
         shim.run(
             "var events = []; window.addEventListener('tarmac:push', (e) => { events.push(e); throw new Error('boom'); });"
@@ -1796,9 +2021,10 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(json(shim, "events.map((e) => e.detail)"), "[[1],[2]]")
     }
 
+    /// "Malformed texts give no event and no throw".
     /// `'12'` is a string that would iterate into two texts of JSON; `1` and
     /// `null` are what `JSON.parse` would take after coercing them.
-    func test2611_0003S40TextsThatAreNoArrayOrEntriesThatAreNoStringGiveNothing() throws {
+    func testTextsThatAreNoArrayOrEntriesThatAreNoStringGiveNothing() throws {
         let shim = try loadShim()
         listenForEvents(shim)
         for texts in ["'12'", "'[1]'", "undefined", "null", "3", "{ 0: '[1]', length: 1 }"] {
@@ -1812,7 +2038,7 @@ final class CardShimTests: XCTestCase {
         XCTAssertEqual(try consoleEntries(shim), [])
     }
 
-    // MARK: - list markers (2611.0019 S15, S16)
+    // MARK: - list markers (2611.0019)
 
     /// One plain `li` for the marking pass, and a `getComputedStyle` that
     /// knows one rule of the cascade: a marked item is `none` once a sheet
@@ -1850,15 +2076,18 @@ final class CardShimTests: XCTestCase {
         return shim
     }
 
-    func test2611_0019S15AMagnifiedCardMarksAPlainItem() throws {
+    /// "Missing native API leaves the page untouched".
+    func testAMagnifiedCardMarksAPlainItem() throws {
         let shim = try loadShimWithAListItem()
         shim.run("h.domReady()")
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
         XCTAssertEqual(
-            shim.run("h.li.getAttribute('data-tarmac-marker')").toString(), "disc", "S15: the control is marked")
+            shim.run("h.li.getAttribute('data-tarmac-marker')").toString(), "disc",
+            "Missing native API leaves the page untouched: the control is marked")
     }
 
-    func test2611_0019S15WithoutANativeTheZoomStillAppliesAndNothingIsMarked() throws {
+    /// "Missing native API leaves the page untouched".
+    func testWithoutANativeTheZoomStillAppliesAndNothingIsMarked() throws {
         let removals = [
             "CSSStyleSheet": "delete globalThis.CSSStyleSheet",
             "adoptedStyleSheets": "delete document.adoptedStyleSheets",
@@ -1870,34 +2099,47 @@ final class CardShimTests: XCTestCase {
             let shim = try loadShimWithAListItem()
             shim.run(removal)
             shim.run("h.domReady()")
-            XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "S15 \(native): ready")
+            XCTAssertTrue(
+                try shim.hasPosted(Self.ready(meta: "magnify")),
+                "Missing native API leaves the page untouched \(native): ready")
             let posts = try shim.posted().count
             let watchers = try shim.count("h.watchers")
             let sheets = try shim.count("h.sheets")
 
             shim.run("h.send({ tarmac: 'zoom', z: 3 })")
 
-            XCTAssertEqual(shim.number("h.style.zoom"), 3, "S15 \(native): zoom")
-            XCTAssertEqual(try shim.posted().count, posts, "S15 \(native): nothing posted")
-            XCTAssertEqual(shim.flag("h.li.hasAttribute('data-tarmac-marker')"), false, "S15 \(native): no mark")
-            XCTAssertEqual(try shim.count("h.watchers"), watchers, "S15 \(native): no observer")
-            XCTAssertEqual(try shim.count("h.sheets"), sheets, "S15 \(native): no sheet")
+            XCTAssertEqual(
+                shim.number("h.style.zoom"), 3, "Missing native API leaves the page untouched \(native): zoom")
+            XCTAssertEqual(
+                try shim.posted().count, posts, "Missing native API leaves the page untouched \(native): nothing posted"
+            )
+            XCTAssertEqual(
+                shim.flag("h.li.hasAttribute('data-tarmac-marker')"), false,
+                "Missing native API leaves the page untouched \(native): no mark")
+            XCTAssertEqual(
+                try shim.count("h.watchers"), watchers,
+                "Missing native API leaves the page untouched \(native): no observer")
+            XCTAssertEqual(
+                try shim.count("h.sheets"), sheets, "Missing native API leaves the page untouched \(native): no sheet")
         }
     }
 
-    func test2611_0019S16AZoomOf1MakesNoObserverAndNoSheet() throws {
+    /// "Only a valid zoom makes one observer".
+    func testAZoomOf1MakesNoObserverAndNoSheet() throws {
         let shim = try loadShimWithAListItem()
         shim.run("h.domReady()")
         shim.run("h.send({ tarmac: 'zoom', z: 1 })")
-        XCTAssertEqual(try shim.count("h.watchers"), 1, "S16: the colour-scheme observer only")
-        XCTAssertEqual(try shim.count("h.sheets"), 1, "S16: the media sheet only")
+        XCTAssertEqual(
+            try shim.count("h.watchers"), 1, "Only a valid zoom makes one observer: the colour-scheme observer only")
+        XCTAssertEqual(try shim.count("h.sheets"), 1, "Only a valid zoom makes one observer: the media sheet only")
     }
 
-    func test2611_0019S16AMagnifiedCardWatchesTheRootOnceForAddedItems() throws {
+    /// "Only a valid zoom makes one observer".
+    func testAMagnifiedCardWatchesTheRootOnceForAddedItems() throws {
         let shim = try loadShimWithAListItem()
         shim.run("h.domReady()")
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
-        XCTAssertEqual(try shim.count("h.watchers"), 2, "S16: one more observer")
+        XCTAssertEqual(try shim.count("h.watchers"), 2, "Only a valid zoom makes one observer: one more observer")
         XCTAssertEqual(
             shim.flag(
                 "h.watchers[1].observed.length === 1 && h.watchers[1].observed[0].target === document.documentElement"),
@@ -1906,23 +2148,30 @@ final class CardShimTests: XCTestCase {
             shim.flag(
                 "h.watchers[1].observed[0].options.childList === true && h.watchers[1].observed[0].options.subtree === true"
             ), true)
-        XCTAssertEqual(try shim.count("h.sheets"), 2, "S16: one marker sheet")
+        XCTAssertEqual(try shim.count("h.sheets"), 2, "Only a valid zoom makes one observer: one marker sheet")
 
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
-        XCTAssertEqual(try shim.count("h.watchers"), 2, "S16: no second observer")
-        XCTAssertEqual(try shim.count("h.sheets"), 2, "S16: no second marker sheet")
+        XCTAssertEqual(try shim.count("h.watchers"), 2, "Only a valid zoom makes one observer: no second observer")
+        XCTAssertEqual(try shim.count("h.sheets"), 2, "Only a valid zoom makes one observer: no second marker sheet")
     }
 
-    func test2611_0019S24AZoomHeldUntilReadyStillMarks() throws {
+    /// "Zoom posted before ready marks items after ready".
+    func testAZoomHeldUntilReadyStillMarks() throws {
         let shim = try loadShimWithAListItem()
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
-        XCTAssertEqual(shim.flag("h.li.hasAttribute('data-tarmac-marker')"), false, "S24: held, not applied")
+        XCTAssertEqual(
+            shim.flag("h.li.hasAttribute('data-tarmac-marker')"), false,
+            "Zoom posted before ready marks items after ready: held, not applied")
         shim.run("h.domReady()")
-        XCTAssertEqual(shim.number("h.style.zoom"), 3, "S24: applied at ready")
-        XCTAssertEqual(shim.run("h.li.getAttribute('data-tarmac-marker')").toString(), "disc", "S24: marked at ready")
+        XCTAssertEqual(
+            shim.number("h.style.zoom"), 3, "Zoom posted before ready marks items after ready: applied at ready")
+        XCTAssertEqual(
+            shim.run("h.li.getAttribute('data-tarmac-marker')").toString(), "disc",
+            "Zoom posted before ready marks items after ready: marked at ready")
     }
 
-    func test2611_0019S26AFailureInTheObserverStaysInTheShim() throws {
+    /// "Throwing getComputedStyle breaks nothing in the observer".
+    func testAFailureInTheObserverStaysInTheShim() throws {
         let shim = try loadShimWithAListItem()
         shim.run("h.domReady()")
         shim.run("h.send({ tarmac: 'zoom', z: 3 })")
@@ -1930,35 +2179,48 @@ final class CardShimTests: XCTestCase {
         shim.run("globalThis.getComputedStyle = () => { throw new Error('style') }")
         shim.run(
             "h.parse('li', { nodeType: 1, isConnected: true, hasAttribute: () => false, querySelectorAll: () => [] })")
-        XCTAssertEqual(try shim.posted().count, posts, "S26: nothing posted")
+        XCTAssertEqual(
+            try shim.posted().count, posts, "Throwing getComputedStyle breaks nothing in the observer: nothing posted")
     }
 
-    func test2611_0019S16AZoomThatIsNoMagnificationMakesNoObserver() throws {
+    /// "Only a valid zoom makes one observer".
+    func testAZoomThatIsNoMagnificationMakesNoObserver() throws {
         for zoom in ["0", "NaN", "Infinity", "-3"] {
             let shim = try loadShimWithAListItem()
             shim.run("h.domReady()")
             shim.run("h.send({ tarmac: 'zoom', z: \(zoom) })")
-            XCTAssertEqual(try shim.count("h.watchers"), 1, "S16 zoom \(zoom)")
-            XCTAssertEqual(shim.flag("h.li.hasAttribute('data-tarmac-marker')"), false, "S16 zoom \(zoom)")
+            XCTAssertEqual(try shim.count("h.watchers"), 1, "Only a valid zoom makes one observer zoom \(zoom)")
+            XCTAssertEqual(
+                shim.flag("h.li.hasAttribute('data-tarmac-marker')"), false,
+                "Only a valid zoom makes one observer zoom \(zoom)")
         }
     }
 
-    func test2611_0019S27AFailureInThePassStaysInTheShimOnBothPaths() throws {
+    /// "Throwing getComputedStyle breaks nothing on the main pass".
+    func testAFailureInThePassStaysInTheShimOnBothPaths() throws {
         for held in [false, true] {
             let shim = try loadShimWithAListItem()
             shim.run("globalThis.getComputedStyle = () => { throw new Error('style') }")
             if !held { shim.run("h.domReady()") }
             shim.run("h.send({ tarmac: 'zoom', z: 3 })")
             if held { shim.run("h.domReady()") }
-            XCTAssertEqual(shim.number("h.style.zoom"), 3, "S27 held \(held): zoom")
-            XCTAssertTrue(try shim.hasPosted(Self.ready(meta: "magnify")), "S27 held \(held): ready")
-            XCTAssertEqual(try shim.posted().count, 2, "S27 held \(held): started and ready, nothing more")
+            XCTAssertEqual(
+                shim.number("h.style.zoom"), 3,
+                "Throwing getComputedStyle breaks nothing on the main pass held \(held): zoom")
+            XCTAssertTrue(
+                try shim.hasPosted(Self.ready(meta: "magnify")),
+                "Throwing getComputedStyle breaks nothing on the main pass held \(held): ready")
+            XCTAssertEqual(
+                try shim.posted().count, 2,
+                "Throwing getComputedStyle breaks nothing on the main pass held \(held): started and ready, nothing more"
+            )
         }
     }
 
-    // MARK: - the media cap (2611.0023 S19, S20)
+    // MARK: - the media cap (2611.0023)
 
-    func test2611_0023S19WithoutTheMediaSheetTheRestOfTheShimStillRuns() throws {
+    /// "Missing or failing sheet APIs break nothing".
+    func testWithoutTheMediaSheetTheRestOfTheShimStillRuns() throws {
         let cases: [(String, Shim)] = [
             ("no CSSStyleSheet", try loadShim(omitting: "CSSStyleSheet")),
             ("no adoptedStyleSheets", try loadShim(before: "delete document.adoptedStyleSheets")),
@@ -1970,19 +2232,24 @@ final class CardShimTests: XCTestCase {
         for (name, shim) in cases {
             shim.run("h.domReady()")
             XCTAssertEqual(
-                try shim.posted().map { $0["tarmac"] as? String }, ["started", "ready"], "S19 \(name): posted")
+                try shim.posted().map { $0["tarmac"] as? String }, ["started", "ready"],
+                "Missing or failing sheet APIs break nothing \(name): posted")
             shim.run("h.send({ tarmac: 'zoom', z: 3 })")
-            XCTAssertEqual(shim.number("h.style.zoom"), 3, "S19 \(name): zoom")
-            XCTAssertEqual(try shim.posted().count, 2, "S19 \(name): nothing more posted")
+            XCTAssertEqual(shim.number("h.style.zoom"), 3, "Missing or failing sheet APIs break nothing \(name): zoom")
+            XCTAssertEqual(
+                try shim.posted().count, 2, "Missing or failing sheet APIs break nothing \(name): nothing more posted")
         }
         let refused = cases[2].1
-        XCTAssertEqual(try refused.count("h.refused"), 1, "S19: one throw")
-        XCTAssertEqual(try declared(refused), try vars(Self.fonts), "S19: the font sheet")
+        XCTAssertEqual(try refused.count("h.refused"), 1, "Missing or failing sheet APIs break nothing: one throw")
+        XCTAssertEqual(
+            try declared(refused), try vars(Self.fonts), "Missing or failing sheet APIs break nothing: the font sheet")
     }
 
-    func test2611_0023S20ARawShimAdoptsTheMediaSheetAtBoot() throws {
+    /// "Boot sheet holds exactly the two cap rules".
+    func testARawShimAdoptsTheMediaSheetAtBoot() throws {
         let shim = try loadShim()
-        XCTAssertEqual(try shim.count("document.adoptedStyleSheets"), 1, "S20: one sheet")
+        XCTAssertEqual(
+            try shim.count("document.adoptedStyleSheets"), 1, "Boot sheet holds exactly the two cap rules: one sheet")
         let rules = """
             :where(svg[viewBox], img, video, canvas) { max-width: min(100%, 1080px); object-fit: contain; }
             :where(img[width], svg[viewBox][width], video[width]) { height: auto; }

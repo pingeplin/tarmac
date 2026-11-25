@@ -31,8 +31,8 @@ final class ThemeFolderTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: path)
     }
 
-    /// S27 — the call returns: the pipe is not read or waited on.
-    func testS27OnlyTheRegularFilesOfTheFolderAreRead() throws {
+    /// "Folder read keeps only the right files" — the call returns: the pipe is not read or waited on.
+    func testOnlyTheRegularFilesOfTheFolderAreRead() throws {
         let outside = root.appendingPathComponent("outside").path
         try text.write(to: URL(fileURLWithPath: outside))
         try write(text, "Dracula")
@@ -65,9 +65,9 @@ final class ThemeFolderTests: XCTestCase {
         XCTAssertEqual(files.count, 7)
     }
 
-    /// S27 — what cannot be opened and is no file gives nothing either: it
+    /// "Folder read keeps only the right files" — what cannot be opened and is no file gives nothing either: it
     /// is not a theme file that cannot be read.
-    func testS27WhatIsNoFileGivesNothingAlsoWhenItCannotBeOpened() throws {
+    func testWhatIsNoFileGivesNothingAlsoWhenItCannotBeOpened() throws {
         try write(text, "Dracula")
         let socket = try DevSocket.claim(path: path("Socket")).get()
         defer { socket.close() }
@@ -79,24 +79,24 @@ final class ThemeFolderTests: XCTestCase {
         XCTAssertEqual(ThemeFolder.files(at: folder), [ThemeLibrary.File(name: "Dracula", contents: .success(text))])
     }
 
-    /// S28
-    func testS28AFolderThatIsNotThereHasNoFilesAndIsNotMade() throws {
+    /// "Missing or unlistable folder gives no files"
+    func testAFolderThatIsNotThereHasNoFilesAndIsNotMade() throws {
         let missing = root.appendingPathComponent("missing").path
 
         XCTAssertEqual(ThemeFolder.files(at: missing), [])
         XCTAssertFalse(FileManager.default.fileExists(atPath: missing))
     }
 
-    /// S28
-    func testS28APathThatIsAFileHasNoFiles() throws {
+    /// "Missing or unlistable folder gives no files"
+    func testAPathThatIsAFileHasNoFiles() throws {
         try write(text, "Dracula")
 
         XCTAssertEqual(ThemeFolder.files(at: path("Dracula")), [])
         XCTAssertEqual(FileManager.default.contents(atPath: path("Dracula")), text)
     }
 
-    /// S28
-    func testS28AFolderThatCannotBeListedHasNoFiles() throws {
+    /// "Missing or unlistable folder gives no files"
+    func testAFolderThatCannotBeListedHasNoFiles() throws {
         try write(text, "Dracula")
         try permissions(0o000, folder)
         defer { try? permissions(0o755, folder) }
@@ -104,8 +104,8 @@ final class ThemeFolderTests: XCTestCase {
         XCTAssertEqual(ThemeFolder.files(at: folder), [])
     }
 
-    /// S29
-    func testS29AChangedFileGivesAnotherLibrary() throws {
+    /// "Folder read builds a library that sees edits"
+    func testAChangedFileGivesAnotherLibrary() throws {
         try write(text, "Dracula")
         let first = ThemeLibrary(files: ThemeFolder.files(at: folder))
         XCTAssertEqual(

@@ -69,11 +69,12 @@ final class CardBoxTests: XCTestCase {
         XCTAssertEqual(odd.body.height, 298 * 0.37, accuracy: 1e-9)
     }
 
+    /// 2610.0003 "Shown body shrinks at low zoom".
     /// A border held at one device pixel leaves the body less room than its
     /// container takes, and the content area cuts the rest off. A border that
     /// rounds down far enough leaves it more, and the container is all there
     /// is to show.
-    func test2610S40TheShownBodyIsTheBodysContainerCutToTheContentArea() {
+    func testTheShownBodyIsTheBodysContainerCutToTheContentArea() {
         XCTAssertEqual(screen(0.5, backing: 1).shownBody, CGRect(x: 0, y: 15, width: 233, height: 148))
         XCTAssertEqual(screen(0.2, backing: 1).shownBody, CGRect(x: 0, y: 6, width: 92, height: 58))
         XCTAssertEqual(screen(1.5, backing: 1).shownBody, CGRect(x: 0, y: 45, width: 702, height: 447))
@@ -85,7 +86,8 @@ final class CardBoxTests: XCTestCase {
         }
     }
 
-    func test2610S40AHeaderThatFillsTheCardLeavesNoBodyToShow() {
+    /// 2610.0003 "Shown body shrinks at low zoom".
+    func testAHeaderThatFillsTheCardLeavesNoBodyToShow() {
         let box = screen(1, card: CGSize(width: 100, height: 20))
         XCTAssertEqual(box.shownBody, CGRect(x: 0, y: 18, width: 98, height: 0))
     }

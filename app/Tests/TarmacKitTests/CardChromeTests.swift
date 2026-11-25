@@ -7,39 +7,39 @@ import XCTest
 /// (signalled outside the border — header tint/shadow for prime, halo +
 /// `✚ now` meta for fresh), and dead outranks the ring.
 ///
-/// Scenario IDs below are 2606.0006's (they supersede 2606.0005's S1–S10 labels
-/// on this file); the extra tests past S5 are retained regression guards.
+/// Scenario titles below are 2606.0006's (they supersede 2606.0005's scenario labels
+/// on this file); the extra tests past "Border role matches inputs in all 64 states" are retained regression guards.
 final class CardChromeTests: XCTestCase {
     // MARK: - Happy path
 
-    /// S1 (the behaviour change): a fresh card that is not selected draws the
+    /// "Fresh card without focus has a plain border" (the behaviour change): a fresh card that is not selected draws the
     /// plain line — NOT the old agent edge. It signals freshness only via its
     /// halo + `✚ now` meta, applied outside CardChrome.
     func testFreshNotSelectedIsPlain() {
         XCTAssertEqual(CardChrome.borderRole(CardChrome.State(fresh: true)), .plain)
     }
 
-    /// S2 (2606.0005 regression guard): the selected card shows the teal ring.
+    /// "Active card keeps the focus border" (2606.0005 regression guard): the selected card shows the teal ring.
     func testSelectedIsTheRing() {
         XCTAssertEqual(CardChrome.borderRole(CardChrome.State(selected: true)), .focus)
     }
 
     // MARK: - Edge cases
 
-    /// S3: selection outranks fresh — fresh is inert on the border, so
+    /// "Active fresh card shows the focus border": selection outranks fresh — fresh is inert on the border, so
     /// `fresh + selected` is the plain ring, not anything fresh-tinted.
     func testSelectedOutranksFresh() {
         XCTAssertEqual(CardChrome.borderRole(CardChrome.State(fresh: true, selected: true)), .focus)
     }
 
-    /// S4: a dead card keeps its muted border even while selected.
+    /// "Selected dead card keeps the muted border": a dead card keeps its muted border even while selected.
     func testDeadSelectedIsMuted() {
         XCTAssertEqual(CardChrome.borderRole(CardChrome.State(dead: true, selected: true)), .muted)
     }
 
-    // MARK: - S5: the invariant, exhaustive over all 16 states
+    // MARK: - "Border role matches inputs in all 64 states": the invariant, exhaustive over all 16 states
 
-    /// S5: for every one of the 2^4 input combinations, the resting role equals
+    /// "Border role matches inputs in all 64 states": for every one of the 2^4 input combinations, the resting role equals
     /// the role computed independently from the inputs. The expected side is
     /// derived from the booleans (never read back from `borderRole`), so the test
     /// cannot pass by mirroring the implementation. This one positive equality

@@ -118,7 +118,7 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
-    /// 2611.0002 S34.
+    /// 2611.0002 "Swift encoder matches Rust bytes".
     func testDataFile() {
         // Msg::DataFile { board_id: "board-0", path: "/a/dash.html", file: Some("/a/stats.json") }
         // — conformance vector 14.
@@ -140,7 +140,7 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
-    /// 2611.0003 S2. The spec's vectors 16 and 17: the Rust side's capture
+    /// 2611.0003 "Push and doc event vectors survive Swift codec". The spec's vectors 16 and 17: the Rust side's capture
     /// of them is `tarmac-protocol`'s own vector test.
     func testPushAndDocEvent() {
         // Msg::Push { path: "/a/dash.html", value: "{\"n\":1}" } — conformance vector 16.
@@ -161,7 +161,7 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
-    /// 2611.0009 S8. The spec's vectors 20 to 24: the Rust side's capture
+    /// 2611.0009 "Report wire frames match in both codecs". The spec's vectors 20 to 24: the Rust side's capture
     /// of them is `tarmac-protocol`'s own vector test.
     func testReportTermReportAndTypedInput() {
         // Msg::Report { term_id: "t1", kind: "blocked", text: Some("ok?") } — conformance vector 20.
@@ -206,7 +206,7 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
-    /// 2611.0007 S5. The spec's vectors 18 and 19: the Rust side's capture
+    /// 2611.0007 "Term records and succeeds survive both codecs". The spec's vectors 18 and 19: the Rust side's capture
     /// of them is `tarmac-protocol`'s own vector test.
     func testTermRecordsAndSucceeds() {
         // Msg::Restore { docs: [], tiles: [], board: None, board_id: None, live_terms: [],
@@ -234,7 +234,7 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
-    /// 2611.0011 S12. The spec's vectors 25 to 27: the Rust side's capture
+    /// 2611.0011 "Resume wire frames match in both codecs". The spec's vectors 25 to 27: the Rust side's capture
     /// of them is `tarmac-protocol`'s own vector test.
     func testResumeAndTheResumeRecord() {
         // Msg::Resume { term_id: "t1", cmd: Some("claude --resume ab-12") } — conformance vector 25.
@@ -266,7 +266,7 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
-    /// 2611.0015 S10. The spec's vectors 36 and 37: the Rust side's capture
+    /// 2611.0015 "Resume push wire frames match in both codecs". The spec's vectors 36 and 37: the Rust side's capture
     /// of them is `tarmac-protocol`'s own vector test.
     func testTermResume() {
         // Msg::TermResume { term_id: "t1", cmd: Some("claude --resume ab-12") } — conformance vector 36.
@@ -285,7 +285,7 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
-    /// 2611.0016 S23. The spec's vectors 38 to 43: the Rust side's capture
+    /// 2611.0016 "Conformance vectors match in both codecs". The spec's vectors 38 to 43: the Rust side's capture
     /// of them is `tarmac-protocol`'s own vector test.
     func testTermNew() {
         // Msg::TermNew { req_id: None, cmd: "echo hi", cwd: "/tmp", term_id: Some("t1"), board_id: None } — conformance vector 38.
@@ -333,7 +333,7 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
-    /// 2611.0013 S15. The spec's vectors 28 to 30: the Rust side's capture
+    /// 2611.0013 "Inbox wire frames match in both codecs". The spec's vectors 28 to 30: the Rust side's capture
     /// of them is `tarmac-protocol`'s own vector test.
     func testThePlaceOfAReportAndTheBoardOfABellAndAnExit() {
         // Msg::TermReport { term_id: "t1", kind: Some("blocked"), text: None, at_ms: Some(1700000000000),
@@ -368,7 +368,7 @@ final class RustEncoderParityTests: XCTestCase {
         )
     }
 
-    /// 2611.0012 S15. The spec's vectors 31 to 35, captured by `tarmac-protocol`'s
+    /// 2611.0012 "Events wire frames match in both codecs". The spec's vectors 31 to 35, captured by `tarmac-protocol`'s
     /// own vector tests.
     func testTheFactsForScripts() {
         // Msg::Subscribe { kinds: Some(["exit", "report"]), term_id: Some("t1") } — conformance vector 31.
@@ -739,7 +739,8 @@ final class RustEncoderParityTests: XCTestCase {
         assertParity(.bell(termID: "t1"), "82 a1 74 a4 62 65 6c 6c a7 74 65 72 6d 5f 69 64 a2 74 31")
     }
 
-    func test2611_0024S6DocTileSidebarKeys() {
+    /// 2611.0024 "Swift encoder writes the bytes Rust writes".
+    func testDocTileSidebarKeys() {
         // Msg::Layout { dock: [], tiles: [{doc, /a.md, sidebar_w: 300.5,
         //   sidebar_open: false}], board: None, board_id: None }
         assertParity(

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// The ⌘Q guard's QUITTING scenarios (spec 2609.0018, issue #183): S15 (a hold
-// hides, then quits on release), S16 (two taps within 1 s quit) and S17 (a
+// The ⌘Q guard's QUITTING scenarios (spec 2609.0018, issue #183): "Held Cmd-Q hides windows then quits" (a hold
+// hides, then quits on release), "Two quick Cmd-Q taps quit on release" (two taps within 1 s quit) and "Stale Cmd-Q press quits at once" (a
 // stale press quits at once). Each ends the app, so each is one `CASE` per
 // fresh `make run`. The cases that leave the app running are in `smoke.mjs`.
 //

@@ -340,7 +340,7 @@ fn shelf_loose_and_term_id_survive_daemon_restart() {
     );
 }
 
-// Spec 2611.0024 S16: a doc tile's sidebar width and open state survive a
+// Spec 2611.0024 "Sidebar keys survive daemon restart": a doc tile's sidebar width and open state survive a
 // daemon restart.
 #[test]
 fn sidebar_keys_survive_daemon_restart() {
