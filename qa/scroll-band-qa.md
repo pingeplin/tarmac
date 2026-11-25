@@ -5,9 +5,9 @@
 > `scroll-band-probe.html`, which listens for the relay's message, no longer
 > hears one. The band check lives on in [`native-wheel-qa.md`](native-wheel-qa.md).
 
-Manual checklist for **S10 [Q]** and the `docs/coding-style.md` §1.3 exception-2
-discharge owed by the `HtmlCard` wheel-relay wiring. The kit scenarios (S1–S7,
-S9) are covered by `desktop/src/kit/cardZoom.test.ts`; this file covers what a
+Manual checklist for **"Non-integer zoom scroll shows no white band" [Q]** and the `docs/coding-style.md` §1.3 exception-2
+discharge owed by the `HtmlCard` wheel-relay wiring. The kit scenarios (from "Whole delta passes through with no carry"
+to "Carry stays under one pixel") are covered by `desktop/src/kit/cardZoom.test.ts`; this file covers what a
 unit test cannot see — that the shipped wiring sends whole pixels, and that the
 band is gone on real hardware.
 
@@ -39,12 +39,12 @@ future runner has it — an earlier draft pointed at `.dev/`, which is gitignore
 | # | Scenario | What to do | Pass |
 |---|---|---|---|
 | 1 | wiring sends integers | scroll the `scroll-band-probe.html` card; read the overlay | `allInteger=true`, `fractional=0` |
-| 2 | S10 — no band | scroll continuously ≥ 30 s **including direction reversals** | no white band at either edge, at any point |
-| 3 | S4 observed | drag **as slowly as you can** on the trackpad — a crawl, a few px per second, small enough that each wheel event is a fraction of a pixel once divided by board zoom | the card still creeps; it never sticks at a standstill |
+| 2 | Non-integer zoom scroll shows no white band | scroll continuously ≥ 30 s **including direction reversals** | no white band at either edge, at any point |
+| 3 | "Slow sub-half-pixel scroll still advances" observed | drag **as slowly as you can** on the trackpad — a crawl, a few px per second, small enough that each wheel event is a fraction of a pixel once divided by board zoom | the card still creeps; it never sticks at a standstill |
 | 4 | no regression | zoom 100 % → 300 % → back | text stays crisp; no re-wrap at any step |
 
 Check 4 is the guard on what magnify exists for. This change is orthogonal to the
-zoom path by construction (S8), so a failure there means something unrelated
+zoom path by construction ("Diff leaves magnify zoom path untouched"), so a failure there means something unrelated
 broke.
 
 ## Record
@@ -59,7 +59,7 @@ steps being emitted, which is the carry doing its job at small deltas.
 
 Check 3 is outstanding — the instruction was ambiguous on the first run and has
 been reworded above. Its risk (a slow drag stalling because the residue is
-discarded) is covered by S4 in `cardZoom.test.ts`; what is missing is only the
+discarded) is covered by "Slow sub-half-pixel scroll still advances" in `cardZoom.test.ts`; what is missing is only the
 on-hardware confirmation.
 
 > **Run 2026-09-09 for checks 1, 2 and 4 — see the Record below. Check 3 is
