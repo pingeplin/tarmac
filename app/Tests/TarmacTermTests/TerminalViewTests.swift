@@ -1420,6 +1420,43 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(screen.asked, [view.damageRect(forRow: 1)])
     }
 
+    /// #440: after a return from another Space, a card sometimes shows only
+    /// the rows that changed since. A window that takes the keys again draws
+    /// every row again.
+    func testAWindowThatBecomesKeyDrawsEveryRowAgain() throws {
+        feed("ab\r\n")
+        settle()
+        let screen = try Screen(showing: view)
+        _ = screen.shown()
+
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
+        _ = screen.shown()
+        XCTAssertEqual(screen.asked.map { $0.intersection(view.bounds) }, [view.bounds])
+    }
+
+    func testAWindowThatResignsKeyDrawsOnlyTheCursorRow() throws {
+        feed("ab\r\n")
+        settle()
+        let screen = try Screen(showing: view)
+        _ = screen.shown()
+
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+        _ = screen.shown()
+        XCTAssertEqual(screen.asked, [view.damageRect(forRow: 1)])
+    }
+
+    func testAnotherWindowThatBecomesKeyDrawsNothing() throws {
+        feed("ab\r\n")
+        settle()
+        let screen = try Screen(showing: view)
+        _ = screen.shown()
+
+        let other = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: true)
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: other)
+        _ = screen.shown()
+        XCTAssertEqual(screen.asked, [])
+    }
+
     // MARK: program replies
 
     func testQueriesAreAnsweredThroughTheInputPath() {

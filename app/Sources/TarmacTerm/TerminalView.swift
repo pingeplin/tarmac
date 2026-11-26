@@ -407,15 +407,24 @@ public final class TerminalView: NSView {
         NotificationCenter.default.removeObserver(self, name: NSWindow.didBecomeKeyNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: nil)
         guard let window else { return stopBlink() }
-        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
-            NotificationCenter.default.addObserver(
-                self, selector: #selector(windowKeyStateChanged), name: name, object: window
-            )
-        }
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowBecameKey), name: NSWindow.didBecomeKeyNotification, object: window
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowResignedKey), name: NSWindow.didResignKeyNotification, object: window
+        )
         viewDidChangeBackingProperties()
     }
 
-    @objc private func windowKeyStateChanged() {
+    /// After a return from another Space, a card sometimes shows only the rows
+    /// that changed since, for a cause not yet known (#440). A whole new raster
+    /// when the window takes the keys again is the candidate remedy.
+    @objc private func windowBecameKey() {
+        restartBlink()
+        needsDisplay = true
+    }
+
+    @objc private func windowResignedKey() {
         restartBlink()
         invalidateCursor()
     }
