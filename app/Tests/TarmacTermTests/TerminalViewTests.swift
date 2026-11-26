@@ -1420,6 +1420,43 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(screen.asked, [view.damageRect(forRow: 1)])
     }
 
+    /// #440: away from the screen, the system can drop the drawn rows, and a
+    /// later frame draws only its own rows. A window that comes back to view
+    /// draws every row again.
+    func testAWindowBackInViewDrawsEveryRowAgain() throws {
+        feed("ab\r\n")
+        settle()
+        let screen = try Screen(showing: view)
+        _ = screen.shown()
+
+        NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
+        _ = screen.shown()
+        XCTAssertEqual(screen.asked.map { $0.intersection(view.bounds) }, [view.bounds])
+    }
+
+    func testASpaceChangeDrawsEveryRowAgain() throws {
+        feed("ab\r\n")
+        settle()
+        let screen = try Screen(showing: view)
+        _ = screen.shown()
+
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        _ = screen.shown()
+        XCTAssertEqual(screen.asked.map { $0.intersection(view.bounds) }, [view.bounds])
+    }
+
+    func testAnotherWindowBackInViewDrawsNothing() throws {
+        feed("ab\r\n")
+        settle()
+        let screen = try Screen(showing: view)
+        _ = screen.shown()
+
+        let other = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: true)
+        NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: other)
+        _ = screen.shown()
+        XCTAssertEqual(screen.asked, [])
+    }
+
     // MARK: program replies
 
     func testQueriesAreAnsweredThroughTheInputPath() {

@@ -406,13 +406,30 @@ public final class TerminalView: NSView {
         super.viewDidMoveToWindow()
         NotificationCenter.default.removeObserver(self, name: NSWindow.didBecomeKeyNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         guard let window else { return stopBlink() }
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
             NotificationCenter.default.addObserver(
                 self, selector: #selector(windowKeyStateChanged), name: name, object: window
             )
         }
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(drawEveryRowAgain), name: NSWindow.didChangeOcclusionStateNotification,
+            object: window
+        )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(drawEveryRowAgain), name: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil
+        )
         viewDidChangeBackingProperties()
+    }
+
+    /// After a return from another Space, a card sometimes shows only the rows
+    /// that changed since, for a cause not yet known (#440). A whole new
+    /// raster is the candidate remedy.
+    @objc private func drawEveryRowAgain() {
+        needsDisplay = true
     }
 
     @objc private func windowKeyStateChanged() {
