@@ -406,33 +406,25 @@ public final class TerminalView: NSView {
         super.viewDidMoveToWindow()
         NotificationCenter.default.removeObserver(self, name: NSWindow.didBecomeKeyNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: nil)
-        NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: nil)
-        NSWorkspace.shared.notificationCenter.removeObserver(self)
         guard let window else { return stopBlink() }
-        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
-            NotificationCenter.default.addObserver(
-                self, selector: #selector(windowKeyStateChanged), name: name, object: window
-            )
-        }
         NotificationCenter.default.addObserver(
-            self, selector: #selector(drawEveryRowAgain), name: NSWindow.didChangeOcclusionStateNotification,
-            object: window
+            self, selector: #selector(windowBecameKey), name: NSWindow.didBecomeKeyNotification, object: window
         )
-        NSWorkspace.shared.notificationCenter.addObserver(
-            self, selector: #selector(drawEveryRowAgain), name: NSWorkspace.activeSpaceDidChangeNotification,
-            object: nil
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowResignedKey), name: NSWindow.didResignKeyNotification, object: window
         )
         viewDidChangeBackingProperties()
     }
 
     /// After a return from another Space, a card sometimes shows only the rows
-    /// that changed since, for a cause not yet known (#440). A whole new
-    /// raster is the candidate remedy.
-    @objc private func drawEveryRowAgain() {
+    /// that changed since, for a cause not yet known (#440). A whole new raster
+    /// when the window takes the keys again is the candidate remedy.
+    @objc private func windowBecameKey() {
+        restartBlink()
         needsDisplay = true
     }
 
-    @objc private func windowKeyStateChanged() {
+    @objc private func windowResignedKey() {
         restartBlink()
         invalidateCursor()
     }

@@ -1420,39 +1420,39 @@ final class TerminalViewTests: XCTestCase {
         XCTAssertEqual(screen.asked, [view.damageRect(forRow: 1)])
     }
 
-    /// #440: away from the screen, the system can drop the drawn rows, and a
-    /// later frame draws only its own rows. A window that comes back to view
-    /// draws every row again.
-    func testAWindowBackInViewDrawsEveryRowAgain() throws {
+    /// #440: after a return from another Space, a card sometimes shows only
+    /// the rows that changed since. A window that takes the keys again draws
+    /// every row again.
+    func testAWindowThatBecomesKeyDrawsEveryRowAgain() throws {
         feed("ab\r\n")
         settle()
         let screen = try Screen(showing: view)
         _ = screen.shown()
 
-        NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
         _ = screen.shown()
         XCTAssertEqual(screen.asked.map { $0.intersection(view.bounds) }, [view.bounds])
     }
 
-    func testASpaceChangeDrawsEveryRowAgain() throws {
+    func testAWindowThatResignsKeyDrawsOnlyTheCursorRow() throws {
         feed("ab\r\n")
         settle()
         let screen = try Screen(showing: view)
         _ = screen.shown()
 
-        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
         _ = screen.shown()
-        XCTAssertEqual(screen.asked.map { $0.intersection(view.bounds) }, [view.bounds])
+        XCTAssertEqual(screen.asked, [view.damageRect(forRow: 1)])
     }
 
-    func testAnotherWindowBackInViewDrawsNothing() throws {
+    func testAnotherWindowThatBecomesKeyDrawsNothing() throws {
         feed("ab\r\n")
         settle()
         let screen = try Screen(showing: view)
         _ = screen.shown()
 
         let other = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: true)
-        NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: other)
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: other)
         _ = screen.shown()
         XCTAssertEqual(screen.asked, [])
     }
