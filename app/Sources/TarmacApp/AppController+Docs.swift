@@ -14,7 +14,7 @@ extension AppController {
         let path = doc.path
         let existing = board.view.card(.doc(DocPath(path)))
         board.store.applyDocOpened(doc)
-        board.docOwner[DocPath(path)] = DocLanding.owner(opened: doc.termID, current: board.docOwner[DocPath(path)])
+        board.docOwner[path] = DocLanding.owner(opened: doc.termID, current: board.docOwner[path])
 
         switch DocLanding.decide(
             onBoard: existing != nil, via: doc.via, termID: doc.termID, wasFresh: existing?.fresh ?? false
@@ -70,14 +70,14 @@ extension AppController {
     /// terminal that opened it.
     private func bind(_ card: CardView, path: String, on board: Board) {
         if let doc = board.store.doc(for: path) { card.apply(doc: doc) }
-        card.ownerTermID = board.docOwner[DocPath(path)].map(CardID.term)
+        card.ownerTermID = board.docOwner[path].map(CardID.term)
         card.setOwnerChip(ownerChipLabel(for: card, on: board))
     }
 
     /// The first free slot beside the doc's owner terminal (`Placement`), on
     /// top of every card on the board.
     private func freeSlot(for path: String, on board: Board) -> CardFrame {
-        let owner = board.docOwner[DocPath(path)].flatMap { board.view.card(.term($0)) }
+        let owner = board.docOwner[path].flatMap { board.view.card(.term($0)) }
         let anchor = DocLanding.anchor(owner: owner?.worldFrame.rect, prime: board.primeTermCard?.worldFrame.rect)
         let cards = board.view.cards.values
         return CardFrame(
@@ -148,7 +148,7 @@ extension AppController {
         if focusedCardID == id { defocus() }
         activeBoard.view.removeCard(id: id)
         dataFiles.set(nil, for: CardDataRegistrations.Card(boardID: activeBoardID, path: path))
-        activeBoard.docOwner[DocPath(path)] = nil
+        activeBoard.docOwner[path] = nil
         activeBoard.store.remove(path)
         client.docClose(path: path)
         persistLayout(for: activeBoard)

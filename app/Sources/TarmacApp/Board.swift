@@ -48,7 +48,7 @@ final class Board {
     var termRecords: [String: TermRecord] = [:]
 
     /// Provenance: doc path → the `term_id` that opened it (from `DocEntry`).
-    var docOwner: [DocPath: String] = [:]
+    var docOwner = DocOwners()
 
     /// True once this board's first restore has been applied. Per-board because
     /// the daemon sends a restore for the active board on connect and again on
