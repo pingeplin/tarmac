@@ -378,7 +378,7 @@
         // MARK: - targets
 
         private func cardView(_ id: String) throws -> CardView {
-            guard let card = board.cards.values.first(where: { DocPath($0.id.wireID) == DocPath(id) }) else {
+            guard let card = DevCardLookup.card(id, in: board.cards.values, wireID: \.id.wireID) else {
                 throw DevError(.driverThrew, "card \(id) left the board mid-verb")
             }
             return card

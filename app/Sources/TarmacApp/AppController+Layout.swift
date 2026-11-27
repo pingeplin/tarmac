@@ -135,12 +135,12 @@ extension AppController {
         )
         if built { inboxChanged() }
 
-        board.docOwner = [:]
+        board.docOwner = DocOwners()
         for doc in docs {
-            board.docOwner[DocPath(doc.path)] = doc.termID
+            board.docOwner[doc.path] = doc.termID
         }
         for doc in plan.docs {
-            board.docOwner[DocPath(doc.path)] = doc.ownerTermID
+            board.docOwner[doc.path] = doc.ownerTermID
             landDocCard(
                 path: doc.path, frame: CardFrame(rect: doc.frame, z: doc.z), attached: doc.attached, fresh: false,
                 sidebar: doc.sidebar, on: board
